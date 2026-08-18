@@ -232,10 +232,7 @@
       </div>
 
       <div class="row" style="margin-top:8px">
-        <div><label>scale everything <span class="val" id="gsv">145</span>%
-          <span class="hint" id="gsnote"></span></label>
-          <div class="hint">the character and every attached object, together</div>
-          <input type="range" id="gscale" min="40" max="220" step="1" value="145"></div>
+
         <div style="flex:0 0 110px"><label>x <span class="val" id="gxv">160</span></label>
           <input type="range" id="gx" min="0" max="320" step="1" value="160"></div>
         <div style="flex:0 0 110px"><label>y <span class="val" id="gyv">200</span></label>
@@ -279,6 +276,10 @@
 
     <div class="panel">
       <label>the character <span class="hint">— breathing, for held frames</span></label>
+      <label style="margin-top:6px">size in the scene <span class="val" id="gsv">100</span>%
+        <span class="hint">one dial — him and everything he holds. Each object also has its
+        own scale in its layer. The Scene Assembler starts from this number</span></label>
+      <input type="range" id="gscale" min="15" max="120" step="1" value="100">
       <label style="margin-top:6px">breathe <span class="val" id="brev">0</span>%
         <span class="hint">scale pulse, pinned at the feet</span></label>
       <input type="range" id="breathe" min="0" max="15" step="0.5" value="0">
@@ -1607,7 +1608,9 @@ $('zFloor').onclick=()=>{ zdraft=null; zmode=zmode==='floor'?'':'floor';
 $('zKeep').onclick=()=>{ zdraft=null; zmode=zmode==='keepout'?'':'keepout';
   $('zKeep').classList.toggle('pri',zmode==='keepout'); $('zFloor').classList.remove('pri'); render() };
 $('zDel').onclick=()=>{ if(zsel>=0){ zones.splice(zsel,1); zsel=-1; zvert=-1; render() } };
-$('gscale').oninput=e=>{ gScale=+e.target.value; render() };
+$('gscale').oninput=e=>{ const v=+e.target.value;
+  gScale=Math.round(v*GAMESCALE[guessPhase()]); $('gsv').textContent=v;
+  render(); autosave() };
 $('gx').oninput=e=>{ gX=+e.target.value; render() };
 $('gy').oninput=e=>{ gY=+e.target.value; render() };
 $('gfloor').onclick=()=>{ gY=GAME.floor; render() };
@@ -1659,7 +1662,7 @@ $('gzauto').onclick=()=>{ gZ=null; render() };
     if(zvert>=0){ zvert=-1; render(); return }
     dg=null; gv.style.cursor='grab' });
 })();
-$('clip').onchange=async e=>{stopT();clip=e.target.value;await ensureClip();resetOrder();gScale=null;$('gscale').value=defaultScale();render()};
+$('clip').onchange=async e=>{stopT();clip=e.target.value;await ensureClip();resetOrder();gScale=null;$('gscale').value=100;$('gsv').textContent='100';render()};
 $('add').onclick=async()=>{await addLayer($('addProp').value,$('anchor').value);render()};
 $('dup').onclick=async()=>{const L=cur();if(!L)return;
   await addLayer(L.prop,L.anchor,authored(L),sel+1);render()};
@@ -1906,7 +1909,7 @@ const project=()=>Object.assign({format:'bunbun-attach-project',v:1,
    clip,fps,character:{...CH},
    room:gRoom||undefined,                    // the backdrop it was judged against, nothing more
    animRule:{...animRule},
-   stage:{x:gX,y:gY,z:gZ,scale:gScale},
+   stage:{x:gX,y:gY,z:gZ,scale:(gScale==null?null:Math.round(gScale/GAMESCALE[guessPhase()]))},
    order:order.map(o=>({i:o.i,skip:!!o.skip,cs:csOf(o)})),   // no ids: regenerated on load
    layers:stack.map(it=>it.char?'CHARACTER':authored(it)),
    // the child's own drawings ride along, so a reopened animation still owns every prop it
@@ -1976,7 +1979,9 @@ async function loadProject(p){
     litCache.key='';
     if(p.stage){ gX=+p.stage.x||gX; gY=+p.stage.y||gY;
       gZ=(p.stage.z==null?null:+p.stage.z);
-      gScale=(p.stage.scale==null?null:+p.stage.scale) }
+      gScale=(p.stage.scale==null?null:Math.round(+p.stage.scale*GAMESCALE[guessPhase()]));
+      $('gscale').value=(p.stage.scale==null?100:Math.round(+p.stage.scale));
+      $('gsv').textContent=$('gscale').value }
     Object.assign(CH,{breathe:0,period:8,hold:1,pivot:'feet'},p.character||{});
     $('breathe').value=CH.breathe; $('period').value=CH.period; $('hold').value=CH.hold;
     $('pivot').value=CH.pivot||'feet';
