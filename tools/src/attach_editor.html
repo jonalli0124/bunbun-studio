@@ -1173,18 +1173,19 @@ function paintScene(g,fi,seq,Zg,showSel){
 }
 function drawGame(fi,seq){
   const wrap=$('gamewrap');
-  // THE SCENE LAYER IS RETIRED FROM THIS TOOL. Rooms, placed objects, zones, lighting and
-  // weather are the Scene Assembler's job now; this is a one-animation editor. The block and
-  // all its controls stay in the page - hidden - so old project files still load, and their
-  // roomObjects are carried untouched for the assembler to use.
-  wrap.style.display='none'; return;
+  // RESURRECTED as a VIEW (Jon 8/18: "the animation creation needs a scaler so you can
+  // see it in the scene" / "we will need to see it in the room at scale so we don't have
+  // to redo it in the scene"). Scene AUTHORING stays retired - rooms, objects and zones
+  // are the Scene Assembler's job - but seeing the animation at true game scale in a
+  // real room, under real light and weather, is this tool's own preview. The retired
+  // editing marks stay hidden (paintScene's showSel=false).
   if(!DATA.rooms || !gRoom || !DATA.rooms[gRoom]){ wrap.style.display='none'; return }
   wrap.style.display='';
   const cv=$('gameview'), g=cv.getContext('2d'), Zg=GAME.z;
   cv.width=GAME.w*Zg; cv.height=GAME.h*Zg;
-  paintScene(g,fi,seq,Zg,true);
+  paintScene(g,fi,seq,Zg,false);
   const sc=(gScale==null?defaultScale():gScale)/100;
-  $('gsv').textContent=Math.round(sc*100);
+  $('gsv').textContent=Math.round(sc*100/GAMESCALE[guessPhase()]);
   $('gxv').textContent=gX; $('gyv').textContent=gY;
   $('gx').value=gX; $('gy').value=gY;
   $('gzv').textContent=gZ==null?'auto':gZ; $('gz').value=gZ==null?gY:gZ;
@@ -1509,6 +1510,7 @@ addEventListener('keydown',e=>{
 
 $('room').onchange=e=>{ gRoom=e.target.value; litCache.key=''; skyBox=null;
   if(gRoom&&DATA.rooms[gRoom]&&!imgs['room|'+gRoom]) load(DATA.rooms[gRoom],imgs,'room|'+gRoom).then(render);
+  render();
   render() };
 function rpDraw(){
   const rpSig=JSON.stringify([rprops.map(p=>[p.prop,Math.round(p.x),Math.round(p.y),p.lamp]),rsel]);
