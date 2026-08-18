@@ -1509,7 +1509,7 @@ function whatIsUnder(q){
         if(b && q.x>=b.l-2 && q.x<=b.r+2 && q.y>=b.t-2 && q.y<=b.b+2){
           list.push({kind:'ghost', i, a,
             label:a.name+(a.locked?' (locked)':''),
-            noDrag:isAnywhere(a)||a.locked}); break } } } }
+            noDrag:a.locked}); break } } } }
   for(let i=scene.objects.length-1;i>=0;i--){
     const o=scene.objects[i]; if(o.locked||o.hidden) continue;
     const {w,h}=sizeOf(o);
@@ -1650,15 +1650,14 @@ cv.addEventListener('pointerdown',e=>{
     if(pick.kind==='ghost'){
       asel=pick.i; osel=-1; zsel=-1; syncObj(); syncRule();
       if(pick.a.locked){ say(`"${pick.a.name}" is locked — the padlock in the list frees it`,true); }
-      else if(pick.noDrag){
-        // an anywhere ghost refused the drag SILENTLY - the second kid in a row read that
-        // as broken ("so why cant i move the ghosts?"). Say what is true instead.
-        say(`"${pick.a.name}" happens anywhere he walks, so there is no spot to drag — `+
-            `change its tag on the right (only on things · pinned · in an area) to give it a place`,true);
-      }
       else {
+        // anywhere ghosts drag too (Jon: "sometimes you want it to be out of the way") -
+        // it parks the PREVIEW only; the sim still plays an anywhere act wherever he
+        // stands, and nothing about the drag reaches the device.
         pick.a.place=pick.a.place||{dx:0,dy:0};
         drag={anim:pick.a, dx:pick.a.place.dx-q.x, dy:pick.a.place.dy-q.y};
+        if(isAnywhere(pick.a))
+          say(`parking "${pick.a.name}" — it still happens anywhere he walks; the tag on the right gives it a real place`);
       }
     }else{
       osel=pick.i; asel=-1; zsel=-1; syncObj(); syncRule();
