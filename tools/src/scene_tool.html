@@ -215,7 +215,8 @@
             <button class="mini" id="ozAuto">auto</button>
             <button class="mini" id="oflip">flip</button>
             <button class="mini" id="oWalk" title="a rug or mat is floor covering - he walks over it instead of around it">walk over</button>
-            <button class="mini" id="olamp">light</button></div>
+            <button class="mini" id="olamp">light</button>
+            <button class="mini" id="ocel" title="a sun or a moon: it stops sitting where you put it and follows the real clock across the sky shape">follows: &mdash;</button></div>
         </div>
         <div class="row" style="margin-top:6px">
           <div><label>fade <span id="oov">100</span>%</label>
@@ -642,6 +643,24 @@ function weatherStep(dt,name){
     if(c.x-c.w>x1){c.x=x0-c.w;c.y=y0+2+Math.random()*Math.max(1,(y1-y0)/2)}}}
 
 // both paint ONLY on sky pixels, so they stay inside the window exactly as the device keeps them
+function celestialXY(track,w,h){
+  const ab=authoredSky()||skyBounds(scene.room);
+  if(!ab) return null;
+  const {x0,y0,x1,y1}=ab;
+  const m=todMin;
+  let frac;
+  if(track==='day'){
+    if(m<360||m>1200) return null;                 // before rise / after set: not drawn
+    frac=(m-360)/840;
+  } else {
+    if(m>=1200) frac=(m-1200)/600;
+    else if(m<360) frac=(m+240)/600;
+    else return null;
+  }
+  const cx=x0+w/2+frac*Math.max(0,(x1-x0-w));
+  const by=y1-Math.sin(frac*Math.PI)*Math.max(0,(y1-y0-h));
+  return {x:cx, y:by};
+}
 function drawWeather(g,name,Zg){
   if(!skyBox||(!raining&&!clouding&&!starsOn))return;
   const m=skyBox.m, W=GAME.w;
@@ -1697,6 +1716,8 @@ function syncObj(){
   $('orot').value=o.rot||0; $('orl').textContent=o.rot||0;
   $('oz').value=o.z==null?Math.round(o.y):o.z; $('ozl').textContent=o.z==null?'auto':o.z;
   $('olamp').classList.toggle('pri',!!o.lamp);
+  $('ocel').textContent='follows: '+(o.cel==='day'?'the day':o.cel==='night'?'the night':'\u2014');
+  $('ocel').classList.toggle('pri',!!o.cel);
   $('oWalk').classList.toggle('pri',!!o.walkOver);
   $('oopac').value=o.opacity==null?100:o.opacity;
   $('oov').textContent=o.opacity==null?100:o.opacity;
@@ -1765,6 +1786,9 @@ $('oBulbAuto').onclick=()=>{ const o=scene.objects[osel]; if(o){ o.bulbY=null;
 $('lightOff').onclick=()=>{ todOn=!todOn;
   $('lightOff').textContent='lighting: '+(todOn?'on':'off');
   $('lightOff').classList.toggle('pri',!todOn); litCache.key=''; draw() };
+$('ocel').onclick=()=>{ const o=scene.objects[osel]; if(!o) return;
+  o.cel=o.cel==null?'day':o.cel==='day'?'night':undefined;
+  syncObj(); draw() };
 $('olamp').onclick=()=>{ const o=scene.objects[osel]; if(o){o.lamp=!o.lamp;
   litCache.key=''; syncObj(); draw()} };
 $('zFloor').onclick=()=>{ zdraft=null; zmode=zmode==='floor'?'':'floor';
@@ -1878,9 +1902,16 @@ function draw(){
       ctx.strokeRect((o.x-w/2)*Z-2,(o.y-h)*Z-2,w*Z+4,h*Z+4); ctx.setLineDash([]); }
     const d=SD.props[o.object]; const im=imgs['prop|'+o.object];
     if(!d||!im) continue;
-    const w=d.w*o.scale*passiveScale, h=d.h*o.scale*passiveScale;
+    let w=d.w*o.scale*passiveScale, h=d.h*o.scale*passiveScale;
+    let ox=o.x, oy=o.y;
+    if(o.cel){
+      w=d.w; h=d.h;                                // native size, as the device draws it
+      const q=celestialXY(o.cel,w,h);
+      if(!q) continue;                             // below the horizon right now
+      ox=q.x; oy=q.y;
+    }
     ctx.save(); ctx.globalAlpha=(o.opacity==null?100:o.opacity)/100;
-    ctx.translate(o.x*Z,o.y*Z);
+    ctx.translate(ox*Z,oy*Z);
     if(o.rot) ctx.rotate(o.rot*Math.PI/180);
     if(o.flip) ctx.scale(-1,1);
     ctx.drawImage(im,-w/2*Z,-h*Z,w*Z,h*Z); ctx.restore();
@@ -2591,6 +2622,7 @@ $('fScene').onchange=async e=>{
     const name=o.object||o.prop, d=SD.props[name];
     return {
       object:name, x:+o.x, y:+o.y, scale:+(o.scale||o.authoredScale||1), z:o.z,
+      cel:(o.cel==='day'||o.cel==='night')?o.cel:undefined,
       rot:+(o.rot||o.rotation||0), flip:!!o.flip,
       opacity:o.opacity==null?100:o.opacity, can:o.can||null, locked:!!o.locked, hidden:!!o.hidden,
       oid:o.oid, walkOver: o.walkOver!=null ? !!o.walkOver : /rug|mat|carpet|blanket|towel/i.test(name)||undefined,
@@ -2703,7 +2735,7 @@ function forDevice(){
     travelScale: +travelScale.toFixed(3),
     objects: scene.objects.map(o=>({object:o.object, x:Math.round(o.x), y:Math.round(o.y),
       scale:+(+o.scale*passiveScale).toFixed(3), authoredScale:+(+o.scale).toFixed(3),
-      rotation:o.rot||0, lamp:!!o.lamp,
+      rotation:o.rot||0, lamp:!!o.lamp, cel:o.cel||undefined,
       // A lamp that comes back dimmer than it left is not the same scene. These three are what
       // "make light" actually means, so they travel with it.
       ...(o.lamp ? {lampPower:o.lampPower==null?1:+(+o.lampPower).toFixed(3),
@@ -3013,7 +3045,9 @@ function deviceScene(animPlan){
   // painter's rule this page draws with. A rug lies under everything at z=-1; the rest sit
   // in the z=0 pass in that sorted order, so the plant in front of the chair STAYS in front
   // of the chair. (Jon caught the plants/chair inversion on the first ported room.)
-  const live=scene.objects.filter(o=>!o.hidden)
+  const cels=scene.objects.filter(o=>!o.hidden&&(o.cel==='day'||o.cel==='night'))
+    .slice(0,2).map(o=>({s:pakNameFor(o.object), t:o.cel==='day'?1:2}));
+  const live=scene.objects.filter(o=>!o.hidden&&!o.cel)
     .slice().sort((a,b)=>(a.z==null?a.y:a.z)-(b.z==null?b.y:b.z));
   if(live.length>24) say(`the device holds 24 objects - ${live.slice(24).map(o=>o.object).join(', ')} stayed home`,true);
   const props=[], lamps=[];
@@ -3063,6 +3097,7 @@ function deviceScene(animPlan){
   env.rw=raining?1:0;
   if(Math.round(lightScale*100)!==100) env.ls=Math.round(lightScale*100);
   if(starsOn) env.st=Math.min(40,starN);
+  if(cels.length) env.cel=cels;
   {const ab=authoredSky();
    if(ab){
      const pts=ab.poly.length<=12?ab.poly

@@ -238,6 +238,11 @@ static SceneEnv g_scEnv     = SCENE_ENV_DEFAULT;
 // the bbox in g_scEnv.sky* only bounds cloud drift and the row gate
 static int16_t g_scSkyPts[12][2];
 static uint8_t g_scSkyN = 0;
+// celestial bindings (ENVIRONMENT-SPEC layer 2): a pak sprite that follows the clock
+// across the sky shape. t: 1 = the day (sun), 2 = the night (moon).
+struct SceneCel { char s[32]; uint8_t t; };
+static SceneCel g_scCel[2];
+static uint8_t g_scCelN = 0;
 static bool     g_scHasEnv  = false;
 
 static bool sceneLoad();
@@ -285,7 +290,7 @@ static bool sceneLoad() {
   bcMark(17);        // BC_SCENELOAD — the malloc + cJSON parse, which runs in the render path
   g_scOK = false; g_scPropN = 0; g_scBlockN = 0; g_scHasBounds = false; g_scName[0] = 0;
   g_scEnv = SCENE_ENV_DEFAULT; g_scHasEnv = false; g_scCatN = 0; g_scFloorN = 0;
-  g_scSkyN = 0;
+  g_scSkyN = 0; g_scCelN = 0;
   g_scRoom[0] = 0;      // the one field this used to forget, leaving a stale room across retries
   g_scLooseN = 0; g_scPerchN = 0; g_scBunN = 0; g_scLampN = 0; g_scAnimN = 0; g_scNoGoN = 0;
   g_scTravel = 0;
@@ -585,6 +590,22 @@ static bool sceneLoad() {
     g_scEnv.rainW  = sceneEnvInt(ev, "rw",  0, 3,                      -1);
     g_scEnv.lightS = sceneEnvInt(ev, "ls", 30, 220,                   100);
     g_scEnv.stars = sceneEnvInt(ev, "st", 0, 40, 0);
+    const cJSON *cel = cJSON_GetObjectItem(ev, "cel");
+    if (cJSON_IsArray(cel)) {
+      int nc = cJSON_GetArraySize(cel);
+      if (nc > 2) nc = 2;
+      g_scCelN = 0;
+      for (int i = 0; i < nc; i++) {
+        const cJSON *it = cJSON_GetArrayItem(cel, i);
+        const cJSON *sn = cJSON_GetObjectItem(it, "s");
+        const cJSON *tt = cJSON_GetObjectItem(it, "t");
+        if (!cJSON_IsString(sn) || !sn->valuestring[0]) continue;
+        strncpy(g_scCel[g_scCelN].s, sn->valuestring, 31);
+        g_scCel[g_scCelN].s[31] = 0;
+        g_scCel[g_scCelN].t = (uint8_t)((int)cJSON_GetNumberValue(tt) == 2 ? 2 : 1);
+        g_scCelN++;
+      }
+    }
     const cJSON *sp = cJSON_GetObjectItem(ev, "sp");   // the drawn sky POLYGON, flat x,y pairs
     if (cJSON_IsArray(sp)) {
       int np = cJSON_GetArraySize(sp) / 2;

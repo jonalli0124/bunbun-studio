@@ -5359,6 +5359,76 @@ static void updateRain(float dt) {
     }
   }
 }
+// ENVIRONMENT-SPEC layer 2: the sun follows the day, the moon follows the night. The
+// position is a pure function of the wall clock across the sky shape - rise on its left
+// at 6:00, arc, set on its right at 20:00, exactly the edges daylight() uses; the moon
+// mirrors across 20:00-6:00. Drawn from the pak sprite's own RLE rows, gated by the same
+// sky rules as clouds, UNDER stars and weather.
+static const PakEntry *g_celEntry[2] = {nullptr, nullptr};
+static uint32_t g_celGen = 0;
+static bool celestialPos(uint8_t track, const PakEntry *e, int *tx, int *ty) {
+  if (!g_haveSky || !e) return false;
+  int m = clockNowMin();
+  float frac;
+  if (track == 1) {
+    if (m < 360 || m > 1200) return false;
+    frac = (m - 360) / 840.0f;
+  } else {
+    if (m >= 1200) frac = (m - 1200) / 600.0f;
+    else if (m < 360) frac = (m + 240) / 600.0f;
+    else return false;
+  }
+  int spanX = g_skyX1 - g_skyX0 - (int)e->w; if (spanX < 0) spanX = 0;
+  int spanY = g_skyY1 - g_skyY0 - (int)e->h; if (spanY < 0) spanY = 0;
+  *tx = g_skyX0 + (int)(frac * spanX);
+  *ty = g_skyY1 - (int)e->h - (int)(sinf(frac * (float)M_PI) * spanY);
+  return true;
+}
+static void drawCelestial(const uint8_t *rowIdx, uint16_t *d, int ay) {
+  if (!g_scCelN) return;
+  if (g_celGen != g_scGen) {              // resolve pak entries once per scene
+    for (int i = 0; i < 2; i++) g_celEntry[i] = nullptr;
+    for (int i = 0; i < g_scCelN; i++) g_celEntry[i] = pakFind(g_scCel[i].s);
+    g_celGen = g_scGen;
+  }
+  for (int c = 0; c < g_scCelN; c++) {
+    const PakEntry *e = g_celEntry[c];
+    int tx, ty;
+    if (!e || e->fmt != 0 || !celestialPos(g_scCel[c].t, e, &tx, &ty)) continue;
+    int r = ay - ty;
+    if (r < 0 || r >= (int)e->h) continue;
+    // walk the RLE rows up to r (rows are variable length; h is small, this is cheap)
+    uint32_t off = e->offset;
+    uint8_t segs; uint8_t hdr[2];
+    for (int row = 0; row < r; row++) {
+      pakRead(off, &segs, 1); off += 1;
+      for (int sgi = 0; sgi < segs; sgi++) {
+        pakRead(off, hdr, 2);
+        off += 2 + (uint32_t)hdr[1] * 2;
+      }
+    }
+    pakRead(off, &segs, 1); off += 1;
+    int x = tx;
+    static uint16_t px[240];
+    for (int sgi = 0; sgi < segs; sgi++) {
+      pakRead(off, hdr, 2); off += 2;
+      x += hdr[0];
+      int len = hdr[1];
+      if (len > 240) len = 240;
+      pakRead(off, px, (size_t)len * 2); off += (uint32_t)hdr[1] * 2;
+      for (int k = 0; k < len; k++, x++) {
+        if (x < 0 || x >= UI_W) continue;
+        if (g_skyAuthored) {
+          if (x < g_skyX0 || x > g_skyX1) continue;
+          if (!skyPolyHit(x, ay)) continue;
+          if (g_skyBoxMasked && !g_isSky[rowIdx[x]]) continue;
+        } else if (!g_isSky[rowIdx[x]]) continue;
+        d[x] = px[k];
+      }
+    }
+  }
+}
+
 static void drawEnvStars(uint16_t *d, int ay) {
   if (!g_envStarN) return;
   float night = 1.0f - daylight();
@@ -6790,6 +6860,7 @@ static void composeRoom(int fx, int fy, float sc, int lampOn, bool cloudLit, flo
       }
       // rain on the glass. updateRain() was running and even announcing itself on the ticker,
       // but drawRain() was never called from anywhere — so no shower was ever visible.
+      drawCelestial(s, d, ay);   // deepest: the sun and moon ride the clock
       drawEnvStars(d, ay);   // stars first: rain and clouds drift OVER them
       drawRain(s, d, ay);
       // W-003 afterglow: ripples during rain, then puddle + occasional
