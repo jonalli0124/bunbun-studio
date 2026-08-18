@@ -2117,6 +2117,13 @@ static bool sceneDoorTo(uint8_t tgt, const char *act) {
                 (int)tgt, g_doorAct);
   return true;
 }
+// /api/debug/act - the remote lever the door-walk tests (and future layers) need.
+// Set from the web task, consumed on the game task the next tick.
+static char g_dbgAct[8] = "";
+extern "C" void bunbun_debug_act(const char *a) {
+  strncpy(g_dbgAct, a ? a : "", sizeof(g_dbgAct) - 1);
+  g_dbgAct[sizeof(g_dbgAct) - 1] = 0;
+}
 static bool sceneWorkAvail() {
   return g_scRoleAvail[SCENE_ROLE_WORK] || sceneActMark("work") >= 0 ||
          sceneActAnim("work") != nullptr;
@@ -2784,6 +2791,11 @@ static void think(float dt) {
       startAction(love ? pa("love") : pa("jump"), 2.0f);
       return;
     }
+  }
+  if (g_dbgAct[0]) {
+    char a[8]; strncpy(a, g_dbgAct, sizeof(a)); a[7] = 0; g_dbgAct[0] = 0;
+    Serial.printf("debug act: %s\n", a);
+    sceneErrandTo(a);
   }
   // settled into a piece of furniture â€” hold the pose until it times out
   if (millis() < g_settleUntil) return;
