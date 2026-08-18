@@ -120,3 +120,91 @@ bold pixel art emotion icon for a children's game, a single black eighth music n
 bold pixel art emotion icon for a children's game, a red exclamation mark symbol: one thick vertical rounded bar with a separate round dot below it, bright red with a clean dark outline, simple flat shape readable at tiny size
 ```
 v1 [FAIL]: "a single bright red exclamation point, thick and rounded..." — two stacked red blobs, unreadable.
+
+## Environment starter set
+
+Third-run session 2026-08-18. Sky pieces for kids' scenes: clouds, celestial, scenery
+birds. Same pixflux house pattern; whites/greys drop "warm colors" per the porcelain
+lesson. New lesson this run: **thin, pale or glowy shapes can come back 100% transparent**
+under no_background (the background remover eats them) — "wispy... wide and thin" and "a
+soft orange and pink glow" both returned empty PNGs; the fixes describe a SOLID body
+("smooth white rounded bar shape", "solid orange half disc") and skip glow words. Second
+new lesson: **mood words summon faces** — "grumpy shading" put a full kawaii face on the
+storm cloud even with "no face" in the prompt; scenery clouds must stay mood-free and say
+"no face no eyes no mouth".
+
+### puffy cloud — [PASS, 1 roll] pixflux 96x64
+```
+soft pixel art, clean dark outline, children's game item, a single puffy white cumulus cloud, bright white with soft gray shading, big and centered filling the canvas, front view, no floor shadow
+```
+
+### wispy cloud — [PASS, 2nd roll + shadow-line scrub] pixflux 96x48
+```
+soft pixel art, clean dark outline, children's game item, a single long flat stretched cloud, a smooth white rounded bar shape with soft gray shading underneath, big and centered filling the canvas, front view, no floor shadow
+```
+Baked grey floor-shadow line under the base ((115,115,116) row) cleared in PIL.
+v1 [FAIL]: "...a single flat stretched wispy white cloud, wide and thin, bright white with soft gray shading..." — came back COMPLETELY EMPTY (0 opaque pixels); the background remover ate the thin pale shape.
+
+### storm cloud — [PASS, 2nd roll + shadow scrub] pixflux 96x64
+```
+soft pixel art, clean dark outline, children's game item, a single plain dark gray rain storm cloud, background scenery with no face no eyes no mouth, lumpy round top and darker gray flat base, big and centered filling the canvas, front view, no floor shadow
+```
+Baked grey drop-shadow ellipse ((98,98,103)/(93,93,99)) cleared in PIL.
+v1 [FAIL]: "...gray storm cloud with darker gray grumpy shading underneath, no face..." — full kawaii face (eyes, blush, smile). "grumpy" summons the emotion-mark style even with "no face".
+
+### sun — [PASS, 1 roll] pixflux 64x64
+```
+soft pixel art, warm colors, clean dark outline, children's game item, a single round warm yellow sun with short triangular rays, front view, no floor shadow
+```
+
+### setting sun — [PASS, 2nd roll + horizon-stub scrub] pixflux 96x64
+```
+soft pixel art, warm colors, clean dark outline, children's game item, the top half of a large round setting sun, a solid orange half disc with pink shading near the flat straight bottom edge, big and centered filling the canvas, front view, no floor shadow
+```
+A thin baked horizon line stuck out both sides of the disc on the bottom row; cleared in PIL.
+v1 [FAIL]: "...the top half of an orange sun disc with a soft orange and pink glow around it, flat straight bottom edge..." — came back COMPLETELY EMPTY (0 opaque pixels); the glow took the whole disc with it in background removal.
+
+### moon — [PASS, 1 roll] pixflux 64x64
+```
+soft pixel art, clean dark outline, children's game item, a single round full moon, pale gray with soft gray craters, big and centered filling the canvas, front view, no floor shadow
+```
+
+### crescent moon — [PASS, 1 roll] pixflux 64x64
+```
+soft pixel art, warm colors, clean dark outline, children's game item, a single soft yellow crescent moon, front view, no floor shadow
+```
+
+### star — [PASS, 2nd roll + satellite scrub] **pixen** 32x32
+```
+bold pixel art for a children's game, a single yellow four-pointed sparkle star, a diamond twinkle with one point up one point down one point left one point right, clean dark outline, simple and readable at tiny size
+```
+Came back as a bold 8-point twinkle with two tiny satellite sparkles; satellites cleared in PIL (connected-component keep-largest), reads clearly at 16px.
+v1 [FAIL]: "...a single yellow four-pointed twinkle star..." — classic five-pointed star, not a twinkle.
+
+### star cluster — [PASS, 1 roll] pixen 48x48
+```
+bold pixel art for a children's game, a loose sprinkle of four tiny yellow four-pointed sparkle stars of different sizes, clean dark outline, simple and readable at tiny size
+```
+(Delivered five stars of different sizes — inside the 3-5 spec, kept.)
+
+### shooting star — [PASS, 2nd roll] pixen 64x32
+```
+bold pixel art for a children's game, a single yellow four-pointed shooting star with a long yellow motion tail streaking behind it to the left, plain star with no face no eyes, clean dark outline, simple and readable at tiny size
+```
+(Star is five-pointed; the order only pins 4-point for the small star, kept.)
+v1 [FAIL]: same prompt without "plain star with no face no eyes" — tiny face on the star.
+
+### flying bird — [PASS, 2nd roll] pixflux 48x48
+```
+soft pixel art, clean dark outline, children's game item, a single dark gray seagull silhouette soaring with wings spread wide and flat, plain solid silhouette with no eyes and no face, side view, no floor shadow
+```
+v1 [FAIL]: "...bird silhouette gliding with long outstretched gull wings, no face..." — flapping pigeon with a red eye dot.
+
+### bird flock — [PASS, 4th roll + one-bird scrub] pixflux 96x48
+```
+soft pixel art, clean dark outline, children's game item, five tiny dark birds flying far away in the sky, each one drawn as a simple curved letter m of two wing arcs like distant seagulls in a landscape painting, spread out across the whole canvas from left edge to right edge at different heights, no eyes no beaks, side view, no floor shadow
+```
+Delivered SIX birds; one removed in PIL (connected components) to land inside the 4-5 spec.
+v1 [FAIL]: "a loose flock of five tiny dark distant bird silhouettes shaped like flat letter m, scattered across the canvas..." — a size-ordered LINE of round beaked birds, like an animation strip.
+v2 [FAIL]: "...each one a simple wide checkmark shape of two curved wings, scattered at different heights..." — good scatter but two of five marks were asterisks that read as sparkles, not birds.
+v3 [FAIL]: the v4 prompt without "spread out across the whole canvas from left edge to right edge" — four good birds but in a flat centered row using a third of the canvas.

@@ -80,3 +80,22 @@ durations and ticker lines make it a shift. The device plays it like anything el
   full-wall tile grid that made bathroom-bare too busy.
 - Night scenes come out flat-dark and muddled in the midground (backyard-night, generated
   but not installed) — daylight scenes carry the house style better.
+
+## Lessons from the third run (2026-08-18, environment starter set, 12 assets in 21 gens, $0.15)
+
+- **The background remover eats thin, pale and glowy shapes.** "wispy... wide and thin"
+  and "a soft orange and pink glow" both returned COMPLETELY EMPTY PNGs (0 opaque pixels)
+  under no_background — the whole subject went with the background. Fix: describe a SOLID
+  body ("smooth white rounded bar shape", "solid orange half disc") and never use glow
+  words. Check `Image.getbbox()` programmatically before judging any piece — an empty
+  sprite thumbnails as innocent blank white.
+- **Mood words summon faces on scenery.** "grumpy shading" put a full kawaii face on the
+  storm cloud even with "no face" in the prompt; a face also snuck onto the shooting star
+  and a red eye onto the flying bird. Scenery pieces must stay mood-free AND carry an
+  explicit "no face no eyes no mouth" / "plain solid silhouette" clause.
+- **Multi-object scatter sprites default to a neat row.** Three flock rolls produced lines
+  before "spread out across the whole canvas from left edge to right edge at different
+  heights" got a real scatter. Counts drift by one either way — remove or keep an extra
+  via connected-component scrub in PIL rather than re-rolling.
+- Whites/greys (clouds, moon) reuse the porcelain fix: drop "warm colors", say the color
+  plus "soft gray shading, big and centered filling the canvas".
