@@ -99,3 +99,32 @@ durations and ticker lines make it a shift. The device plays it like anything el
   via connected-component scrub in PIL rather than re-rolling.
 - Whites/greys (clouds, moon) reuse the porcelain fix: drop "warm colors", say the color
   plus "soft gray shading, big and centered filling the canvas".
+
+## Lesson from the character-pack idle runs (2026-08-18, owner ruling)
+
+- **Never name a body part you want ABSENT from a view — including with a negative.** The
+  bunny prompts said the tail is "never visible from the front and never held in the hands"
+  and the model put a tail on the front twice running (once in the left hand, once centred on
+  the bib). Naming it summons it — the same mechanism as "grumpy shading" summoning a face on
+  the storm cloud. Words like "no tail" are still the word "tail".
+- The cure is SURGERY plus a clean reference, not another roll: fix the offending view
+  deterministically (PIL fill over flat regions, or inpaint), then derive the 8 rotations
+  with v3 + reference_image from the fixed view. Prompt-only re-rolls of the whole base are
+  the lottery; the reference route is the croc-proven fix.
+- **Pin colors with words every time** (owner): describe the exact fur/marking colors in the
+  prompt rather than accepting the palette the model picks. If the shape is right and only
+  colors are wrong, prefer the recolour pair-swap over a re-roll.
+
+## Phase-2 doctrine updates (owner, 2026-08-18, after base sign-off)
+
+- **Never name the pocket either.** "no pockets, no buttons" put a pocket on the bib in
+  five out of five overalls rolls — same summoning mechanism as the tail. Describe what IS
+  there ("a completely blank smooth square bib") and never the thing that must be absent.
+- **Owner-ratified detail overrides the flat contract** when it reads at device size: the
+  kept cat has tabby stripes, whiskers and a smile; the kept penguin has a cream belly with
+  an orange chest band and gloss shading. The croc contract stays the default for NEW
+  generations, but a keep decision by the owner is final and is not "drift" to be fixed.
+- **Exact anchor colours are an INSTALL-time pair-swap, never a generation-time hope.** A
+  pixel audit found ZERO anchor purples in any kept base. At install, the garment's
+  base+shade pair is remapped to exactly #9151d3/#5d229d (pairs, never flattened; fur and
+  everything else untouched). Prompts only need to land NEAR purple.
