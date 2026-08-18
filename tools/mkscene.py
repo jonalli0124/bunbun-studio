@@ -16,9 +16,9 @@ OUT   = os.path.join(TOOLS, 'build', 'scene_data.js')
 
 # from components/bunbun/game.h — the real gameplay window
 SCR_W, SCR_H, FLOOR_Y = 320, 240, 200
+# Adult-only (Jon 8/18): one age, and it is adult. The device keeps its own phases;
+# the tools preview the adult he will be.
 PHASES = {
-    "baby":  {"scale": 0.78 * 1.45, "bounds": [34, 288, FLOOR_Y - 26, FLOOR_Y + 8],
-              "prefix": "Baby_",  "travel": "Crawl"},
     "adult": {"scale": 1.00 * 1.45, "bounds": [26, 298, FLOOR_Y - 24, FLOOR_Y + 30],
               "prefix": "Adult_", "travel": "Walk"},
 }

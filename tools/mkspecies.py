@@ -21,7 +21,7 @@ generated. Rotational source clips (Idle/Sit/Sleep) contribute a held rotation, 
 import pathlib, shutil, sys
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
-OUT_ROOT = pathlib.Path(__file__).resolve().parent.parent / "pak-factory" / "assets"
+OUT_ROOT = pathlib.Path("C:/Users/Jon/Downloads/bunbun_web_test/assets")
 
 # The pack's characters are drawn LARGE in their 96px canvas (capybara idle: 58px wide) while
 # the base bunny occupies 27px of his - and the device draws every species at the same canvas

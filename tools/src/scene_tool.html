@@ -188,6 +188,18 @@
       <input id="sceneName" placeholder="e.g. cozy morning" style="width:100%;padding:8px;
         font:inherit;font-weight:600;border:1px solid var(--line);border-radius:8px;
         background:var(--bg);color:var(--ink);margin-bottom:10px">
+      <label>this room is <span class="hint">&mdash; acts travel to the room that owns them</span></label>
+      <select id="sceneRole">
+        <option value="">the main room</option>
+        <option value="kitchen">the kitchen &mdash; EAT comes here</option>
+        <option value="bathroom">the bathroom &mdash; BATH comes here</option>
+        <option value="work">work &mdash; the WORK button comes here</option>
+      </select>
+      <div id="workLenRow" style="display:none;margin-top:6px">
+        <label>work lasts <span id="wkl">10</span> min
+          <span class="hint">&mdash; the session owns the clock; his job never stops early</span></label>
+        <input type="range" id="wk" min="1" max="60" step="1" value="10" style="width:100%">
+      </div>
       <label>the room</label>
       <select id="room"></select>
 
@@ -2182,6 +2194,8 @@ function drawAnims(){
           ?'sleep ends when bunbun&#39;s own night ends - a timer cannot own the morning'
           :'seconds; blank = two loops + a rest, the preview&#39;s own rule'}"
         style="width:52px;padding:2px 4px;font:inherit;font-size:11px;border:1px solid var(--line);border-radius:5px;background:var(--bg);color:var(--ink);${/sleep/i.test(a.clip)?'opacity:.45':''}">
+      <label class="hint" style="flex:0 0 auto" title="ties this animation to the WORK button and the work session">
+        <input data-work="${i}" type="checkbox" ${a.isWork?'checked':''}> his job</label>
       <span class="hint" style="flex:0 0 auto">s &middot; he says</span>
       <input data-txt="${i}" value="${(a.says||'').replace(/"/g,'&quot;')}"
         placeholder="the ticker line (blank = stock)" maxlength="42"
@@ -2191,6 +2205,9 @@ function drawAnims(){
   $('anims').querySelectorAll('[data-dur]').forEach(inp=>{ inp.onclick=e=>e.stopPropagation();
     inp.onchange=e=>{ const a=anims[+inp.dataset.dur];
       a.dur=Math.max(0,Math.min(120,+e.target.value||0))||undefined; autosave(); } });
+  $('anims').querySelectorAll('[data-work]').forEach(inp=>{ inp.onclick=e=>e.stopPropagation();
+    inp.onchange=e=>{ const a=anims[+inp.dataset.work];
+      a.isWork=e.target.checked||undefined; autosave(); } });
   $('anims').querySelectorAll('[data-txt]').forEach(inp=>{ inp.onclick=e=>e.stopPropagation();
     inp.onchange=e=>{ const a=anims[+inp.dataset.txt];
       a.says=(e.target.value||'').trim().slice(0,42)||undefined; autosave(); } });
@@ -3040,6 +3057,8 @@ function inscribedBounds(pts){
 function deviceScene(animPlan){
   const out={name:((($('sceneName')&&$('sceneName').value)||scene.room||'scene').slice(0,20))};
   if(scene.room) out.room='rooms/room-'+scene.room;
+  if(scene.role) out.role=scene.role;
+  if(scene.role==='work') out.wk=scene.workMin||10;
   // PAINTER'S ORDER TRAVELS AS ARRAY ORDER: within a z pass the device draws props in the
   // order they arrive, so the array is sorted back-to-front by baseline here - the same
   // painter's rule this page draws with. A rug lies under everything at z=-1; the rest sit
@@ -3157,7 +3176,7 @@ async function buildPortPayload(setB){
       // the top level marked area-bound sleeps as "anywhere" (Jon's sleep, mislabeled)
       // the SEMANTIC KIND, from the clip: how a device button or mood finds this animation
       const actOf=(a.clip||'').replace(/^(Adult|Baby)_/,'').toLowerCase().split('_')[0];
-      const act=({bathe:'bath'})[actOf]||actOf;
+      const act=a.isWork?'work':(({bathe:'bath'})[actOf]||actOf);
       plan.anims.push({k:key, f:'canim/'+slug, n:n, act:act.slice(0,7),
         ...(a.dur>0?{dur:+(+a.dur).toFixed(1)}:{}),
         ...(a.says?{txt:a.says.slice(0,42)}:{}),
@@ -3263,7 +3282,8 @@ async function sendToBunbun(){
     // 6. the scene itself, then one restart so it reads it
     setB('sending the scene…');
     if(body.length>8192) throw new Error(`scene is ${body.length} bytes; the device reads 8192`);
-    const r2=await fetch(`http://${ip}/api/fs/upload?path=/spiffs/scene.json`,
+    const rolePath=scene.role&&scene.role!=='main'?`/spiffs/scene-${scene.role}.json`:'/spiffs/scene.json';
+    const r2=await fetch(`http://${ip}/api/fs/upload?path=${rolePath}`,
       {method:'POST', headers:{'Content-Type':'application/json'}, body});
     if(!r2.ok) throw new Error('scene upload failed: '+r2.status);
     await fetch(`http://${ip}/api/system/restart`,{method:'POST'}).catch(()=>{});
@@ -3288,6 +3308,14 @@ async function sendToBunbun(){
   }finally{
     B.disabled=false; B.textContent='🐇 Send to bunbun';
   }
+}
+$('sceneRole').onchange=e=>{ scene.role=e.target.value||undefined;
+  $('workLenRow').style.display=scene.role==='work'?'':'none'; autosave(); };
+$('wk').oninput=e=>{ scene.workMin=+e.target.value; $('wkl').textContent=e.target.value; autosave(); };
+function syncRoleUI(){
+  $('sceneRole').value=scene.role||'';
+  $('workLenRow').style.display=scene.role==='work'?'':'none';
+  $('wk').value=scene.workMin||10; $('wkl').textContent=scene.workMin||10;
 }
 $('sendDev').onclick=sendToBunbun;
 try{ $('devIp').value=localStorage.getItem('bunbun-device-ip')||'' }catch(e){}
@@ -3722,7 +3750,7 @@ function session(){
     anims: anims.map(a=>({name:a.name, on:a.on, rule:a.rule, clip:a.clip, fps:a.fps,
                           character:a.character, order:a.order, layers:a.layers,
                           stage:a.stage, place:a.place, depth:a.depth, facing:a.facing,
-                          dur:a.dur, says:a.says,
+                          dur:a.dur, says:a.says, isWork:a.isWork,
                           isIdle:a.isIdle, locked:a.locked,
                           savedAt:a.savedAt, fromFile:a.fromFile, hidden:a.hidden})),
     light:{todMin, todOn, lampMode, lightScale},
@@ -3847,9 +3875,11 @@ async function restore(raw){
     if(a.hidden) made.hidden=true;
     if(a.dur)  made.dur=a.dur;      // the seconds a kid typed
     if(a.says) made.says=a.says;    // and the words - lost on every refresh before (Mila x3)
+    if(a.isWork) made.isWork=true;  // his job survives a refresh too
     await loadArtFor(made);
   }
   rebuildClouds(); weatherInit(scene.room); litCache.key='';
+  if(typeof syncRoleUI==='function') syncRoleUI();
   return {objects:scene.objects.length, anims:anims.length,
           zones:scene.zones.length, dropped:(p.anims||[]).length-anims.length};
 }

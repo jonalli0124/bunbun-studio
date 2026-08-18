@@ -28,6 +28,29 @@
 #include "cJSON.h"
 
 #define SCENE_PATH        "/spiffs/scene.json"
+// ROOMS WITH ROLES (Jon 8/18: "define some scenes, work, bathroom, kitchen, main room.
+// Each one tied to an action... he does this by walking to the side of the screen").
+// A world is nothing but role-tagged scene files; a device with only scene.json behaves
+// exactly as before. Kitchen lives to the LEFT of the main room, bathroom and work to
+// the RIGHT - that is all the geometry there is.
+#define SCENE_ROLE_MAIN     0
+#define SCENE_ROLE_KITCHEN  1
+#define SCENE_ROLE_BATH     2
+#define SCENE_ROLE_WORK     3
+static const char *SCENE_ROLE_PATHS[4] = {
+  SCENE_PATH, "/spiffs/scene-kitchen.json", "/spiffs/scene-bathroom.json",
+  "/spiffs/scene-work.json"};
+static uint8_t g_scCurRole  = SCENE_ROLE_MAIN;   // which room he is IN
+static uint8_t g_scLoadRole = SCENE_ROLE_MAIN;   // which file sceneLoad() reads
+static bool    g_scRoleAvail[4] = {false, false, false, false};
+static int16_t g_scWorkMin = 10;                 // "work lasts [N] minutes"
+static void sceneRolesScan() {
+  for (int r = 0; r < 4; r++) {
+    FILE *f = fopen(SCENE_ROLE_PATHS[r], "rb");
+    g_scRoleAvail[r] = (f != nullptr);
+    if (f) fclose(f);
+  }
+}
 #define SCENE_MAX_PROPS   24
 #define SCENE_MAX_BLOCKS   8
 // 6144 -> 8192 when custom animations arrived: eight anims add ~600 bytes to a file that was
@@ -261,6 +284,7 @@ static void sceneEnsure() {
   if (g_scNextTry && now < g_scNextTry) return;
   g_scNextTry = now + 10000;
   g_scTries++;
+  sceneRolesScan();
   if (sceneLoad())
     Serial.printf("scene: loaded \"%s\" - %d prop(s), %d block(s), %d anim(s), bounds %s, "
                   "sky %s (try %d)\n",
@@ -295,7 +319,7 @@ static bool sceneLoad() {
   g_scLooseN = 0; g_scPerchN = 0; g_scBunN = 0; g_scLampN = 0; g_scAnimN = 0; g_scNoGoN = 0;
   g_scTravel = 0;
 
-  FILE *f = fopen(SCENE_PATH, "rb");
+  FILE *f = fopen(SCENE_ROLE_PATHS[g_scLoadRole], "rb");
   if (!f) return false;                       // no scene file: the normal case, not an error
   fseek(f, 0, SEEK_END); long len = ftell(f); fseek(f, 0, SEEK_SET);
   if (len <= 1 || len > SCENE_MAX_BYTES) { fclose(f); return false; }
@@ -318,6 +342,11 @@ static bool sceneLoad() {
   if (cJSON_IsString(nm)) { strncpy(g_scName, nm->valuestring, sizeof(g_scName) - 1); }
   const cJSON *rm = cJSON_GetObjectItem(root, "room");
   if (cJSON_IsString(rm)) { strncpy(g_scRoom, rm->valuestring, sizeof(g_scRoom) - 1); }
+  {
+    const cJSON *wk = cJSON_GetObjectItem(root, "wk");
+    g_scWorkMin = cJSON_IsNumber(wk)
+                      ? (int16_t)constrain((int)cJSON_GetNumberValue(wk), 1, 240) : 10;
+  }
 
   // the walkable rectangle
   const cJSON *b = cJSON_GetObjectItem(root, "bounds");
@@ -813,6 +842,16 @@ static bool sceneCatSpot(float *x, float *y) {
 // The room painting this scene wants, or nullptr to keep the one the pet's phase would choose.
 // Checked against the pak by the caller: a scene naming a room that was never packed must not
 // leave the room blank.
+static bool sceneLoadRole(uint8_t r) {
+  if (r > 3 || !g_scRoleAvail[r]) return false;
+  uint8_t prev = g_scLoadRole;
+  g_scLoadRole = r;
+  if (sceneLoad()) { g_scCurRole = r; sceneRolesScan(); return true; }
+  g_scLoadRole = prev;
+  return false;
+}
+static int sceneWorkMin() { return g_scWorkMin; }
+
 static const char *sceneRoom() {
   return (g_scOK && g_scRoom[0]) ? g_scRoom : nullptr;
 }

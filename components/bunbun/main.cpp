@@ -2082,7 +2082,60 @@ static const char *moodAnim() {
 // location and does the sleep animation. same concept for the bath"): find the mark whose
 // animation carries this act, walk to its doorstep, settle onto the authored spot, perform.
 // False = the scene has no such place; the caller keeps its old in-place behaviour.
+// THE DOOR IS THE SIDE OF THE SCREEN. An act whose room exists somewhere else sends him
+// to the edge, the room swaps, he walks in from the mirror edge and does the thing.
+// After the act (or a work session) he comes home the same way. If a room is not
+// defined: eat and bath simply happen here (the main-room fallback), work does not
+// happen at all - both by the owner's rule.
+static uint8_t  g_doorTrip = 0;      // 1 = walking to the exit edge
+static uint8_t  g_doorRole = 0;
+static char     g_doorAct[8] = "";
+static uint32_t g_workUntil = 0;     // the scene work session deadline; 0 = no session
+static bool sceneErrandTo(const char *act);
+static bool sceneDoorTo(uint8_t tgt, const char *act) {
+  g_performBehind = false; g_settleUntil = 0; g_watching = false;
+  // kitchen is left of the main room; bathroom and work are right. Leaving a side room
+  // always heads back toward the main room's side.
+  bool exitLeft;
+  if (g_scCurRole == SCENE_ROLE_MAIN) exitLeft = (tgt == SCENE_ROLE_KITCHEN);
+  else exitLeft = (g_scCurRole != SCENE_ROLE_KITCHEN);
+  int ex = exitLeft ? 6 : SCENE_W - 6;
+  int ey = (int)g_fy;
+  clampErrandToFloor(&ex, &ey);
+  g_tx = ex; g_ty = ey;
+  g_visit = 4;
+  g_doorTrip = 1; g_doorRole = tgt;
+  strncpy(g_doorAct, act ? act : "", sizeof(g_doorAct) - 1);
+  g_doorAct[sizeof(g_doorAct) - 1] = 0;
+  g_tripLen = sqrtf((g_tx - g_fx) * (g_tx - g_fx) + (g_ty - g_fy) * (g_ty - g_fy));
+  g_crawling = !babyCanStand(); g_crawlFrac = babyCanStand() ? 2 : 0;
+  g_holdUntil = millis() + 300;
+  g_departAt = g_holdUntil;
+  g_wanderT = 18.0f;
+  g_action = false;
+  Serial.printf("door: heading %s for role %d act '%s'\n", exitLeft ? "left" : "right",
+                (int)tgt, g_doorAct);
+  return true;
+}
+static bool sceneWorkAvail() {
+  return g_scRoleAvail[SCENE_ROLE_WORK] || sceneActMark("work") >= 0 ||
+         sceneActAnim("work") != nullptr;
+}
+
 static bool sceneErrandTo(const char *act) {
+  // WHICH ROOM does this act live in? ("if someone hits bathe... he can go to the
+  // bathroom, if he hits eat, he can go to the kitchen")
+  uint8_t want = SCENE_ROLE_MAIN;
+  if      (!strcmp(act, "bath")) want = SCENE_ROLE_BATH;
+  else if (!strcmp(act, "eat"))  want = SCENE_ROLE_KITCHEN;
+  else if (!strcmp(act, "work")) want = SCENE_ROLE_WORK;
+  uint8_t tgt = (want != SCENE_ROLE_MAIN && g_scRoleAvail[want]) ? want : SCENE_ROLE_MAIN;
+  if (!strcmp(act, "work") && tgt == SCENE_ROLE_MAIN &&
+      sceneActMark("work") < 0 && !sceneActAnim("work"))
+    return false;                    // no workplace anywhere = he does not work
+  if (tgt != g_scCurRole) return sceneDoorTo(tgt, act);
+  if (!strcmp(act, "work") && !g_workUntil)
+    g_workUntil = millis() + (uint32_t)sceneWorkMin() * 60000UL;
   int m = sceneActMark(act);
   if (m < 0) {
     // no PLACE for this act, but maybe the child's ANIMATION exists with an "anywhere"
@@ -2736,6 +2789,22 @@ static void think(float dt) {
   if (millis() < g_settleUntil) return;
   if (g_visit >= 0 && millis() >= g_settleUntil && g_tx < 0) {
     g_visit = -1;
+    // A WORK SESSION OWNS THE CLOCK (Jon: the bug collector must not stop early): while
+    // it runs, the performance ending just means the next work animation begins.
+    if (g_workUntil) {
+      if (millis() < g_workUntil &&
+          (sceneActMark("work") >= 0 || sceneActAnim("work"))) {
+        sceneErrandTo("work");
+        return;
+      }
+      g_workUntil = 0;
+      say("work is all done!");
+    }
+    // an act in another room is over: walk home
+    if (g_scCurRole != SCENE_ROLE_MAIN && !g_doorTrip) {
+      sceneDoorTo(SCENE_ROLE_MAIN, "");
+      return;
+    }
     // the performance is OVER: drop to his mood/idle right now, exactly as the preview's
     // rest does. Leaving the clip up made a 5-second duration look like 20 ("its going
     // longer than 5" - the animation kept playing while he waited to decide what was next).
@@ -2762,6 +2831,8 @@ static void think(float dt) {
     if (g_homeStage != 1 && millis() - targetAt > 9000) {
       g_tx = g_ty = -1; g_visit = -1; g_wanderT = 1.0f;
       g_performBehind = false;
+      g_doorTrip = 0; g_workUntil = 0;
+      if (g_scCurRole != SCENE_ROLE_MAIN) { sceneDoorTo(SCENE_ROLE_MAIN, ""); return; }
       if (g_sleepPending) {          // bed unreachable: sleep where he stands, never strand it
         S.lights = 0; g_sleepAtMs = millis();
         if (g_sleepPending == 2) { g_nightSleep = true; saveSleepState(3); }
@@ -2785,6 +2856,27 @@ static void think(float dt) {
       g_settleUntil = millis() + 60000;                 // ended when the visitor leaves
       g_birdLeaveAt = millis() + 3000 + esp_random() % 2000;   // 3-5s of watching
       setAnim(S.phase == PH_BABY ? "baby_sit_n" : "idle_n");
+      return;
+    }
+    if (d < 4 && g_visit == 4 && g_doorTrip) {
+      // AT THE DOOR: swap the room, walk in from the mirror edge, then do the errand
+      g_doorTrip = 0; g_tx = g_ty = -1; g_visit = -1;
+      bool exitedLeft = (g_fx < SCENE_W / 2);
+      if (!sceneLoadRole(g_doorRole)) { g_wanderT = 1.0f; return; }
+      g_cloudSceneDone = false;              // the new room's sky rules apply fresh
+      int ex2 = exitedLeft ? SCENE_W - 8 : 8;
+      int ey2 = (int)g_fy;
+      clampErrandToFloor(&ex2, &ey2);
+      g_fx = (float)ex2; g_fy = (float)ey2;
+      S.x = (int16_t)ex2; S.y = (int16_t)ey2;
+      Serial.printf("door: now in role %d\n", (int)g_scCurRole);
+      if (g_doorAct[0]) {
+        if (!strcmp(g_doorAct, "work") && !g_workUntil)
+          g_workUntil = millis() + (uint32_t)sceneWorkMin() * 60000UL;
+        if (!sceneErrandTo(g_doorAct)) sceneDoorTo(SCENE_ROLE_MAIN, "");
+      } else {
+        g_wanderT = 6.0f;                    // home again, back to his own rhythm
+      }
       return;
     }
     if (d < 4 && g_visit >= 0) {
@@ -3085,6 +3177,17 @@ static void simulate(float dt) {
   // Nor mid-dance. Same DEFERRAL as sleep rather than a cancellation: the mess still arrives
   // once the party stops, so dance mode is not a way to opt out of cleaning up.
   if (g_poopDue && millis() >= g_poopDue && S.lights && !discoDown()) {
+    // THE ONLY PASSIVE ROOM TRIP (Jon: "the if he needs to go to the bathroom is the
+    // only thing that is passive"): with a bathroom defined he takes himself there
+    // instead of leaving a mess where he stands. Kitchen and work never move on their
+    // own - buttons only.
+    if (g_scRoleAvail[SCENE_ROLE_BATH] && !g_action && !g_doorTrip && !g_sleepPending &&
+        g_scCurRole == SCENE_ROLE_MAIN) {
+      g_poopDue = 0;
+      Serial.println("nature calls: off to the bathroom");
+      sceneErrandTo("bath");
+      return;
+    }
     g_poopDue = 0;
     if (S.poopN < 4) {
       S.poopX[S.poopN] = S.x; S.poopY[S.poopN] = S.y; S.poopN++;
@@ -3728,6 +3831,7 @@ static void runMenu(int i) {
                                    say(sc ? "bunbun is too tired for school"
                                           : "bunbun is too tired to work");
                                    return; }
+              if (sceneWorkAvail() && sceneErrandTo("work")) break;
               startWork();
               break;
             }

@@ -207,7 +207,9 @@ $('go').onclick=async()=>{
     if(!r1.ok) throw new Error('art upload failed: '+r1.status);
     await waitBack();
     mark(3,'done'); mark(4,'doing');
-    const r2=await fetch('/api/fs/upload?path=/spiffs/scene.json',
+    const role=bundle.sceneObj.role;
+    const rolePath=(role&&role!=='main')?`/spiffs/scene-${role}.json`:'/spiffs/scene.json';
+    const r2=await fetch('/api/fs/upload?path='+rolePath,
       {method:'POST',headers:{'Content-Type':'application/json'},body:bundle.sceneText});
     if(!r2.ok) throw new Error('scene upload failed: '+r2.status);
     mark(4,'done'); mark(5,'doing');
