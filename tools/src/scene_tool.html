@@ -318,6 +318,7 @@
       <div class="row" style="margin-top:8px">
         <button class="mini" id="rn">rain</button>
         <button class="mini" id="cl">clouds</button>
+        <button class="mini" id="st" title="tiny stars twinkle in the sky shape after dark">stars</button>
         <select id="cst" style="flex:1">
           <option value="shipped">shipped (3 sizes)</option><option value="wisps">wisps</option>
           <option value="puffs">puffs</option><option value="bank">bank</option>
@@ -327,6 +328,8 @@
       <div class="row" style="margin-top:6px">
         <div><label>clouds <span id="cnl">3</span></label>
           <input type="range" id="cn" min="0" max="10" step="1" value="3" style="width:100%"></div>
+        <div><label>stars <span id="stnl">18</span></label>
+          <input type="range" id="stn" min="0" max="40" step="1" value="18" style="width:100%"></div>
         <div><label>light size <span id="lszl">100%</span></label>
           <input type="range" id="lsz" min="30" max="220" step="5" value="100" style="width:100%"></div>
       </div>
@@ -470,6 +473,7 @@ const nice=n=>{ const w=String(n).replace(/[_-]+/g,' ').replace(/\.(png|gif)$/i,
 // ================= lighting & weather, ported from the scene builder =================
 // The builder is the lighting record; these are its functions, not new ones.
 let todMin=780, todOn=true, raining=false, clouding=false;
+let starsOn=false, starN=18;
 let cloudSpeed=1, cloudSize=1, cloudAlpha=0.72, cloudN=3, cloudStyle='shipped';
 const litCache={key:'',cv:null}, skyCache={};
 
@@ -578,7 +582,7 @@ const CLOUD_STYLES={
   puffs:  [{w:9,h:6,sp:6},{w:7,h:5,sp:8},{w:12,h:7,sp:5}],
   bank:   [{w:40,h:6,sp:4},{w:34,h:5,sp:5},{w:46,h:7,sp:3}],
   scatter:[{w:6,h:3,sp:11},{w:5,h:2,sp:13},{w:8,h:3,sp:9}]};
-const DROPS=[], CLOUDS=[];
+const DROPS=[], CLOUDS=[], STARS=[];
 let skyBox=null;
 function rebuildClouds(){
   const base=CLOUD_STYLES[cloudStyle]||CLOUD_STYLES.shipped;
@@ -616,7 +620,14 @@ function weatherInit(name){
   DROPS.length=0;
   for(let i=0;i<18;i++)DROPS.push({x:x0+Math.random()*(x1-x0),y:y0+Math.random()*(y1-y0),
     sp:26+Math.random()*18});
-  for(const c of CLOUDS){c.x=x0+Math.random()*(x1-x0);c.y=y0+2+Math.random()*Math.max(1,(y1-y0)/2)}}
+  for(const c of CLOUDS){c.x=x0+Math.random()*(x1-x0);c.y=y0+2+Math.random()*Math.max(1,(y1-y0)/2)}
+  STARS.length=0;
+  for(let i=0;i<starN;i++)for(let t=0;t<12;t++){
+    const sx=Math.round(x0+Math.random()*(x1-x0)), sy=Math.round(y0+Math.random()*(y1-y0));
+    if(skyBox.poly&&!inPoly(sx,sy,skyBox.poly))continue;
+    if(skyBox.m&&skyBox.m[sy*GAME.w+sx]!==1)continue;
+    STARS.push({x:sx,y:sy,ph:Math.random()*6.28,sp:2+Math.random()*3,big:Math.random()<0.25});
+    break}}
 
 function weatherStep(dt,name){
   const ab=authoredSky();
@@ -632,8 +643,25 @@ function weatherStep(dt,name){
 
 // both paint ONLY on sky pixels, so they stay inside the window exactly as the device keeps them
 function drawWeather(g,name,Zg){
-  if(!skyBox||(!raining&&!clouding))return;
+  if(!skyBox||(!raining&&!clouding&&!starsOn))return;
   const m=skyBox.m, W=GAME.w;
+  if(starsOn){
+    const night=nightAmount(todMin/60);
+    if(night>0.25){
+      const t=performance.now()/1000;
+      for(const st of STARS){
+        const tw=0.35+0.65*Math.abs(Math.sin(t*st.sp+st.ph));
+        const a=night*tw;
+        g.fillStyle='rgba(255,250,215,'+a.toFixed(3)+')';
+        g.fillRect(st.x*Zg,st.y*Zg,Zg,Zg);
+        if(st.big){
+          g.fillStyle='rgba(255,250,215,'+(a*0.45).toFixed(3)+')';
+          g.fillRect((st.x-1)*Zg,st.y*Zg,Zg,Zg); g.fillRect((st.x+1)*Zg,st.y*Zg,Zg,Zg);
+          g.fillRect(st.x*Zg,(st.y-1)*Zg,Zg,Zg); g.fillRect(st.x*Zg,(st.y+1)*Zg,Zg,Zg);
+        }
+      }
+    }
+  }
   if(clouding)for(const c of CLOUDS){
     g.fillStyle='rgba(255,255,255,'+cloudAlpha+')';
     for(let yy=0;yy<c.h;yy++)for(let xx=0;xx<c.w;xx++){
@@ -656,7 +684,7 @@ let wLoop=false,wLast=0;
 function startWeatherLoop(){
   if(wLoop)return; wLoop=true; wLast=performance.now();
   (function tick(){
-    if(!raining&&!clouding){wLoop=false;draw();return}
+    if(!raining&&!clouding&&!starsOn){wLoop=false;draw();return}
     const now=performance.now();
     if(now-wLast>=45){                       // ~22fps is plenty for drifting cloud
       weatherStep(Math.min(0.05,(now-wLast)/1000),scene.room); wLast=now;
@@ -2691,7 +2719,8 @@ function forDevice(){
     light:  {timeOfDay:hhmm(todMin), lamps:lampMode, lightScale:+lightScale.toFixed(2),
              note:'time of day is not sent to the device - its light follows the real clock'},
     weather:{rainCadence:raining, clouds:clouding, style:cloudStyle, count:cloudN,
-             size:+cloudSize.toFixed(2), speed:+cloudSpeed.toFixed(2), opacity:+cloudAlpha.toFixed(2)},
+             size:+cloudSize.toFixed(2), speed:+cloudSpeed.toFixed(2), opacity:+cloudAlpha.toFixed(2),
+             stars:starsOn, starCount:starN},
     keepOut:  scene.zones.filter(z=>z.kind==='keepout'&&z.on!==false).map(z=>({pts:z.pts})),
     // EVERYTHING that was decided about each animation. The first version of this listed eight
     // fields and dropped the size, the placement, the depth, the facing and the breathing - so
@@ -2770,6 +2799,10 @@ $('rn').onclick=()=>{ raining=!raining; if(raining)weatherInit(scene.room);
   $('rn').classList.toggle('pri',raining); litCache.key=''; draw() };
 $('cl').onclick=()=>{ clouding=!clouding; if(clouding)weatherInit(scene.room);
   $('cl').classList.toggle('pri',clouding); draw() };
+$('st').onclick=()=>{ starsOn=!starsOn; if(starsOn)weatherInit(scene.room);
+  $('st').classList.toggle('pri',starsOn); draw() };
+$('stn').oninput=e=>{ starN=+e.target.value; $('stnl').textContent=starN;
+  weatherInit(scene.room); draw() };
 $('cst').onchange=e=>{ cloudStyle=e.target.value; rebuildClouds(); weatherInit(scene.room); draw() };
 $('cn').oninput=e=>{ cloudN=+e.target.value; $('cnl').textContent=cloudN;
   rebuildClouds(); weatherInit(scene.room); draw() };
@@ -2782,7 +2815,7 @@ function loop(){
   if(!playing) return;
   const now=performance.now();
   if(now-lastT>=55){ const dt=Math.min(0.25,(now-lastT)/1000); tick=now/1000;
-    if(raining||clouding) weatherStep(dt, scene.room);
+    if(raining||clouding||starsOn) weatherStep(dt, scene.room);
     // "how fast the clock runs": 60 puts a whole day in 24 minutes, 180 in 8.
     if(simOn && DAYRATE>0){
       todMin=(todMin + dt*DAYRATE/60) % 1440;
@@ -3029,6 +3062,7 @@ function deviceScene(animPlan){
   else env.cn=0;
   env.rw=raining?1:0;
   if(Math.round(lightScale*100)!==100) env.ls=Math.round(lightScale*100);
+  if(starsOn) env.st=Math.min(40,starN);
   {const ab=authoredSky();
    if(ab){
      const pts=ab.poly.length<=12?ab.poly
@@ -3657,7 +3691,7 @@ function session(){
                           isIdle:a.isIdle, locked:a.locked,
                           savedAt:a.savedAt, fromFile:a.fromFile, hidden:a.hidden})),
     light:{todMin, todOn, lampMode, lightScale},
-    weather:{raining, clouding, cloudN, cloudStyle},
+    weather:{raining, clouding, cloudN, cloudStyle, starsOn, starN},
     // the children's drawn props (imported with animations) - without these a refresh
     // strands every layer that wears one
     customProps:(()=>{ const cp={};
@@ -3734,7 +3768,10 @@ async function restore(raw){
     $('rn').classList.toggle('pri',raining); $('cl').classList.toggle('pri',clouding);
     if(typeof W.cloudN==='number'){ cloudN=W.cloudN; $('cn').value=cloudN; $('cnl').textContent=cloudN }
     if(W.cloudStyle!=null){ cloudStyle=W.cloudStyle;
-      $('cst').value=cloudStyle } }
+      $('cst').value=cloudStyle }
+    starsOn=!!W.starsOn; $('st').classList.toggle('pri',starsOn);
+    if(typeof W.starN==='number'){ starN=W.starN; $('stn').value=starN;
+      $('stnl').textContent=starN } }
 
   // the art for everything restored
   await load(SD.rooms[scene.room],'room|'+scene.room);

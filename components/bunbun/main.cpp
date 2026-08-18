@@ -738,9 +738,40 @@ static bool skyPolyHit(int x, int y) {
   }
   return in;
 }
+// ENVIRONMENT-SPEC layer 3, stars: tiny pixels that twinkle inside the sky shape after
+// dark. Seeded once per room+scene onto pixels the sky rules allow (polygon, and the
+// art's own sky where the art occludes); the band renderer fades them with the same
+// daylight() curve the room grading uses, so they appear as the light goes.
+static struct { uint8_t x, y, ph, big; } g_envStars[40];
+static uint8_t g_envStarN = 0;
+static void seedSceneStars() {
+  g_envStarN = 0;
+  const SceneEnv *e = sceneEnv();
+  if (!e || e->stars <= 0 || !g_haveSky || !g_roomPix || !g_roomW) return;
+  static uint8_t srow[240];
+  int want = e->stars > 40 ? 40 : e->stars;
+  for (int i = 0; i < want; i++) {
+    for (int t = 0; t < 12; t++) {
+      int x = g_skyX0 + (int)(esp_random() % (uint32_t)max(1, g_skyX1 - g_skyX0 + 1));
+      int y = g_skyY0 + (int)(esp_random() % (uint32_t)max(1, g_skyY1 - g_skyY0 + 1));
+      if (!skyPolyHit(x, y)) continue;
+      if (!g_skyAuthored || g_skyBoxMasked) {   // the art gates wherever it can
+        pakRead(g_roomPix + (uint32_t)y * g_roomW, srow, g_roomW);
+        if (x >= g_roomW || !g_isSky[srow[x]]) continue;
+      }
+      g_envStars[g_envStarN].x = (uint8_t)x;
+      g_envStars[g_envStarN].y = (uint8_t)y;
+      g_envStars[g_envStarN].ph = (uint8_t)(esp_random() & 255);
+      g_envStars[g_envStarN].big = (esp_random() % 4) == 0;
+      g_envStarN++;
+      break;
+    }
+  }
+}
+
 static void applySceneSkyBox() {
   const SceneEnv *e = sceneEnv();
-  if (!e || e->skyW <= 0) { g_skyAuthored = false; return; }
+  if (!e || e->skyW <= 0) { g_skyAuthored = false; seedSceneStars(); return; }
   g_skyX0 = e->skyX; g_skyX1 = e->skyX + e->skyW - 1;
   g_skyY0 = e->skyY; g_skyY1 = e->skyY + e->skyH - 1;
   g_haveSky = true; g_skyAuthored = true;
@@ -757,6 +788,7 @@ static void applySceneSkyBox() {
         if (g_isSky[row[x]] && skyPolyHit(x, y)) { g_skyBoxMasked = true; break; }
     }
   }
+  seedSceneStars();
 }
 
 static void cloudsApplyScene() {
@@ -5327,6 +5359,33 @@ static void updateRain(float dt) {
     }
   }
 }
+static void drawEnvStars(uint16_t *d, int ay) {
+  if (!g_envStarN) return;
+  float night = 1.0f - daylight();
+  if (night < 0.25f) return;
+  uint8_t tbase = (uint8_t)(millis() >> 5);
+  for (int i = 0; i < g_envStarN; i++) {
+    int dy = ay - (int)g_envStars[i].y;
+    if (dy < -1 || dy > 1) continue;
+    bool big = g_envStars[i].big;
+    if (dy != 0 && !big) continue;
+    uint8_t t = (uint8_t)(tbase + g_envStars[i].ph);
+    int tri = t < 128 ? t : 255 - t;
+    float k = night * (0.35f + 0.65f * tri / 127.0f);
+    int x = g_envStars[i].x;
+    int a0 = (dy == 0 && big) ? -1 : 0, a1 = (dy == 0 && big) ? 1 : 0;
+    for (int a = a0; a <= a1; a++) {
+      int xx = x + a;
+      if (xx < 0 || xx >= UI_W) continue;
+      float ka = (a == 0 && dy == 0) ? k : k * 0.45f;
+      uint16_t v = d[xx];
+      int r = (v >> 11) & 0x1F, g = (v >> 5) & 0x3F, b = v & 0x1F;
+      r += (int)((28 - r) * ka); g += (int)((60 - g) * ka); b += (int)((30 - b) * ka);
+      d[xx] = (uint16_t)((r << 11) | (g << 5) | b);
+    }
+  }
+}
+
 static void drawRain(const uint8_t *rowIdx, uint16_t *d, int ay) {
   if (!isRaining() || !g_haveSky) return;
   if (ay < g_skyY0 || ay > g_skyY1) return;
@@ -6731,6 +6790,7 @@ static void composeRoom(int fx, int fy, float sc, int lampOn, bool cloudLit, flo
       }
       // rain on the glass. updateRain() was running and even announcing itself on the ticker,
       // but drawRain() was never called from anywhere — so no shower was ever visible.
+      drawEnvStars(d, ay);   // stars first: rain and clouds drift OVER them
       drawRain(s, d, ay);
       // W-003 afterglow: ripples during rain, then puddle + occasional
       // rainbow after. Before the clouds so they drift across the bow.

@@ -226,12 +226,13 @@ struct SceneEnv {
   // The authored weather box (Jon 8/18: "you draw a box where they occur").  Device px,
   // 240x180 space; skyW <= 0 = not authored, keep the window-detection heuristics.
   int16_t skyX, skyY, skyW, skyH;
+  int16_t stars;     // 0..40 twinkling night stars inside the sky shape; 0 = none
 };
 // the scene's travel-size dial: the species pak is baked at a fixed 0.5 of the source art
 // (quality base), and walking is scaled by (ts / 0.5) at draw time - so the assembler's
 // master dial reaches the device without rebaking a single frame
 static float g_scTravel = 0;         // 0 = the scene said nothing
-static const SceneEnv SCENE_ENV_DEFAULT = { -1, 100, 100, 60, 0, -1, 100, 0, 0, 0, 0 };
+static const SceneEnv SCENE_ENV_DEFAULT = { -1, 100, 100, 60, 0, -1, 100, 0, 0, 0, 0, 0 };
 static SceneEnv g_scEnv     = SCENE_ENV_DEFAULT;
 // the sky POLYGON ("they need to be polygons"): weather clips to the drawn shape;
 // the bbox in g_scEnv.sky* only bounds cloud drift and the row gate
@@ -583,6 +584,7 @@ static bool sceneLoad() {
     g_scEnv.cloudT = sceneEnvInt(ev, "ct",  0, SCENE_CLOUD_STYLES - 1,  0);
     g_scEnv.rainW  = sceneEnvInt(ev, "rw",  0, 3,                      -1);
     g_scEnv.lightS = sceneEnvInt(ev, "ls", 30, 220,                   100);
+    g_scEnv.stars = sceneEnvInt(ev, "st", 0, 40, 0);
     const cJSON *sp = cJSON_GetObjectItem(ev, "sp");   // the drawn sky POLYGON, flat x,y pairs
     if (cJSON_IsArray(sp)) {
       int np = cJSON_GetArraySize(sp) / 2;
