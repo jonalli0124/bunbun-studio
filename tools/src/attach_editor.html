@@ -263,6 +263,7 @@
       <input id="animName" placeholder="e.g. Bathing, silly play" style="width:100%;padding:8px;
         font:inherit;font-weight:600;border:1px solid var(--line);border-radius:8px;
         background:var(--bg);color:var(--ink);margin-bottom:10px">
+      <label>the animal</label><select id="charSel"></select>
       <label>clip</label><select id="clip"></select>
       <label style="margin-top:10px">room behind it
         <span class="hint">&mdash; a backdrop to judge against; the room itself is built in the
@@ -682,6 +683,9 @@ async function boot(){
       'No data. Either open the built page in <code>tools/build/</code>, or run '+
       '<code>py -m http.server</code> next to <code>attach_data.json</code>.</p>'; return; }
   }
+  DATA._baseClips=DATA.clips;
+  $('charSel').innerHTML='<option value="">on the device now</option>'+
+    Object.keys(DATA.characters||{}).map(k=>`<option>${k}</option>`).join('');
   $('clip').innerHTML=Object.keys(DATA.clips).map(k=>`<option>${k}</option>`).join('');
   // marks say how it feels, props are things it has - group them so the list reads
   const kindOf=k=>DATA.props[k].kind||'prop';
@@ -1665,6 +1669,19 @@ $('gzauto').onclick=()=>{ gZ=null; render() };
     dg=null; gv.style.cursor='grab' });
 })();
 $('clip').onchange=async e=>{stopT();clip=e.target.value;await ensureClip();resetOrder();gScale=null;$('gscale').value=100;$('gsv').textContent='100';render()};
+async function applyAnimal(id){
+  DATA.clips=(id&&DATA.characters&&DATA.characters[id])?DATA.characters[id].clips:DATA._baseClips;
+  for(const k of Object.keys(imgs)) if(!k.startsWith('room|')&&!k.startsWith('prop|')) delete imgs[k];
+  $('clip').innerHTML=Object.keys(DATA.clips).map(k=>`<option>${k}</option>`).join('');
+  $('aClip').innerHTML=Object.keys(DATA.clips).map(k=>`<option>${k}</option>`).join('');
+  if(DATA.clips['Adult_Idle']) $('clip').value='Adult_Idle';
+  clip=$('clip').value;
+  await ensureClip(); resetOrder();
+}
+$('charSel').onchange=async e=>{ stopT();
+  await applyAnimal(e.target.value);
+  gScale=null; $('gscale').value=100; $('gsv').textContent='100';
+  render(); autosave(); };
 $('add').onclick=async()=>{await addLayer($('addProp').value,$('anchor').value);render()};
 $('dup').onclick=async()=>{const L=cur();if(!L)return;
   await addLayer(L.prop,L.anchor,authored(L),sel+1);render()};
@@ -1909,6 +1926,7 @@ const project=()=>Object.assign({format:'bunbun-attach-project',v:1,
   kind:'one animation - re-open with load, or add to a scene in the Scene Assembler'},stamp(),
   {name:(($('animName')&&$('animName').value)||'').trim()||undefined,
    clip,fps,character:{...CH},
+   animal:(($('charSel')&&$('charSel').value)||undefined),
    room:gRoom||undefined,                    // the backdrop it was judged against, nothing more
    animRule:{...animRule},
    stage:{x:gX,y:gY,z:gZ,scale:(gScale==null?null:Math.round(gScale/GAMESCALE[guessPhase()]))},
@@ -1926,6 +1944,11 @@ async function loadProject(p){
     throw new Error(p.layers&&p.layers[0]&&p.layers[0].frames
       ? 'that is a BAKED export — import the *_project.json saved with 💾'
       : 'not an attach project file');
+  if(p.animal&&DATA.characters&&DATA.characters[p.animal]){
+    $('charSel').value=p.animal; await applyAnimal(p.animal);
+  } else if(!p.animal&&DATA.clips!==DATA._baseClips){
+    $('charSel').value=''; await applyAnimal('');
+  }
   if(!DATA.clips[p.clip]) throw new Error(`clip "${p.clip}" is not in this data set`);
   // the file's own drawings register FIRST, so its layers validate against them
   if(p.customProps) for(const k of Object.keys(p.customProps)){
