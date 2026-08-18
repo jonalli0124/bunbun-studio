@@ -2194,8 +2194,12 @@ function drawAnims(){
           ?'sleep ends when bunbun&#39;s own night ends - a timer cannot own the morning'
           :'seconds; blank = two loops + a rest, the preview&#39;s own rule'}"
         style="width:52px;padding:2px 4px;font:inherit;font-size:11px;border:1px solid var(--line);border-radius:5px;background:var(--bg);color:var(--ink);${/sleep/i.test(a.clip)?'opacity:.45':''}">
-      <label class="hint" style="flex:0 0 auto" title="ties this animation to the WORK button and the work session">
-        <input data-work="${i}" type="checkbox" ${a.isWork?'checked':''}> his job</label>
+      <select data-actas="${i}" title="what the game treats this animation as - the clip decides unless you say otherwise"
+        style="flex:0 0 auto;padding:2px;font:inherit;font-size:11px;border:1px solid var(--line);border-radius:5px;background:var(--bg);color:var(--ink)">
+        <option value="">counts as: the clip</option>
+        <option value="work" ${(a.actAs==='work'||a.isWork)?'selected':''}>his job</option>
+        <option value="wash" ${a.actAs==='wash'?'selected':''}>washing up</option>
+      </select>
       <span class="hint" style="flex:0 0 auto">s &middot; he says</span>
       <input data-txt="${i}" value="${(a.says||'').replace(/"/g,'&quot;')}"
         placeholder="the ticker line (blank = stock)" maxlength="42"
@@ -2205,9 +2209,11 @@ function drawAnims(){
   $('anims').querySelectorAll('[data-dur]').forEach(inp=>{ inp.onclick=e=>e.stopPropagation();
     inp.onchange=e=>{ const a=anims[+inp.dataset.dur];
       a.dur=Math.max(0,Math.min(120,+e.target.value||0))||undefined; autosave(); } });
-  $('anims').querySelectorAll('[data-work]').forEach(inp=>{ inp.onclick=e=>e.stopPropagation();
-    inp.onchange=e=>{ const a=anims[+inp.dataset.work];
-      a.isWork=e.target.checked||undefined; autosave(); } });
+  $('anims').querySelectorAll('[data-actas]').forEach(inp=>{ inp.onclick=e=>e.stopPropagation();
+    inp.onchange=e=>{ const a=anims[+inp.dataset.actas];
+      a.actAs=e.target.value||undefined;
+      a.isWork=a.actAs==='work'||undefined;      // the old field follows along
+      autosave(); } });
   $('anims').querySelectorAll('[data-txt]').forEach(inp=>{ inp.onclick=e=>e.stopPropagation();
     inp.onchange=e=>{ const a=anims[+inp.dataset.txt];
       a.says=(e.target.value||'').trim().slice(0,42)||undefined; autosave(); } });
@@ -3176,7 +3182,7 @@ async function buildPortPayload(setB){
       // the top level marked area-bound sleeps as "anywhere" (Jon's sleep, mislabeled)
       // the SEMANTIC KIND, from the clip: how a device button or mood finds this animation
       const actOf=(a.clip||'').replace(/^(Adult|Baby)_/,'').toLowerCase().split('_')[0];
-      const act=a.isWork?'work':(({bathe:'bath'})[actOf]||actOf);
+      const act=a.actAs?a.actAs:(a.isWork?'work':(({bathe:'bath'})[actOf]||actOf));
       plan.anims.push({k:key, f:'canim/'+slug, n:n, act:act.slice(0,7),
         ...(a.dur>0?{dur:+(+a.dur).toFixed(1)}:{}),
         ...(a.says?{txt:a.says.slice(0,42)}:{}),
@@ -3750,7 +3756,7 @@ function session(){
     anims: anims.map(a=>({name:a.name, on:a.on, rule:a.rule, clip:a.clip, fps:a.fps,
                           character:a.character, order:a.order, layers:a.layers,
                           stage:a.stage, place:a.place, depth:a.depth, facing:a.facing,
-                          dur:a.dur, says:a.says, isWork:a.isWork,
+                          dur:a.dur, says:a.says, isWork:a.isWork, actAs:a.actAs,
                           isIdle:a.isIdle, locked:a.locked,
                           savedAt:a.savedAt, fromFile:a.fromFile, hidden:a.hidden})),
     light:{todMin, todOn, lampMode, lightScale},
@@ -3876,6 +3882,7 @@ async function restore(raw){
     if(a.dur)  made.dur=a.dur;      // the seconds a kid typed
     if(a.says) made.says=a.says;    // and the words - lost on every refresh before (Mila x3)
     if(a.isWork) made.isWork=true;  // his job survives a refresh too
+    if(a.actAs)  made.actAs=a.actAs;
     await loadArtFor(made);
   }
   rebuildClouds(); weatherInit(scene.room); litCache.key='';

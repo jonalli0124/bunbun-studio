@@ -2091,6 +2091,11 @@ static uint8_t  g_doorTrip = 0;      // 1 = walking to the exit edge
 static uint8_t  g_doorRole = 0;
 static char     g_doorAct[8] = "";
 static uint32_t g_workUntil = 0;     // the scene work session deadline; 0 = no session
+// THE POTTY ROUTINE (Jon: "he should walk to bathroom and do a defined sit action and
+// then wash hands before going back to main room"). Reads the bathroom scene's own
+// tags: the sit act is the toilet, the bath act is the sink. 1 = sitting, 2 = washing.
+static uint8_t g_pottySeq  = 0;
+static bool    g_pottyLock = false;  // routine-internal dispatches don't cancel it
 static bool sceneErrandTo(const char *act);
 static bool sceneDoorTo(uint8_t tgt, const char *act) {
   g_performBehind = false; g_settleUntil = 0; g_watching = false;
@@ -2130,13 +2135,17 @@ static bool sceneWorkAvail() {
 }
 
 static bool sceneErrandTo(const char *act) {
+  if (!g_pottyLock) g_pottySeq = 0;  // any real command outranks the routine
   // WHICH ROOM does this act live in? ("if someone hits bathe... he can go to the
   // bathroom, if he hits eat, he can go to the kitchen")
   uint8_t want = SCENE_ROLE_MAIN;
   if      (!strcmp(act, "bath")) want = SCENE_ROLE_BATH;
   else if (!strcmp(act, "eat"))  want = SCENE_ROLE_KITCHEN;
   else if (!strcmp(act, "work")) want = SCENE_ROLE_WORK;
-  uint8_t tgt = (want != SCENE_ROLE_MAIN && g_scRoleAvail[want]) ? want : SCENE_ROLE_MAIN;
+  // routed acts fall back to the MAIN room; everything else (sit, the emotions) happens
+  // wherever he already is - a sit must never drag him through a door
+  bool routed = (want != SCENE_ROLE_MAIN);
+  uint8_t tgt = routed ? (g_scRoleAvail[want] ? want : SCENE_ROLE_MAIN) : g_scCurRole;
   if (!strcmp(act, "work") && tgt == SCENE_ROLE_MAIN &&
       sceneActMark("work") < 0 && !sceneActAnim("work"))
     return false;                    // no workplace anywhere = he does not work
@@ -2641,7 +2650,39 @@ static void think(float dt) {
   // cuddle actually show its animation instead of being overwritten by danceStep every frame.
   // danceBegin() clears stale actions when the party starts, so the only actions that reach
   // here during dance are ones deliberately allowed through the menu (cuddles).
-  if (g_action) { if (millis() >= g_actionEnd) g_action = false; else return; }
+  if (g_action) {
+    if (millis() >= g_actionEnd) {
+      g_action = false;
+      if (g_pottySeq == 1) {
+        g_pottySeq = 2;
+        const char *washAct = (sceneActMark("wash") >= 0 || sceneActAnim("wash")) ? "wash"
+                            : (sceneActMark("bath") >= 0 || sceneActAnim("bath")) ? "bath"
+                            : nullptr;
+        if (washAct) {
+          g_pottyLock = true;
+          bool ok = sceneErrandTo(washAct);
+          g_pottyLock = false;
+          if (ok) return;
+        }
+        g_pottySeq = 0;
+      } else if (g_pottySeq == 2) {
+        g_pottySeq = 0;
+      }
+      if (g_workUntil) {
+        if (millis() < g_workUntil &&
+            (sceneActMark("work") >= 0 || sceneActAnim("work"))) {
+          sceneErrandTo("work");
+          return;
+        }
+        g_workUntil = 0;
+        say("work is all done!");
+      }
+      if (g_scCurRole != SCENE_ROLE_MAIN && !g_doorTrip) {
+        sceneDoorTo(SCENE_ROLE_MAIN, "");
+        return;
+      }
+    } else return;
+  }
 
   if (discoDown() && S.lights && !S.sick) { danceStep(dt); return; }
   if (!S.lights) {
@@ -2795,12 +2836,31 @@ static void think(float dt) {
   if (g_dbgAct[0]) {
     char a[8]; strncpy(a, g_dbgAct, sizeof(a)); a[7] = 0; g_dbgAct[0] = 0;
     Serial.printf("debug act: %s\n", a);
-    sceneErrandTo(a);
+    if (!strcmp(a, "potty")) g_poopDue = millis() + 1500;
+    else sceneErrandTo(a);
   }
   // settled into a piece of furniture â€” hold the pose until it times out
   if (millis() < g_settleUntil) return;
   if (g_visit >= 0 && millis() >= g_settleUntil && g_tx < 0) {
     g_visit = -1;
+    if (g_pottySeq == 1) {
+      g_pottySeq = 2;
+      // the SINK is act 'wash' ("counts as: washing up"); only if the bathroom has no
+      // sink does the routine settle for the tub - so the BATHE button's bath/shower
+      // and the potty's hand-wash never fight over the same tag
+      const char *washAct = (sceneActMark("wash") >= 0 || sceneActAnim("wash")) ? "wash"
+                          : (sceneActMark("bath") >= 0 || sceneActAnim("bath")) ? "bath"
+                          : nullptr;
+      if (washAct) {
+        g_pottyLock = true;
+        bool ok = sceneErrandTo(washAct);  // wash those hands
+        g_pottyLock = false;
+        if (ok) return;
+      }
+      g_pottySeq = 0;                      // no sink here: straight home
+    } else if (g_pottySeq == 2) {
+      g_pottySeq = 0;                      // hands washed; the home walk below takes over
+    }
     // A WORK SESSION OWNS THE CLOCK (Jon: the bug collector must not stop early): while
     // it runs, the performance ending just means the next work animation begins.
     if (g_workUntil) {
@@ -2843,7 +2903,7 @@ static void think(float dt) {
     if (g_homeStage != 1 && millis() - targetAt > 9000) {
       g_tx = g_ty = -1; g_visit = -1; g_wanderT = 1.0f;
       g_performBehind = false;
-      g_doorTrip = 0; g_workUntil = 0;
+      g_doorTrip = 0; g_workUntil = 0; g_pottySeq = 0;
       if (g_scCurRole != SCENE_ROLE_MAIN) { sceneDoorTo(SCENE_ROLE_MAIN, ""); return; }
       if (g_sleepPending) {          // bed unreachable: sleep where he stands, never strand it
         S.lights = 0; g_sleepAtMs = millis();
@@ -2885,7 +2945,10 @@ static void think(float dt) {
       if (g_doorAct[0]) {
         if (!strcmp(g_doorAct, "work") && !g_workUntil)
           g_workUntil = millis() + (uint32_t)sceneWorkMin() * 60000UL;
-        if (!sceneErrandTo(g_doorAct)) sceneDoorTo(SCENE_ROLE_MAIN, "");
+        g_pottyLock = (g_pottySeq != 0);
+        bool ok = sceneErrandTo(g_doorAct);
+        g_pottyLock = false;
+        if (!ok) { g_pottySeq = 0; sceneDoorTo(SCENE_ROLE_MAIN, ""); }
       } else {
         g_wanderT = 6.0f;                    // home again, back to his own rhythm
       }
@@ -3197,11 +3260,14 @@ static void simulate(float dt) {
         g_scCurRole == SCENE_ROLE_MAIN) {
       g_poopDue = 0;
       Serial.println("nature calls: off to the bathroom");
-      sceneErrandTo("bath");
+      g_pottySeq = 1;
+      g_pottyLock = true;
+      sceneDoorTo(SCENE_ROLE_BATH, "sit");
+      g_pottyLock = false;
       return;
     }
     g_poopDue = 0;
-    if (S.poopN < 4) {
+    if (false && S.poopN < 4) {   // retired: nothing drops on the floor any more
       S.poopX[S.poopN] = S.x; S.poopY[S.poopN] = S.y; S.poopN++;
       S.clean = max(0.0f, S.clean - 8.0f);
       sfxPlop();                       // W-046, per Piper: "PLOP. hehehehe."
