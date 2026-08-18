@@ -1,0 +1,928 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<title>bunbun frame reviewer</title>
+<!--
+  Stage 0 of CHARACTER-PACKS.md §6. Standalone: no build step, no dependencies, no network.
+  Open it by double-clicking. Everything runs from file://.
+
+  It exists to turn "generate → pak → flash → discover the sliver" into "generate → look".
+
+  CONSTANTS ARE MIRRORED FROM tools/convert_assets.ps1 AND MUST NOT DIVERGE.
+    SAT 1.30 / WHITE 246.0 ....... convert_assets.ps1:57-58
+    alpha >= 128 for the trim bbox convert_assets.ps1:98
+    round-to-nearest RGB565 ...... convert_assets.ps1:70-72
+  If that script changes, change the three constants below in the same commit.
+
+  Files are read via FileReader → data: URL rather than URL.createObjectURL. A blob: URL
+  minted by a file:// document has an opaque origin and TAINTS the canvas, so getImageData
+  throws and the trim box and panel correction both silently die. data: URLs never taint.
+-->
+<style>
+  :root { --bg:#15161a; --panel:#1d1f25; --line:#2f333d; --ink:#e6e8ee; --dim:#868d9c;
+          --hold:#ffcf3f; --wear:#4fc3f7; --trim:#ff4d6d; }
+  * { box-sizing:border-box }
+  /* main is display:flex, which outranks the UA [hidden] rule — without this the view
+     switcher appears to do nothing at all */
+  [hidden] { display:none !important }
+  body { margin:0; background:var(--bg); color:var(--ink);
+         font:13px/1.45 ui-monospace,Consolas,monospace }
+  header { display:flex; flex-wrap:wrap; gap:14px; align-items:center;
+           padding:10px 14px; background:var(--panel); border-bottom:1px solid var(--line);
+           position:sticky; top:0; z-index:5 }
+  .grp { display:flex; gap:6px; align-items:center }
+  .grp > b { color:var(--dim); font-weight:400; letter-spacing:.04em }
+  button, select, input { font:inherit; background:#262931; color:var(--ink);
+                          border:1px solid var(--line); border-radius:4px; padding:3px 8px }
+  button { cursor:pointer } button:hover { background:#303540 }
+  button.on { background:#3a4152; border-color:#5a668a; color:#fff }
+  input[type=number] { width:56px } input[type=text] { width:150px }
+  main { display:flex; gap:12px; padding:12px; align-items:flex-start }
+  .slot { flex:1 1 0; min-width:0; background:var(--panel);
+          border:1px solid var(--line); border-radius:6px }
+  .slot h2 { margin:0; padding:8px 10px; font-size:12px; font-weight:600;
+             border-bottom:1px solid var(--line); display:flex; gap:8px; align-items:center }
+  .slot h2 .sp { flex:1 }
+  .bar { display:flex; flex-wrap:wrap; gap:6px; align-items:center;
+         padding:7px 10px; border-bottom:1px solid var(--line) }
+  .stage { display:flex; justify-content:center; align-items:center; padding:18px 10px;
+           min-height:180px; background:#0e0f12;
+           background-image:linear-gradient(45deg,#191b20 25%,transparent 25%,transparent 75%,#191b20 75%),
+                            linear-gradient(45deg,#191b20 25%,transparent 25%,transparent 75%,#191b20 75%);
+           background-size:16px 16px; background-position:0 0,8px 8px }
+  canvas { image-rendering:pixelated; cursor:crosshair; display:block }
+  .read { padding:6px 10px; color:var(--dim); font-size:11.5px; white-space:pre-wrap;
+          border-top:1px solid var(--line) }
+  footer { padding:12px; }
+  .exp { background:var(--panel); border:1px solid var(--line); border-radius:6px; padding:10px }
+  textarea { width:100%; height:150px; background:#0e0f12; color:var(--ink);
+             border:1px solid var(--line); border-radius:4px; padding:8px;
+             font:12px/1.4 ui-monospace,Consolas,monospace; resize:vertical }
+  .note { color:var(--dim); font-size:11.5px; margin:6px 0 }
+  /* contact sheet */
+  #grid { display:grid; gap:6px; padding:10px; overflow-x:auto; align-items:start }
+  .gh { color:var(--dim); font-size:11px; text-align:center; padding-bottom:2px }
+  .gh.core { color:var(--ink) }
+  .grow { color:var(--dim); font-size:11px; align-self:center; padding-right:8px;
+          white-space:nowrap }
+  .cell { border:1px solid var(--line); border-radius:4px; padding:4px;
+          display:flex; flex-direction:column; align-items:center; gap:3px; background:#0e0f12 }
+  .cell.core { border-color:#5a668a }
+  .cell.miss { background:#17181c; border-style:dashed; color:#5b6270; min-height:52px;
+               justify-content:center }
+  .cell .cn { font-size:10.5px; color:var(--dim); white-space:nowrap }
+  #runlog { border-top:1px solid var(--line); padding:10px }
+  table { border-collapse:collapse; width:100%; font-size:11.5px }
+  th, td { text-align:left; padding:3px 8px 3px 0; border-bottom:1px solid var(--line);
+           vertical-align:top }
+  th { color:var(--dim); font-weight:400 }
+  .bad { color:#ff8fa3 } .good { color:#7fd1a0 }
+  kbd { background:#262931; border:1px solid var(--line); border-radius:3px; padding:0 4px }
+  .sw { display:inline-block; width:9px; height:9px; border-radius:2px; vertical-align:baseline }
+</style>
+
+<header>
+  <div class="grp">
+    <button id="vFrames" class="on">frames</button><button id="vSheet">species</button><button id="vComp">composite</button>
+  </div>
+  <div class="grp"><b>fps</b><input type="number" id="fps" value="5" min="1" max="60"></div>
+  <div class="grp">
+    <button id="play">▶ play</button>
+    <button id="prev">◀</button><button id="next">▶</button>
+    <span id="tick" style="color:var(--dim)">frame 0</span>
+  </div>
+  <div class="grp"><b>zoom</b>
+    <select id="zoom">
+      <option value="1" selected>1:1 — panel scale</option>
+      <option value="2">2×</option><option value="3">3×</option>
+      <option value="4">4×</option><option value="6">6×</option><option value="8">8×</option>
+    </select>
+    <span id="dpr" style="color:var(--dim)"></span>
+  </div>
+  <div class="grp"><b>view</b>
+    <button id="tOnion">onion 30%</button>
+    <button id="tTrim">alpha-128 box</button>
+    <button id="tCorr">panel correction</button>
+  </div>
+  <div class="grp"><b>place</b>
+    <select id="mode">
+      <option value="">— off —</option>
+      <option value="hold">hold</option>
+      <option value="wear">wear</option>
+    </select>
+    <button id="clr">clear this frame</button>
+    <button id="clrAll">clear all</button>
+  </div>
+</header>
+
+<main>
+  <section class="slot" data-slot="A"></section>
+  <section class="slot" data-slot="B"></section>
+</main>
+
+<section id="sheet" hidden style="padding:12px">
+  <div class="exp" style="padding:0">
+    <div class="bar">
+      <button id="shLoad">load characters/&lt;id&gt;/ …</button>
+      <span id="shId" style="color:var(--dim)">no species loaded</span>
+      <span style="flex:1"></span>
+      <span class="note" style="margin:0">
+        same zoom and panel correction as the slots — Checkpoint B judges this at 1:1 ·
+        <span class="sw" style="background:#5a668a"></span> core five
+      </span>
+    </div>
+    <div id="badphase" class="note bad" hidden style="padding:8px 10px 0"></div>
+    <div id="grid"></div>
+    <div id="runlog"></div>
+  </div>
+  <input type="file" id="shFiles" webkitdirectory directory multiple hidden>
+</section>
+
+<!-- ---- three-part composite (§2, §6.3) ------------------------------------------------
+     Parts are not what ships. A head that reads beautifully on its own can sit a pixel
+     proud of the shoulder on every frame, and nothing but the assembled animal at 1:1 will
+     say so. This view is the whole reason Checkpoint A can answer §4.2 by looking. -->
+<section id="comp" hidden style="padding:12px">
+  <div class="exp" style="padding:0">
+    <div class="bar">
+      <button id="cBody">body…</button><span id="cBodyN" style="color:var(--dim)">none</span>
+      <button id="cHead">head…</button><span id="cHeadN" style="color:var(--dim)">none</span>
+      <button id="cTail">tail…</button><span id="cTailN" style="color:var(--dim)">none</span>
+      <span style="flex:1"></span>
+      <b style="color:var(--dim)">key</b>
+      <input type="text" id="cKey" placeholder="idle-anim" style="width:130px">
+    </div>
+    <div class="bar">
+      <button id="cAttachBtn">character.json…</button>
+      <span id="cAttachN" style="color:var(--dim)">no attach block — using centred defaults</span>
+      <span style="flex:1"></span>
+      <b style="color:var(--dim)">tail z</b>
+      <select id="cZ">
+        <option value="auto" selected>from attach</option>
+        <option value="behind">force behind</option>
+        <option value="front">force front</option>
+      </select>
+      <button id="cParts">show part boxes</button>
+    </div>
+    <div style="padding:10px">
+      <canvas id="cCv" style="image-rendering:pixelated"></canvas>
+      <pre id="cRead" style="color:var(--dim);font-size:11.5px;margin:8px 0 0"></pre>
+    </div>
+    <p class="note" style="padding:0 10px 10px">
+      Draw order is <b>tail(behind) → body → head → wear → hold</b> (§2.1). <code>wear</code>
+      resolves against the <b>head</b>, not the body, so a hat follows the snout — that
+      ordering is a hard dependency, not a preference. Offsets are untrimmed-space: the part's
+      own top-left lands on the point.
+    </p>
+  </div>
+  <input type="file" id="cBodyF" webkitdirectory directory multiple hidden>
+  <input type="file" id="cHeadF" webkitdirectory directory multiple hidden>
+  <input type="file" id="cTailF" webkitdirectory directory multiple hidden>
+  <input type="file" id="cAttachF" accept=".json" hidden>
+</section>
+
+<footer>
+  <div class="exp">
+    <div class="grp" style="margin-bottom:8px">
+      <b>export</b>
+      <button id="expA">slot A</button><button id="expB">slot B</button>
+      <button id="expBoth">both</button>
+      <button id="dl">download .json</button>
+      <span class="note" style="margin:0">
+        <code>"space":"untrimmed"</code> — offsets from the original frame origin, not the
+        trim bbox; the object's own top-left lands on the point
+      </span>
+    </div>
+    <textarea id="out" spellcheck="false" placeholder="place a marker, then hit an export button"></textarea>
+    <p class="note">
+      Paste the <code>attach</code> block into <code>assets/characters/&lt;id&gt;/character.json</code> (§9.1).
+      <kbd>click</kbd> places · <kbd>drag</kbd> adjusts · <kbd>right-click</kbd> removes the nearest marker.
+      <span class="sw" style="background:var(--hold)"></span> hold
+      <span class="sw" style="background:var(--wear)"></span> wear
+      <span class="sw" style="background:var(--trim)"></span> alpha-128 trim box
+    </p>
+  </div>
+</footer>
+
+<script>
+"use strict";
+
+// ---- mirrored from tools/convert_assets.ps1 — see the header comment ----------------------
+const SAT = 1.30, WHITE = 246.0, ALPHA_CUT = 128;
+
+// C#: Clamp255 does (int)(v + 0.5), i.e. round-half-up for non-negative v — Math.round matches.
+const clamp255 = v => v < 0 ? 0 : (v > 255 ? 255 : Math.round(v));
+
+// The exact To565 from the converter, then expanded back to 8 bits so the screen shows the
+// quantised value rather than the source value. This is what the panel actually receives.
+function correct(r, g, b) {
+  const luma = 0.299*r + 0.587*g + 0.114*b, w = 255.0 / WHITE;
+  const nr = clamp255((luma + (r-luma)*SAT) * w),
+        ng = clamp255((luma + (g-luma)*SAT) * w),
+        nb = clamp255((luma + (b-luma)*SAT) * w);
+  // integer division in C#; both operands non-negative so floor is the same thing
+  const r5 = Math.floor((nr*31 + 127) / 255),
+        g6 = Math.floor((ng*63 + 127) / 255),
+        b5 = Math.floor((nb*31 + 127) / 255);
+  return [ (r5<<3)|(r5>>2), (g6<<2)|(g6>>4), (b5<<3)|(b5>>2) ];
+}
+
+// ---- frame loading -----------------------------------------------------------------------
+// Sort exactly the way convert_assets.ps1:246-249 does, or the reviewer plays frames in an
+// order the pak will never use: numeric basenames numerically first, then the rest by name.
+const base = f => f.name.replace(/\.[^.]*$/, "");
+function packOrder(files) {
+  const num = files.filter(f => /^\d+$/.test(base(f))).sort((a,b) => base(a) - base(b));
+  const nam = files.filter(f => !/^\d+$/.test(base(f)))
+                   .sort((a,b) => a.name.localeCompare(b.name));
+  return num.concat(nam);
+}
+
+const readDataURL = file => new Promise((res, rej) => {
+  const r = new FileReader();
+  r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(file);
+});
+const loadImg = src => new Promise((res, rej) => {
+  const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = src;
+});
+
+// A Frame carries both renderings and the trim box the pak would compute for it.
+async function makeFrame(file) {
+  const img = await loadImg(await readDataURL(file));
+  const w = img.naturalWidth, h = img.naturalHeight;
+  const c = document.createElement("canvas"); c.width = w; c.height = h;
+  const cx = c.getContext("2d", { willReadFrequently:true });
+  cx.drawImage(img, 0, 0);
+  const src = cx.getImageData(0, 0, w, h);
+
+  // trim bbox at alpha >= 128 (convert_assets.ps1:98) — identical scan, identical result
+  let minX = w, minY = h, maxX = -1, maxY = -1, opaque = 0;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    if (src.data[(y*w + x)*4 + 3] >= ALPHA_CUT) {
+      opaque++;
+      if (x < minX) minX = x; if (x > maxX) maxX = x;
+      if (y < minY) minY = y; if (y > maxY) maxY = y;
+    }
+  }
+  const trim = maxX < 0 ? { empty:true, x:0, y:0, w:0, h:0, opaque:0 }
+                        : { empty:false, x:minX, y:minY,
+                            w:maxX-minX+1, h:maxY-minY+1, opaque };
+
+  // The corrected view also applies the alpha cliff, because the pak stores nothing below
+  // 128 — a soft edge that looks fine in the source is simply absent on the device.
+  const cc = document.createElement("canvas"); cc.width = w; cc.height = h;
+  const ccx = cc.getContext("2d");
+  const dst = ccx.createImageData(w, h);
+  for (let i = 0; i < src.data.length; i += 4) {
+    if (src.data[i+3] < ALPHA_CUT) { dst.data[i+3] = 0; continue; }
+    const [r, g, b] = correct(src.data[i], src.data[i+1], src.data[i+2]);
+    dst.data[i] = r; dst.data[i+1] = g; dst.data[i+2] = b; dst.data[i+3] = 255;
+  }
+  ccx.putImageData(dst, 0, 0);
+
+  return { name:file.name, w, h, raw:c, corr:cc, trim };
+}
+
+// ---- slot --------------------------------------------------------------------------------
+const DPR = window.devicePixelRatio || 1;
+document.getElementById("dpr").textContent =
+  `(DPR ${DPR} — 1:1 is one image pixel per device pixel)`;
+
+class Slot {
+  constructor(el, id) {
+    this.id = id; this.frames = []; this.obj = null; this.objScale = 1;
+    this.attach = [];              // per frame: { hold:[x,y], wear:[x,y] }
+    this.key = "";                 // pak key, e.g. "teen-walk-east" or "cat/adult-eat"
+    this.drag = null;
+    el.innerHTML = `
+      <h2>slot ${id}<span class="sp"></span><span class="cnt" style="color:var(--dim)"></span></h2>
+      <div class="bar">
+        <button class="bFolder">folder…</button><button class="bFiles">files…</button>
+        <b style="color:var(--dim)">key</b><input type="text" class="iKey" placeholder="teen-walk-east">
+      </div>
+      <div class="bar">
+        <button class="bObj">test object…</button>
+        <span class="objName" style="color:var(--dim)">none</span>
+        <b style="color:var(--dim)">scale</b>
+        <input type="number" class="iScale" value="1" min="0.05" max="4" step="0.05">
+        <button class="bFit">fit</button><button class="bOne">1:1</button>
+        <button class="bObjX">×</button>
+      </div>
+      <div class="stage"><canvas></canvas></div>
+      <div class="read">drop PNGs here, or use the buttons above</div>
+      <input type="file" class="fFolder" webkitdirectory directory multiple hidden>
+      <input type="file" class="fFiles" accept="image/png,image/*" multiple hidden>
+      <input type="file" class="fObj" accept="image/png,image/*" hidden>`;
+    const $ = s => el.querySelector(s);
+    this.el = el; this.cv = $("canvas"); this.ctx = this.cv.getContext("2d");
+    this.readEl = $(".read"); this.cntEl = $(".cnt"); this.keyEl = $(".iKey");
+    this.objNameEl = $(".objName"); this.scaleEl = $(".iScale");
+
+    $(".bFolder").onclick = () => $(".fFolder").click();
+    $(".bFiles").onclick  = () => $(".fFiles").click();
+    $(".bObj").onclick    = () => $(".fObj").click();
+    $(".bObjX").onclick   = () => { this.obj = null; this.objName(); draw(); };
+    $(".bFit").onclick    = () => { this.objScale = this.fitScale(); this.objName(); draw(); };
+    $(".bOne").onclick    = () => { this.objScale = 1; this.objName(); draw(); };
+    this.scaleEl.oninput  = () => {
+      const v = parseFloat(this.scaleEl.value);
+      if (v > 0) { this.objScale = v; this.objName(false); draw(); }
+    };
+    $(".fFolder").onchange = e => this.loadFiles([...e.target.files]);
+    $(".fFiles").onchange  = e => this.loadFiles([...e.target.files]);
+    $(".fObj").onchange    = async e => {
+      if (!e.target.files[0]) return;
+      this.obj = await makeFrame(e.target.files[0]);
+      // Reused game art is drawn to its own scale, not to attach scale — the games' carrot
+      // is 35×59 against a 22×45 teen and hides the animal completely, so placement cannot
+      // be judged at all. Auto-fit anything clearly oversized; leave sane art at 1:1.
+      this.objScale = (this.obj.h > (this.frame()?.trim.h ?? 96) * 0.6) ? this.fitScale() : 1;
+      this.objName(); draw();
+    };
+    this.keyEl.oninput = () => { this.key = this.keyEl.value.trim(); };
+
+    const stage = $(".stage");
+    stage.addEventListener("dragover", e => { e.preventDefault(); });
+    stage.addEventListener("drop", e => {
+      e.preventDefault();
+      const fs = [...e.dataTransfer.files].filter(f => /\.(png|gif|webp|jpe?g)$/i.test(f.name));
+      if (fs.length) this.loadFiles(fs);
+    });
+
+    this.cv.addEventListener("mousedown", e => this.onDown(e));
+    this.cv.addEventListener("mousemove", e => this.onMove(e));
+    window.addEventListener("mouseup", () => { this.drag = null; });
+    this.cv.addEventListener("contextmenu", e => this.onErase(e));
+  }
+
+  async loadFiles(files) {
+    let imgs = files.filter(f => /\.(png|gif|webp|jpe?g)$/i.test(f.name));
+    if (!imgs.length) { this.readEl.textContent = "no images in that selection"; return; }
+
+    // Picking a folder gathers it RECURSIVELY. Point the picker at assets/ and you get every
+    // animation at once, interleaved by filename into a sequence that exists nowhere — which
+    // looks like catastrophic drift rather than a bad selection. Keep one directory only.
+    const dirOf = f => (f.webkitRelativePath || "").split("/").slice(0, -1).join("/");
+    const dirs = [...new Set(imgs.map(dirOf))];
+    let warn = "";
+    if (dirs.length > 1) {
+      imgs = imgs.filter(f => dirOf(f) === dirs[0]);
+      warn = `\n⚠ selection spans ${dirs.length} folders; showing "${dirs[0]}" only.` +
+             ` Pick a single animation folder.`;
+    }
+
+    const pngs = packOrder(imgs);
+    this.readEl.textContent = `loading ${pngs.length}…`;
+    this.frames = [];
+    for (const f of pngs) this.frames.push(await makeFrame(f));
+    this.attach = this.frames.map(() => ({}));
+
+    // Derive the pak key from the containing folder — exactly how the converter names entries
+    // (path relative to assets/, forward slashes). Two levels, so cat/adult-eat survives.
+    const parts = dirs[0] ? dirs[0].split("/") : [];
+    this.key = parts.slice(-2).join("/");
+    this.keyEl.value = this.key;
+    this.warn = warn;
+    tickIdx = 0; draw();
+  }
+
+  frame() { return this.frames.length ? this.frames[tickIdx % this.frames.length] : null; }
+  frameIdx() { return this.frames.length ? tickIdx % this.frames.length : 0; }
+
+  // A held object that reads right is a fraction of the animal, not the whole of it. 45% of
+  // the character's trim height is roughly where a carrot or a cup sits.
+  fitScale() {
+    const f = this.frame();
+    if (!this.obj || !f || f.trim.empty) return 1;
+    return Math.max(0.05, Math.min(4, Math.round((f.trim.h * 0.45 / this.obj.h) * 20) / 20));
+  }
+  objName(syncInput = true) {
+    if (syncInput) this.scaleEl.value = +this.objScale.toFixed(2);
+    if (!this.obj) { this.objNameEl.textContent = "none"; return; }
+    const s = this.objScale;
+    const eff = `${Math.round(this.obj.w * s)}×${Math.round(this.obj.h * s)}`;
+    this.objNameEl.textContent = `${this.obj.name} ${this.obj.w}×${this.obj.h}` +
+      (Math.abs(s - 1) > 0.001 ? ` → ${eff} (stand-in)` : "");
+  }
+
+  // canvas pixel → original-frame pixel. Independent of zoom and DPR by construction.
+  toImage(e) {
+    const f = this.frame(); if (!f) return null;
+    const r = this.cv.getBoundingClientRect();
+    return { x: Math.floor((e.clientX - r.left) / r.width  * this.cv._iw),
+             y: Math.floor((e.clientY - r.top)  / r.height * this.cv._ih) };
+  }
+
+  nearest(p) {
+    const a = this.attach[this.frameIdx()] || {};
+    let best = null, bd = 5;                     // 5px grab radius, in image pixels
+    for (const k of ["hold", "wear"]) {
+      if (!a[k]) continue;
+      const d = Math.hypot(a[k][0] - p.x, a[k][1] - p.y);
+      if (d < bd) { bd = d; best = k; }
+    }
+    return best;
+  }
+
+  onDown(e) {
+    if (e.button !== 0) return;
+    const p = this.toImage(e); if (!p) return;
+    const grabbed = this.nearest(p);
+    if (grabbed) { this.drag = grabbed; return; }
+    const mode = document.getElementById("mode").value;
+    if (!mode) return;
+    (this.attach[this.frameIdx()] ||= {})[mode] = [p.x, p.y];
+    this.drag = mode; draw();
+  }
+  onMove(e) {
+    if (!this.drag) return;
+    const p = this.toImage(e); if (!p) return;
+    this.attach[this.frameIdx()][this.drag] = [p.x, p.y];
+    draw();
+  }
+  onErase(e) {
+    e.preventDefault();
+    const p = this.toImage(e); if (!p) return;
+    const k = this.nearest(p); if (!k) return;
+    delete this.attach[this.frameIdx()][k]; draw();
+  }
+
+  render() {
+    const f = this.frame();
+    const zoom = +document.getElementById("zoom").value;
+    if (!f) {
+      this.cv.width = this.cv.height = 0;
+      this.cntEl.textContent = ""; return;
+    }
+    // Every frame in a folder should be the same size; if one is not, size to the largest so
+    // nothing clips, and say so in the readout rather than cropping silently.
+    const iw = Math.max(...this.frames.map(x => x.w)),
+          ih = Math.max(...this.frames.map(x => x.h));
+    this.cv._iw = iw; this.cv._ih = ih;
+
+    // 1:1 means one image pixel per DEVICE pixel. The backing store is in device pixels and
+    // the CSS box is divided by DPR, so a 96px sprite occupies 96 real pixels on a scaled
+    // display too. Anything else and "panel scale" is a lie on every laptop.
+    this.cv.width = iw * zoom; this.cv.height = ih * zoom;
+    this.cv.style.width  = (iw * zoom / DPR) + "px";
+    this.cv.style.height = (ih * zoom / DPR) + "px";
+
+    const g = this.ctx, corr = tCorr.classList.contains("on");
+    g.imageSmoothingEnabled = false;
+    g.clearRect(0, 0, this.cv.width, this.cv.height);
+    const put = (fr, alpha) => {
+      g.globalAlpha = alpha;
+      g.drawImage(corr ? fr.corr : fr.raw, 0, 0, fr.w * zoom, fr.h * zoom);
+      g.globalAlpha = 1;
+    };
+
+    // Onion skin: the PREVIOUS frame at 30%. Drift between independently generated frames is
+    // invisible one frame at a time and unmissable here.
+    if (tOnion.classList.contains("on") && this.frames.length > 1) {
+      const n = this.frames.length;
+      put(this.frames[(this.frameIdx() - 1 + n) % n], 0.30);
+    }
+    put(f, 1);
+
+    if (tTrim.classList.contains("on") && !f.trim.empty) {
+      g.strokeStyle = "#ff4d6d";
+      g.lineWidth = Math.max(1, zoom / 2);
+      g.strokeRect(f.trim.x * zoom + g.lineWidth/2, f.trim.y * zoom + g.lineWidth/2,
+                   f.trim.w * zoom - g.lineWidth, f.trim.h * zoom - g.lineWidth);
+    }
+
+    const a = this.attach[this.frameIdx()] || {};
+    for (const [k, col] of [["wear", "#4fc3f7"], ["hold", "#ffcf3f"]]) {
+      if (!a[k]) continue;
+      const [mx, my] = a[k];
+      // §8.3 composite order is character, then worn, then held — and the object's own
+      // top-left lands on the point, which is the whole reason it can be judged by eye.
+      if (this.obj) {
+        const s = this.objScale;
+        g.globalAlpha = 0.9;
+        g.drawImage(corr ? this.obj.corr : this.obj.raw,
+                    mx * zoom, my * zoom, this.obj.w * zoom * s, this.obj.h * zoom * s);
+        g.globalAlpha = 1;
+      }
+      const s = Math.max(4, zoom * 3);
+      g.strokeStyle = col; g.lineWidth = Math.max(1, zoom / 2);
+      g.beginPath();
+      g.moveTo(mx*zoom - s, my*zoom); g.lineTo(mx*zoom + s, my*zoom);
+      g.moveTo(mx*zoom, my*zoom - s); g.lineTo(mx*zoom, my*zoom + s);
+      g.stroke();
+      g.fillStyle = col; g.fillRect(mx*zoom - 1, my*zoom - 1, 2, 2);
+    }
+
+    const sizes = new Set(this.frames.map(x => x.w + "×" + x.h));
+    const t = f.trim, marks = Object.entries(a).map(([k, v]) => `${k} ${v[0]},${v[1]}`).join("  ");
+    this.cntEl.textContent = `${this.frameIdx() + 1}/${this.frames.length}`;
+    this.readEl.textContent =
+      `${f.name}   ${f.w}×${f.h}` +
+      (sizes.size > 1 ? `   ⚠ MIXED FRAME SIZES: ${[...sizes].join(", ")}` : "") +
+      `\ntrim  ${t.empty ? "(fully transparent — pakFind gives a 0×0 entry)"
+                        : `${t.w}×${t.h} at offX ${t.x} offY ${t.y}   ${t.opaque} opaque px`}` +
+      (marks ? `\nattach  ${marks}` : "") +
+      // The offsets never change with preview scale — but a placement judged against a
+      // shrunken stand-in is not a placement judged against the sprite that ships.
+      (this.obj && Math.abs(this.objScale - 1) > 0.001
+        ? `\nobject  previewed at ${this.objScale}× — offsets are unaffected, but re-check at 1:1`
+        + ` against the real objects/ sprite` : "") +
+      (this.warn || "");
+  }
+
+  exportObj() {
+    const key = this.key || `slot-${this.id}`;
+    const arr = this.attach.slice(0, this.frames.length).map(a => {
+      const o = {};
+      if (a.hold) o.hold = a.hold;
+      if (a.wear) o.wear = a.wear;
+      return o;
+    });
+    return { [key]: arr };
+  }
+  hasMarks() { return this.attach.some(a => a && (a.hold || a.wear)); }
+}
+
+// ---- playback ----------------------------------------------------------------------------
+// One clock drives both slots, which is what "in sync" has to mean when the two folders may
+// not have the same frame count — same wall time, each wrapping on its own length.
+// `last` is null, never 0, when unset: 0 is a legitimate timestamp and using it as the
+// sentinel silently swallows the first interval of every play and every resume.
+let tickIdx = 0, playing = false, last = null, acc = 0;
+const slots = [...document.querySelectorAll(".slot")]
+  .map(el => new Slot(el, el.dataset.slot));
+
+const $id = i => document.getElementById(i);
+const tOnion = $id("tOnion"), tTrim = $id("tTrim"), tCorr = $id("tCorr");
+
+function draw() {
+  slots.forEach(s => s.render());
+  drawSheet();
+  drawComp();
+  $id("tick").textContent = `frame ${tickIdx}`;
+}
+function loop(t) {
+  if (playing) {
+    if (last === null) last = t;
+    acc += t - last; last = t;
+    const step = 1000 / Math.max(1, +$id("fps").value);
+    while (acc >= step) { acc -= step; tickIdx++; }
+    draw();
+  } else last = null;
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+$id("play").onclick = e => {
+  playing = !playing; acc = 0; last = null;
+  e.target.classList.toggle("on", playing);
+  e.target.textContent = playing ? "⏸ pause" : "▶ play";
+};
+$id("prev").onclick = () => { tickIdx = Math.max(0, tickIdx - 1); draw(); };
+$id("next").onclick = () => { tickIdx++; draw(); };
+$id("zoom").onchange = draw;
+for (const b of [tOnion, tTrim, tCorr])
+  b.onclick = () => { b.classList.toggle("on"); draw(); };
+tTrim.classList.add("on"); tCorr.classList.add("on");
+
+$id("clr").onclick = () => {
+  slots.forEach(s => { if (s.frames.length) s.attach[s.frameIdx()] = {}; });
+  draw();
+};
+$id("clrAll").onclick = () => {
+  slots.forEach(s => { s.attach = s.frames.map(() => ({})); }); draw();
+};
+
+document.addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
+  if (e.key === "ArrowLeft")  { tickIdx = Math.max(0, tickIdx - 1); draw(); e.preventDefault(); }
+  if (e.key === "ArrowRight") { tickIdx++; draw(); e.preventDefault(); }
+  if (e.key === " ")          { $id("play").click(); e.preventDefault(); }
+  if (e.key === "o") tOnion.click();
+  if (e.key === "t") tTrim.click();
+  if (e.key === "c") tCorr.click();
+});
+
+// ---- species contact sheet (§6) ----------------------------------------------------------
+// One screen per run. Checkpoint B in §7.2 asks "do all states read as one animal?", which
+// cannot be answered folder by folder — and a state that was never generated has to be as
+// visible as one that was, or a short run passes review by being invisible.
+const STATES = ["idle", "blink", "hop", "sleep", "love", "happy", "sad", "eat", "bored"];
+const CORE   = new Set(["idle", "blink", "hop", "sleep", "love"]);
+
+// §3.1 / §0.8 — there are exactly THREE phases and they are keyed by NAME, never by index.
+// `enum Phase { PH_BABY, PH_ADULT, PH_TEEN }` in game.h has PH_TEEN appended rather than
+// inserted (so old saves keep their meaning), which makes the enum order baby, adult, teen
+// while the LIVED order is baby → teen → adult. Anything indexed by the enum renders the
+// wrong stage. These rows are the lived order, and they are always all three: a phase with
+// no art at all has to be as visible as one with a gap.
+const PHASES = ["baby", "teen", "adult"];
+
+const sheet = { id:"", cells:new Map(), extra:[], badPhase:[], run:null, runErr:"" };
+const cellKey = (stage, state) => stage + " " + state;
+
+async function loadSpecies(files) {
+  const grid = $id("grid"), imgs = files.filter(f => /\.(png|gif|webp|jpe?g)$/i.test(f.name));
+  const rel = f => f.webkitRelativePath || f.name;
+  grid.innerHTML = `<div class="note">reading ${imgs.length} frames…</div>`;
+  sheet.cells = new Map(); sheet.extra = []; sheet.run = null; sheet.runErr = "";
+
+  const runFile = files.find(f => /(^|\/)run\.json$/i.test(rel(f)));
+  if (runFile) {
+    try { sheet.run = JSON.parse(await runFile.text()); }
+    catch (e) { sheet.runErr = "run.json is present but did not parse: " + e.message; }
+  }
+
+  // group by immediate parent folder — one folder is one state, exactly as the converter
+  // treats it when it names entries by path relative to assets/
+  const groups = new Map();
+  for (const f of imgs) {
+    const p = rel(f).split("/"), folder = p[p.length - 2] || "";
+    if (!groups.has(folder)) groups.set(folder, []);
+    groups.get(folder).push(f);
+  }
+  sheet.id = (rel(imgs[0] || files[0] || {}) || "").split("/")[0] || "(unnamed)";
+
+  for (const [folder, fl] of groups) {
+    const frames = [];
+    for (const f of packOrder(fl)) frames.push(await makeFrame(f));
+    const m = folder.match(/^([a-z0-9]+)-(.+)$/);
+    if (!m) { sheet.extra.push({ folder, frames, why:"not <phase>-<state>" }); continue; }
+    const [, stage, state] = m;
+    // §9.2.7 makes a folder named for a non-existent phase a BUILD FAILURE. Showing it as
+    // just another row is how "toddler-idle" gets generated for a phase that cannot exist —
+    // it must be loud here, where the art is still cheap to throw away.
+    if (!PHASES.includes(stage)) { sheet.badPhase.push({ folder, frames, stage }); continue; }
+    if (!STATES.includes(state)) { sheet.extra.push({ folder, frames, why:"unknown state" }); continue; }
+    sheet.cells.set(cellKey(stage, state), frames);
+  }
+  buildSheet(); renderRunLog(); draw();
+}
+
+function buildSheet() {
+  const grid = $id("grid"), bad = $id("badphase");
+  const total = [...sheet.cells.values()].reduce((n, f) => n + f.length, 0);
+  const filled = PHASES.filter(p => STATES.some(s => sheet.cells.has(cellKey(p, s))));
+  $id("shId").textContent = `${sheet.id} — ${total} frames · phases with art: ` +
+    (filled.length ? filled.join(", ") : "none") +
+    (filled.length < PHASES.length
+      ? ` · absent: ${PHASES.filter(p => !filled.includes(p)).join(", ")}` : "");
+
+  bad.hidden = !sheet.badPhase.length;
+  if (sheet.badPhase.length) {
+    bad.innerHTML = `<b>${sheet.badPhase.length} folder(s) name a phase that does not ` +
+      `exist</b> — ${sheet.badPhase.map(b => `<code>${b.folder}</code>`).join(", ")}. ` +
+      `The only phases are ${PHASES.join(", ")} (§3.1); §9.2.7 makes this a build failure, ` +
+      `not an unused directory.`;
+  }
+
+  grid.innerHTML = "";
+  grid.style.gridTemplateColumns = `auto repeat(${STATES.length}, auto)`;
+  grid.appendChild(document.createElement("div"));
+  for (const s of STATES) {
+    const h = document.createElement("div");
+    h.className = "gh" + (CORE.has(s) ? " core" : "");
+    h.textContent = s; grid.appendChild(h);
+  }
+  for (const stage of PHASES) {
+    const rh = document.createElement("div");
+    rh.className = "grow"; rh.textContent = stage; grid.appendChild(rh);
+    for (const state of STATES) {
+      const frames = sheet.cells.get(cellKey(stage, state));
+      const c = document.createElement("div");
+      c.className = "cell" + (CORE.has(state) ? " core" : "") + (frames ? "" : " miss");
+      if (frames) {
+        const cv = document.createElement("canvas");
+        c._frames = frames; c._cv = cv; c.appendChild(cv);
+        const n = document.createElement("div");
+        n.className = "cn"; n.textContent = `${frames.length}f`; c.appendChild(n);
+      } else {
+        c.textContent = `${stage}-${state}`;
+        c.title = CORE.has(state) ? "missing — core five" : "missing";
+      }
+      grid.appendChild(c);
+    }
+  }
+  if (sheet.extra.length) {
+    const rh = document.createElement("div");
+    // every one of them, not a top-N: a folder silently dropped here is a state nobody
+    // knows is misnamed
+    rh.className = "grow"; rh.textContent = `unrecognised (${sheet.extra.length})`;
+    grid.appendChild(rh);
+    for (const e of sheet.extra) {
+      const c = document.createElement("div"); c.className = "cell"; c.title = e.why;
+      const cv = document.createElement("canvas");
+      c._frames = e.frames; c._cv = cv; c.appendChild(cv);
+      const n = document.createElement("div");
+      n.className = "cn"; n.textContent = e.folder; c.appendChild(n);
+      grid.appendChild(c);
+    }
+  }
+}
+
+function drawSheet() {
+  if ($id("sheet").hidden) return;
+  const zoom = +$id("zoom").value, corr = tCorr.classList.contains("on");
+  for (const c of $id("grid").querySelectorAll(".cell")) {
+    if (!c._frames) continue;
+    const f = c._frames[tickIdx % c._frames.length], cv = c._cv;
+    cv.width = f.w * zoom; cv.height = f.h * zoom;
+    cv.style.width = (f.w * zoom / DPR) + "px"; cv.style.height = (f.h * zoom / DPR) + "px";
+    const g = cv.getContext("2d");
+    g.imageSmoothingEnabled = false;
+    g.clearRect(0, 0, cv.width, cv.height);
+    g.drawImage(corr ? f.corr : f.raw, 0, 0, f.w * zoom, f.h * zoom);
+  }
+}
+
+// The run log (§7.3) sits beside the sheet so a run is judged as a process, not as a folder
+// that appeared. A regenerated animation and its reason are the interesting rows.
+function renderRunLog() {
+  const el = $id("runlog");
+  if (sheet.runErr) { el.innerHTML = `<div class="note bad">${sheet.runErr}</div>`; return; }
+  if (!sheet.run) {
+    el.innerHTML = `<div class="note">no <code>run.json</code> in that folder — ` +
+      `a run that leaves no log is not reviewable (§7.3)</div>`;
+    return;
+  }
+  const r = sheet.run, steps = Array.isArray(r.steps) ? r.steps : [];
+  const esc = s => String(s ?? "").replace(/[<&]/g, c => c === "<" ? "&lt;" : "&amp;");
+  el.innerHTML =
+    `<div class="note">run — species <b>${esc(r.species)}</b> · started ${esc(r.started)} · ` +
+    `checkpoint <b>${esc(r.checkpoint)}</b> · ${steps.length} steps</div>` +
+    `<table><tr><th>t</th><th>op</th><th>what</th><th>result</th><th>reason / prompt</th></tr>` +
+    steps.map(s => {
+      const bad = /regenerat|fail|reject/i.test(s.result || "");
+      return `<tr><td>${esc(s.t)}</td><td>${esc(s.op)}</td>` +
+        `<td>${esc(s.name || s.state || "")}${s.frames ? ` (${esc(s.frames)}f)` : ""}</td>` +
+        `<td class="${bad ? "bad" : "good"}">${esc(s.result)}</td>` +
+        `<td>${esc(s.reason || s.prompt || "")}</td></tr>`;
+    }).join("") + `</table>`;
+}
+
+$id("shLoad").onclick = () => $id("shFiles").click();
+$id("shFiles").onchange = e => loadSpecies([...e.target.files]);
+$id("vFrames").onclick = () => setView("frames");
+$id("vSheet").onclick  = () => setView("sheet");
+$id("vComp").onclick   = () => setView("comp");
+function setView(v) {
+  $id("sheet").hidden = v !== "sheet";
+  $id("comp").hidden  = v !== "comp";
+  document.querySelector("main").hidden   = v !== "frames";
+  document.querySelector("footer").hidden = v !== "frames";
+  $id("vSheet").classList.toggle("on",  v === "sheet");
+  $id("vFrames").classList.toggle("on", v === "frames");
+  $id("vComp").classList.toggle("on",   v === "comp");
+  draw();
+}
+
+// ---- three-part composite (§2, §6.3) ------------------------------------------------------
+// body + species head + species tail, assembled at the attach offsets, on the shared clock.
+const comp = { body:[], head:[], tail:[], attach:null, file:"" };
+
+async function compLoad(which, files) {
+  const imgs = files.filter(f => /\.png$/i.test(f.name));
+  if (!imgs.length) return;
+  comp[which] = await Promise.all(packOrder(imgs).map(makeFrame));
+  $id("c" + which[0].toUpperCase() + which.slice(1) + "N").textContent =
+    `${imgs.length} frame${imgs.length > 1 ? "s" : ""}`;
+  draw();
+}
+for (const w of ["body", "head", "tail"]) {
+  const cap = w[0].toUpperCase() + w.slice(1);
+  $id("c" + cap).onclick = () => $id("c" + cap + "F").click();
+  $id("c" + cap + "F").onchange = e => compLoad(w, [...e.target.files]);
+}
+$id("cAttachBtn").onclick = () => $id("cAttachF").click();
+$id("cAttachF").onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  try {
+    const j = JSON.parse(await f.text());
+    comp.attach = j.attach || j;      // accept the whole character.json or just the block
+    comp.file = f.name;
+    // §9.2.4: the block must declare the space it was measured in. A file without it is not
+    // a failure here, but it IS the one thing that silently ruins every offset, so say so.
+    const sp = j.space || j.attach_space;
+    $id("cAttachN").textContent = sp === "untrimmed"
+      ? `${f.name} — space "untrimmed" ✓`
+      : `${f.name} — ⚠ no "space":"untrimmed" declared (§9.2.4)`;
+  } catch (err) { $id("cAttachN").textContent = `${f.name} — ⚠ not valid JSON: ${err.message}`; }
+  draw();
+};
+$id("cParts").onclick = e => { e.target.classList.toggle("on"); draw(); };
+$id("cZ").onchange = draw;
+$id("cKey").oninput = draw;
+
+function drawComp() {
+  if ($id("comp").hidden) return;
+  const cv = $id("cCv"), g = cv.getContext("2d"), zoom = +$id("zoom").value;
+  const corr = tCorr.classList.contains("on");
+  const pick = a => a.length ? a[tickIdx % a.length] : null;
+  const b = pick(comp.body), h = pick(comp.head), t = pick(comp.tail);
+
+  // The body defines the canvas: heads and tails are parts OF it, and sizing the view to
+  // anything else would move the animal every time a part changed size.
+  const iw = b ? b.w : 96, ih = b ? b.h : 96;
+  cv.width = iw * zoom; cv.height = ih * zoom;
+  cv.style.width = (iw * zoom / DPR) + "px"; cv.style.height = (ih * zoom / DPR) + "px";
+  g.imageSmoothingEnabled = false;
+  g.clearRect(0, 0, cv.width, cv.height);
+
+  if (!b) {
+    $id("cRead").textContent = "load a body folder — the composite is sized to it";
+    return;
+  }
+
+  const key = $id("cKey").value.trim();
+  const row = comp.attach && key && comp.attach[key] ? comp.attach[key] : null;
+  const a = row ? (row[tickIdx % row.length] || {}) : {};
+
+  // Centred defaults so a first look costs nothing: without an attach block the parts land
+  // where a symmetric animal would want them. Explicitly NOT a guess at the real offsets —
+  // the readout says so, because a composite judged against invented numbers is worthless.
+  const dflt = p => [Math.round((iw - p.w) / 2), 0];
+  const hp = a.head ? [a.head[0], a.head[1]] : (h ? dflt(h) : null);
+  const tp = a.tail ? [a.tail[0], a.tail[1]] : (t ? [0, Math.round(ih * 0.55)] : null);
+  const zSel = $id("cZ").value;
+  const z = zSel !== "auto" ? zSel : (a.tail && a.tail[2] ? a.tail[2] : "behind");
+
+  const put = (fr, x, y) => g.drawImage(corr ? fr.corr : fr.raw,
+                                        x * zoom, y * zoom, fr.w * zoom, fr.h * zoom);
+  // §2.1 order. The tail's z-flag is the only part of this that varies per frame.
+  if (t && tp && z === "behind") put(t, tp[0], tp[1]);
+  put(b, 0, 0);
+  if (h && hp) put(h, hp[0], hp[1]);
+  if (t && tp && z === "front") put(t, tp[0], tp[1]);
+
+  // wear resolves against the HEAD (§2.1). Drawn as a marker here; the object itself is
+  // placed in the frames view, which owns the object picker.
+  const marks = [];
+  if (a.wear && hp) marks.push(["wear", "#4fc3f7", hp[0] + a.wear[0], hp[1] + a.wear[1]]);
+  if (a.hold)       marks.push(["hold", "#ffcf3f", a.hold[0], a.hold[1]]);
+  for (const [, col, mx, my] of marks) {
+    const s = Math.max(4, zoom * 3);
+    g.strokeStyle = col; g.lineWidth = Math.max(1, zoom / 2);
+    g.beginPath();
+    g.moveTo(mx*zoom - s, my*zoom); g.lineTo(mx*zoom + s, my*zoom);
+    g.moveTo(mx*zoom, my*zoom - s); g.lineTo(mx*zoom, my*zoom + s);
+    g.stroke();
+  }
+
+  // §2.2: a part that butts against the body seams at every pose. Boxes make the overlap
+  // visible, which is the only way to check the constraint without counting pixels.
+  if ($id("cParts").classList.contains("on")) {
+    const box = (fr, p, col) => {
+      if (!fr || !p) return;
+      g.strokeStyle = col; g.lineWidth = Math.max(1, zoom / 2);
+      g.strokeRect(p[0]*zoom, p[1]*zoom, fr.w*zoom, fr.h*zoom);
+    };
+    box(h, hp, "#7ee787"); box(t, tp, "#d29bfd");
+  }
+
+  const n = x => x ? x.length : 0;
+  $id("cRead").textContent =
+    `body ${b.name} ${b.w}×${b.h}   frame ${tickIdx % comp.body.length + 1}/${n(comp.body)}` +
+    `\nhead ${h ? `${h.name}  at ${hp[0]},${hp[1]}` : "— none —"}` +
+    `\ntail ${t ? `${t.name}  at ${tp[0]},${tp[1]}  z=${z}` : "— none —"}` +
+    (row ? `\nattach  ${comp.file} → "${key}" (${row.length} frames)`
+         : key ? `\nattach  ⚠ no "${key}" in the loaded block — parts are at CENTRED DEFAULTS,`
+               + ` not real offsets`
+               : `\nattach  ⚠ no key set — parts are at CENTRED DEFAULTS, not real offsets`) +
+    (row && row.length !== comp.body.length
+      ? `\n⚠ attach has ${row.length} frames, body has ${comp.body.length} (§9.2.2)` : "");
+}
+
+// ---- export ------------------------------------------------------------------------------
+// attach_space is carried in the file on purpose: the JSON travels to the converter and to
+// firmware, and the one thing that would silently ruin every offset is disagreement about
+// which origin they were measured from.
+// §2 / §9.2: the block MUST declare "space":"untrimmed", and the build asserts it. Offsets
+// are measured from the original frame origin, so the device draws at
+//   frame_origin + attach - (offX, offY)
+// and the per-frame trim never reaches the attach system. Stage 4 gives objects their own
+// "anchor" and the marker stops meaning "the object's top-left" — hence anchor_mode, which
+// records which rule THIS file was placed under so old exports stay readable.
+function build(list) {
+  const attach = {};
+  for (const s of list) if (s.frames.length) Object.assign(attach, s.exportObj());
+  const txt = JSON.stringify({
+    space: "untrimmed",
+    anchor_mode: "object-topleft",   // Stage 4: "object-anchor", once objects carry "anchor"
+    attach
+  }, null, 2);
+  // Pull coordinate pairs back onto one line. JSON.stringify spreads [12,20] over three,
+  // which makes a 90-frame species unreadable and unlike the example in §9.1.
+  return txt.replace(/\[\s*\n\s*(-?\d+),\s*\n\s*(-?\d+)\s*\n\s*\]/g, "[$1, $2]");
+}
+$id("expA").onclick = () => { $id("out").value = build([slots[0]]); };
+$id("expB").onclick = () => { $id("out").value = build([slots[1]]); };
+$id("expBoth").onclick = () => { $id("out").value = build(slots); };
+$id("dl").onclick = () => {
+  const txt = $id("out").value || build(slots);
+  const name = (slots.find(s => s.hasMarks())?.key || "attach").replace(/[\/\\]/g, "-");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([txt], { type:"application/json" }));
+  a.download = name + "-attach.json";
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+};
+</script>

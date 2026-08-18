@@ -1,0 +1,46 @@
+dependencies:
+  espressif/esp_hosted:
+    version: "*"
+    rules:
+      - if: "target == esp32p4"
+  espressif/esp_wifi_remote:
+    version: "*"
+    rules:
+      - if: "target == esp32p4"
+  espressif/mdns: "^1.11.1"
+  espressif/libsodium: "^1.0.21"
+  espressif/esp_audio_codec: "^2.5.0"
+  espressif/led_strip: "^3.0.3"
+  # usb_device_uac REMOVED (W-020): once tinyusb entered the graph it woke
+  # and demanded its header injection back; no in-tree variant uses USB audio
+  # output. Restore alongside CONFIG_AUDIO_OUTPUT_USB work if that returns.
+  # espressif/usb_device_uac:
+  #   version: "^1.2.3"
+  #   rules:
+  #     - if: "idf_version >=5.0 && (target in [esp32s2, esp32s3, esp32p4])"
+  # tinyusb, first-class now (it used to ride in as uac's dependency):
+  # bunbun's USB card-reader personality (components/usb_msc_bunbun) injects
+  # its MSC config and descriptors into this.
+  espressif/tinyusb:
+    version: "^0.19.0~3"
+    rules:
+      - if: "idf_version >=5.0 && (target in [esp32s2, esp32s3, esp32p4])"
+  # W-020: USB card-reader boot mode. esp_tinyusb LOOKED like the free ride
+  # (ready-made MSC-over-SDMMC), but enabling its CONFIG_TINYUSB_MSC also
+  # wakes the Arduino core's dormant USBMSC.cpp, which expects a DIFFERENT
+  # tinyusb flavor - three USB stacks, one build, no survivors. The working
+  # path is the spike's fallback: hand-rolled MSC callbacks on the raw
+  # espressif__tinyusb that usb_device_uac already proves coexists with
+  # Arduino. That is tomorrow's session; until then the mode scaffolding is
+  # dormant (usb_msc_mode.c self-stubs when the header is absent).
+  # espressif/esp_tinyusb:
+  #   version: "^1.4.4"
+  #   rules:
+  #     - if: "idf_version >=5.0 && (target in [esp32s2, esp32s3, esp32p4])"
+  # bunbun: Arduino core as an IDF component. bunbun's 3,600 lines are Arduino C++ (TFT_eSPI,
+  # Wire, Preferences, SD_MMC), so this is what decides whether that code survives the move or
+  # has to be rewritten against raw IDF. Scoped to the S3 so no other board's build is affected.
+  espressif/arduino-esp32:
+    version: "^3.3.11"
+    rules:
+      - if: "target == esp32s3"

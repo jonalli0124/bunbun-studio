@@ -1,0 +1,6 @@
+fps:17.5 draw_max_ms:36 iter_max_ms:64 t_pak_us:1675 t_pix_us:18098 t_push_us:2478
+fps:18 draw_max_ms:28 iter_max_ms:57 t_pak_us:1815 t_pix_us:14015 t_push_us:2111
+fps:18 draw_max_ms:27 iter_max_ms:58 t_pak_us:1920 t_pix_us:14001 t_push_us:2238
+fps:10 draw_max_ms:30 iter_max_ms:79 t_pak_us:1818 t_pix_us:9100 t_push_us:2558
+fps:10 draw_max_ms:28 iter_max_ms:55 t_pak_us:1634 t_pix_us:8699 t_push_us:2372
+fps:18 draw_max_ms:33 iter_max_ms:63 t_pak_us:7452 t_pix_us:16135 t_push_us:2589

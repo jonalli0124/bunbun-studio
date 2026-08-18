@@ -1,0 +1,9 @@
+{
+  "id": "croc",
+  "display": "Crocodile",
+  "inherit": "none",
+  "can_hold": false,
+  "space": "untrimmed",
+  "anchor_mode": "object-topleft",
+  "attach": {}
+}

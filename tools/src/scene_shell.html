@@ -1,0 +1,736 @@
+<meta charset="utf-8">
+<title>Capybara Playhouse</title>
+<style>
+  :root{
+    --paper:#f3f0f7; --card:#fffdff; --ink:#241a2e; --soft:#6b5f79; --line:#241a2e;
+    --accent:#9151d3; --accent-ink:#ffffff; --fur:#be7330; --go:#2f9e6b; --no:#d1495b;
+    --bezel:#3a2b46; --bezel-2:#2a1e33; --screen:#0a0508; --sh:rgba(36,26,46,1);
+  }
+  @media (prefers-color-scheme:dark){ :root:not([data-theme=light]){
+    --paper:#191320; --card:#241a2e; --ink:#efe7f5; --soft:#a294b0; --line:#0f0a15;
+    --accent:#b07ce8; --accent-ink:#1a1020; --fur:#d99048; --go:#3fbe84; --no:#e8697a;
+    --bezel:#120c19; --bezel-2:#0a060e; --sh:rgba(0,0,0,1); }}
+  :root[data-theme=dark]{
+    --paper:#191320; --card:#241a2e; --ink:#efe7f5; --soft:#a294b0; --line:#0f0a15;
+    --accent:#b07ce8; --accent-ink:#1a1020; --fur:#d99048; --go:#3fbe84; --no:#e8697a;
+    --bezel:#120c19; --bezel-2:#0a060e; --sh:rgba(0,0,0,1); }
+
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{background:var(--paper); color:var(--ink); padding:20px 16px 60px;
+    font:16px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  .mono{font-family:ui-monospace,"Cascadia Code",Consolas,monospace;font-variant-numeric:tabular-nums}
+
+  h1{font-size:clamp(26px,4vw,40px);line-height:1;margin:0;font-weight:800;
+     letter-spacing:-.03em;text-transform:uppercase;text-wrap:balance}
+  h1 span{color:var(--accent)}
+  .sub{color:var(--soft);margin:6px 0 0;font-size:15px}
+  header{max-width:1180px;margin:0 auto 22px;display:flex;gap:16px;
+         align-items:flex-end;flex-wrap:wrap;justify-content:space-between}
+
+  .wrap{max-width:1180px;margin:0 auto;display:grid;gap:18px;
+        grid-template-columns:minmax(0,1fr) 330px;align-items:start}
+  @media (max-width:900px){ .wrap{grid-template-columns:1fr} }
+
+  .panel{background:var(--card);border:3px solid var(--line);border-radius:14px;
+         padding:14px;box-shadow:5px 5px 0 var(--sh)}
+  .panel > h2{font-size:12px;letter-spacing:.14em;text-transform:uppercase;
+     margin:0 0 10px;color:var(--soft);font-weight:800}
+
+  /* the console */
+  .console{background:linear-gradient(180deg,var(--bezel),var(--bezel-2));
+    border:3px solid var(--line);border-radius:18px;padding:16px;box-shadow:5px 5px 0 var(--sh)}
+  .screen-hold{background:var(--screen);border-radius:8px;padding:8px;
+    box-shadow:inset 0 0 0 2px rgba(255,255,255,.09)}
+  canvas#screen{display:block;width:100%;height:auto;image-rendering:pixelated;border-radius:3px}
+  .bar{display:flex;gap:10px;margin-top:14px;align-items:center;flex-wrap:wrap}
+
+  button{font:inherit;font-weight:700;color:var(--ink);background:var(--card);
+    border:3px solid var(--line);border-radius:11px;padding:11px 15px;cursor:pointer;
+    box-shadow:3px 3px 0 var(--sh);transition:transform .06s,box-shadow .06s;min-height:46px}
+  button:hover{transform:translate(1px,1px);box-shadow:2px 2px 0 var(--sh)}
+  button:active{transform:translate(3px,3px);box-shadow:0 0 0 var(--sh)}
+  button:focus-visible{outline:3px solid var(--fur);outline-offset:2px}
+  button:disabled{opacity:.4;cursor:default;transform:none;box-shadow:3px 3px 0 var(--sh)}
+  .go{background:var(--go);color:#06210f;border-color:var(--line);font-size:19px;
+      padding:13px 26px;letter-spacing:.02em}
+  .primary{background:var(--accent);color:var(--accent-ink)}
+  .sm{padding:7px 10px;min-height:36px;font-size:14px;border-radius:9px;box-shadow:2px 2px 0 var(--sh)}
+  .tiny{padding:3px 8px;min-height:0;font-size:13px;border-radius:7px;box-shadow:2px 2px 0 var(--sh)}
+
+  .chips{display:flex;flex-wrap:wrap;gap:8px}
+  .chip{display:flex;align-items:center;gap:7px}
+  .chip img{width:26px;height:26px;image-rendering:pixelated}
+  .rooms{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:8px}
+  .rooms button{padding:4px;min-height:0;border-radius:9px}
+  .rooms img{width:100%;display:block;image-rendering:pixelated;border-radius:4px}
+  .rooms button[aria-pressed=true]{border-color:var(--accent);box-shadow:3px 3px 0 var(--accent)}
+
+  /* the script */
+  ol#script{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+  #script li{display:flex;align-items:center;gap:8px;background:var(--paper);
+    border:3px solid var(--line);border-radius:11px;padding:8px 10px}
+  #script li.on{border-color:var(--accent);box-shadow:3px 3px 0 var(--accent)}
+  #script .n{width:26px;height:26px;flex:0 0 auto;border-radius:50%;display:grid;place-items:center;
+    background:var(--accent);color:var(--accent-ink);font-size:13px;font-weight:800}
+  #script .what{flex:1;font-weight:700;min-width:0}
+  #script .what small{display:block;font-weight:400;color:var(--soft);font-size:12px}
+  .empty{color:var(--soft);text-align:center;padding:18px 10px;font-size:15px;
+    border:3px dashed var(--line);border-radius:11px;opacity:.75}
+
+  .row{display:flex;gap:8px;flex-wrap:wrap}
+  .row>*{flex:1}
+  label.fld{display:block;font-size:12px;letter-spacing:.1em;text-transform:uppercase;
+    color:var(--soft);font-weight:800;margin:0 0 6px}
+  input[type=range]{width:100%;accent-color:var(--accent)}
+  select{font:inherit;font-weight:700;padding:10px;border:3px solid var(--line);
+    border-radius:10px;background:var(--card);color:var(--ink);width:100%;min-height:46px}
+  .note{font-size:13px;color:var(--soft);margin:8px 0 0}
+  .pick{background:var(--fur);color:#1d1206;border-color:var(--line)}
+  #status{min-height:20px;font-size:14px;font-weight:700;color:var(--soft)}
+  #status.warn{color:var(--no)}
+  .stack{display:flex;flex-direction:column;gap:14px}
+  @media (prefers-reduced-motion:reduce){ button{transition:none} }
+</style>
+
+<header>
+  <div>
+    <h1>Capybara <span>Playhouse</span></h1>
+    <p class="sub">Pick a room, tell the capybara what to do, then press play.</p>
+  </div>
+  <div class="row" style="flex:0 0 auto">
+    <button class="sm" id="save">Save scene</button>
+    <button class="sm" id="open">Open scene</button>
+    <button class="sm primary" id="gif">Make a GIF</button>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="stack">
+    <div class="console">
+      <div class="screen-hold"><canvas id="screen" width="960" height="720"></canvas></div>
+      <div class="bar">
+        <button class="go" id="play">▶ Play</button>
+        <button class="sm" id="stop">■ Stop</button>
+        <div style="flex:1;min-width:130px">
+          <label class="fld" for="speed">Speed</label>
+          <input type="range" id="speed" min="1" max="6" step="1" value="3">
+        </div>
+        <span id="status" class="mono"></span>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Who is it?</h2>
+      <div class="row" style="margin-bottom:12px">
+        <button id="who-baby" aria-pressed="true">🍼 Baby</button>
+        <button id="who-adult" aria-pressed="false">🧡 Grown-up</button>
+      </div>
+      <label class="fld" for="csize">How big? <span id="csizev" class="mono">100%</span></label>
+      <div class="row" style="align-items:center;margin-bottom:14px">
+        <input type="range" id="csize" min="30" max="200" step="5" value="100">
+        <button class="sm" id="csizer" style="flex:0 0 auto">Normal</button>
+      </div>
+      <h2>Room</h2>
+      <div class="rooms" id="rooms"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Put things in the room</h2>
+      <div class="chips" id="propchips"></div>
+      <div id="propedit" style="display:none;margin-top:14px;padding-top:12px;
+           border-top:3px solid var(--line)">
+        <label class="fld">Selected thing — <span id="propname" class="mono"></span></label>
+        <div class="row" style="align-items:center">
+          <div style="flex:2"><label class="fld" for="psize">Size</label>
+            <input type="range" id="psize" min="8" max="120" step="2" value="28"></div>
+          <button class="sm" id="pflip" style="flex:0 0 auto">Flip ↔</button>
+          <button class="sm" id="pdel" style="flex:0 0 auto;background:var(--no);color:#fff">Remove</button>
+        </div>
+        <p class="note">Drag it around the screen to move it.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="stack">
+    <div class="panel">
+      <h2>Places to go</h2>
+      <div class="row" style="margin-bottom:10px">
+        <select id="spotact"></select>
+        <button style="flex:0 0 auto" class="pick" id="addspot">+ Add a place</button>
+      </div>
+      <div id="spots"></div>
+      <p class="note" id="spothint" style="display:none"></p>
+    </div>
+
+    <div class="panel">
+      <h2>What should it do?</h2>
+      <div class="chips" id="actions"></div>
+      <p class="note" id="movehint" style="display:none"></p>
+    </div>
+
+    <div class="panel">
+      <h2>The plan</h2>
+      <ol id="script"></ol>
+      <div class="row" style="margin-top:10px">
+        <button class="sm" id="clear">Start over</button>
+        <button class="sm" id="undo">Undo</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<input type="file" id="file" accept=".json,application/json" style="display:none">
+
+<script>/*SCENE_DATA*/</script>
+<script>
+const SD=window.SCENE_DATA, $=id=>document.getElementById(id);
+const SCR=SD.scr;
+let ZOOM=3;                 // on screen; the GIF re-renders at GIF_ZOOM to keep files sendable
+const GIF_ZOOM=2;
+const cv=$('screen'), ctx=cv.getContext('2d');
+cv.width=SCR.w*ZOOM; cv.height=SCR.h*ZOOM;
+
+// ---------- state ----------
+const S={ phase:'baby', room:Object.keys(SD.rooms)[0], steps:[], props:[], spots:[],
+          start:{x:80,y:SD.scr.floor}, size:100, sel:-1 };
+let idN=0; const nextId=()=>'k'+(++idN);
+// A place is somewhere in the room with something to do there. Steps point AT the place,
+// so nudging the bed moves where the capybara goes - the bed stays the bed.
+const spotById=id=>S.spots.find(p=>p.id===id);
+function spotPos(sp){
+  if(!sp) return null;
+  if(sp.prop){ const pr=S.props.find(p=>p.id===sp.prop);
+    if(pr) return {x:pr.x+(sp.dx||0), y:pr.y+(sp.dy||0)} }
+  return {x:sp.x, y:sp.y};
+}
+const charScale=()=>SD.phases[S.phase].scale*(S.size/100);
+let armed=null, playing=false, tPlay=0, raf=0, sel=-1, dragging=null;
+const IMG={};                       // cache: every sprite decoded once
+
+function img(src){ if(IMG[src]) return IMG[src];
+  const i=new Image(); i.src=src; IMG[src]=i; return i }
+Object.values(SD.rooms).forEach(img);
+
+const ph=()=>SD.phases[S.phase];
+const clipName=base=>ph().prefix+base;
+const has=n=>!!SD.clips[n];
+
+// ---------- what the capybara can do ----------
+// Only offer what art actually exists for this phase, so a kid can never pick a dead action.
+const ACTS=[
+  {k:'move', label:'Walk to…',  icon:'🚶', baby:'Crawl to…', babyIcon:'🐾'},
+  {k:'Eat',    label:'Eat',     icon:'🍽'},
+  {k:'Sleep',  label:'Sleep',   icon:'😴'},
+  {k:'Sit',    label:'Sit',     icon:'🪑'},
+  {k:'Bathe',  label:'Wash',    icon:'🛁'},
+  {k:'Love',   label:'Love',    icon:'💜'},
+  {k:'Angry',  label:'Grumpy',  icon:'😠'},
+  {k:'Bored',  label:'Bored',   icon:'🥱'},
+  {k:'Tired',  label:'Sleepy',  icon:'💤'},
+  {k:'Hungry', label:'Hungry',  icon:'🍐'},
+  {k:'Sick',   label:'Poorly',  icon:'🤒'},
+  {k:'Pickup', label:'Pick up', icon:'🤲'},
+  {k:'Idle',   label:'Wait',    icon:'⏳'},
+  {k:'Onesie', label:'Wait',    icon:'⏳'},
+];
+function actionList(){
+  const out=[];
+  for(const a of ACTS){
+    if(a.k==='move'){ out.push(a); continue }
+    if(!has(clipName(a.k))) continue;
+    if(a.k==='Idle'   && S.phase!=='adult') continue;
+    if(a.k==='Onesie' && S.phase!=='baby')  continue;
+    out.push(a);
+  }
+  return out;
+}
+// the travelling clip, chosen the way the firmware chooses it: dominant delta
+function travelClip(dx,dy){
+  const p=ph(), east=dx>=0;
+  const diag=`${p.prefix}${p.travel}_${dy<0?'North':'South'}${east?'East':'West'}`;
+  if(Math.abs(dy)>Math.abs(dx)*0.55 && has(diag)) return diag;
+  const flat=`${p.prefix}${p.travel}_${east?'East':'West'}`;
+  return has(flat)?flat:(has(p.prefix+p.travel)?p.prefix+p.travel:clipName('Idle'));
+}
+const SPEEDS=[0,0.7,1.3,2.2,3.4,5,7];      // px per frame
+const FPS=9;
+
+// ---------- turn the plan into frames ----------
+// Every step becomes a run of {clip, frame, x, y}. Play and GIF both read this,
+// so what you watch is exactly what gets exported.
+function timeline(){
+  const out=[]; let x=S.start.x, y=S.start.y;
+  const px=SPEEDS[+$('speed').value];
+  for(const st of S.steps){
+    if(st.type==='move'||st.type==='goto'){
+      let tx=st.x, ty=st.y;
+      if(st.type==='goto'){ const q=spotPos(spotById(st.spot)); if(!q) continue; tx=q.x; ty=q.y }
+      const dx=tx-x, dy=ty-y, dist=Math.hypot(dx,dy);
+      const clip=travelClip(dx,dy), n=SD.clips[clip].frames.length;
+      const steps=Math.max(1,Math.round(dist/px));
+      for(let i=0;i<steps;i++){
+        const t=(i+1)/steps;
+        out.push({clip,frame:i%n,x:x+dx*t,y:y+dy*t});
+      }
+      x=tx; y=ty;
+    }else{
+      const clip=clipName(st.type); if(!has(clip)) continue;
+      const n=SD.clips[clip].frames.length;
+      for(let r=0;r<(st.loops||2);r++) for(let i=0;i<n;i++) out.push({clip,frame:i,x,y});
+    }
+  }
+  if(!out.length){                      // nothing planned yet — just stand there
+    const idle=has(clipName('Idle'))?clipName('Idle'):clipName('Onesie');
+    if(has(idle)) for(let i=0;i<SD.clips[idle].frames.length;i++)
+      out.push({clip:idle,frame:i,x,y});
+  }
+  return out;
+}
+
+// ---------- drawing ----------
+function drawSprite(g,clip,frame,x,y,scale){
+  const c=SD.clips[clip]; if(!c) return;
+  const im=img(c.frames[frame%c.frames.length]); if(!im.complete||!im.naturalWidth) return;
+  const sz=c.size*scale;
+  // (x,y) is where the FEET stand, so the sprite hangs from its own baseline
+  g.drawImage(im, (x-sz/2)*ZOOM, (y-c.feet*scale)*ZOOM, sz*ZOOM, sz*ZOOM);
+}
+function drawProp(g,p){
+  const d=SD.props[p.name]; if(!d) return;
+  const im=img(d.img); if(!im.complete||!im.naturalWidth) return;
+  const k=p.size/Math.max(d.w,d.h), w=d.w*k, h=d.h*k;
+  g.save(); g.imageSmoothingEnabled=false;
+  g.translate(p.x*ZOOM,p.y*ZOOM); if(p.flip) g.scale(-1,1);
+  g.drawImage(im,-w/2*ZOOM,-h*ZOOM,w*ZOOM,h*ZOOM);   // props stand on their own base
+  g.restore();
+}
+function paint(g,pose){
+  g.imageSmoothingEnabled=false;
+  g.clearRect(0,0,cv.width,cv.height);
+  const room=img(SD.rooms[S.room]);
+  if(room.complete&&room.naturalWidth) g.drawImage(room,0,0,cv.width,cv.height);
+  else { g.fillStyle='#2b2036'; g.fillRect(0,0,cv.width,cv.height); }
+  // painter's algorithm: whatever is lower on the floor is nearer the front
+  const items=S.props.map(p=>({y:p.y,draw:()=>drawProp(g,p)}));
+  items.push({y:pose.y,draw:()=>drawSprite(g,pose.clip,pose.frame,pose.x,pose.y,charScale())});
+  items.sort((a,b)=>a.y-b.y).forEach(i=>i.draw());
+  if(sel>=0&&S.props[sel]){                      // a ring round the selected thing
+    const p=S.props[sel], d=SD.props[p.name], k=p.size/Math.max(d.w,d.h);
+    g.strokeStyle='#b07ce8'; g.lineWidth=3; g.setLineDash([7,5]);
+    g.strokeRect((p.x-d.w*k/2)*ZOOM-3,(p.y-d.h*k)*ZOOM-3,d.w*k*ZOOM+6,d.h*k*ZOOM+6);
+    g.setLineDash([]);
+  }
+  if(!playing) S.spots.forEach(sp=>{             // where the places are, while building
+    const q=spotPos(sp); if(!q) return;
+    g.strokeStyle='#b07ce8'; g.fillStyle='rgba(176,124,232,.25)'; g.lineWidth=2;
+    g.beginPath(); g.ellipse(q.x*ZOOM,q.y*ZOOM,7*ZOOM,3*ZOOM,0,0,7); g.fill(); g.stroke();
+    g.fillStyle='#b07ce8'; g.font='700 '+(4*ZOOM)+'px ui-sans-serif,system-ui';
+    g.textAlign='center'; g.fillText(sp.name,q.x*ZOOM,(q.y-6)*ZOOM);
+    g.textAlign='left';
+  });
+  if(armed==='spot'||armed==='move'){            // show where they may tap
+    const b=ph().bounds;
+    g.strokeStyle='rgba(176,124,232,.85)'; g.lineWidth=3; g.setLineDash([9,7]);
+    g.strokeRect(b[0]*ZOOM,b[2]*ZOOM,(b[1]-b[0])*ZOOM,(b[3]-b[2])*ZOOM); g.setLineDash([]);
+  }
+}
+let TL=[], frameAt=0;
+function still(){
+  TL=timeline();
+  const i=Math.min(frameAt,TL.length-1);
+  paint(ctx,TL[i]||{clip:clipName('Idle'),frame:0,x:S.start.x,y:S.start.y});
+}
+
+// ---------- playing ----------
+function play(){
+  TL=timeline(); if(!TL.length) return;
+  playing=true; frameAt=0; tPlay=performance.now();
+  $('play').textContent='❚❚ Pause';
+  const tick=now=>{
+    if(!playing) return;
+    const i=Math.floor((now-tPlay)/(1000/FPS));
+    if(i>=TL.length){ stop(); return }
+    frameAt=i; paint(ctx,TL[i]);
+    $('status').textContent=`${i+1} / ${TL.length}`;
+    raf=requestAnimationFrame(tick);
+  };
+  raf=requestAnimationFrame(tick);
+}
+function stop(){ playing=false; cancelAnimationFrame(raf); frameAt=0;
+  $('play').textContent='▶ Play'; $('status').textContent=''; still() }
+$('play').onclick=()=>{ if(playing){ playing=false; cancelAnimationFrame(raf);
+  $('play').textContent='▶ Play' } else play() };
+$('stop').onclick=stop;
+$('speed').oninput=()=>{ if(!playing) still() };
+
+// ---------- building the plan ----------
+function say(m,bad){ $('status').textContent=m; $('status').className='mono'+(bad?' warn':'');
+  clearTimeout(say.t); say.t=setTimeout(()=>{$('status').textContent='';},3500) }
+function addStep(k){
+  if(k==='move'){ armed='move';
+    $('movehint').style.display='block';
+    $('movehint').textContent=S.phase==='baby'
+      ? 'Now tap the floor where the baby should crawl to.'
+      : 'Now tap the floor where the capybara should walk to.';
+    still(); return }
+  S.steps.push({type:k,loops:2}); refresh();
+}
+function refresh(){ drawScript(); drawActions(); drawSpots(); still(); saveLocal() }
+
+function drawActions(){
+  $('actions').innerHTML=actionList().map(a=>{
+    const lbl=(S.phase==='baby'&&a.baby)?a.baby:a.label;
+    const ico=(S.phase==='baby'&&a.babyIcon)?a.babyIcon:a.icon;
+    const nm=(a.k==='Idle'||a.k==='Onesie')?'Wait':lbl;
+    return `<button class="${a.k==='move'?'pick':''}" data-a="${a.k}">${ico} ${nm}</button>`;
+  }).join('');
+  $('actions').querySelectorAll('[data-a]').forEach(b=>b.onclick=()=>addStep(b.dataset.a));
+}
+function stepLabel(st,i){
+  const verb=S.phase==='baby'?'Crawl to':'Walk to';
+  if(st.type==='goto'){ const sp=spotById(st.spot);
+    if(!sp) return {t:verb+' (place removed)',s:''};
+    const q=spotPos(sp);
+    return {t:`${verb} the ${sp.name}`, s:`${Math.round(q.x)}, ${Math.round(q.y)}${sp.prop?' · follows it':''}`} }
+  if(st.type==='move') return {t:verb, s:`x ${Math.round(st.x)}, y ${Math.round(st.y)}`};
+  const a=ACTS.find(a=>a.k===st.type);
+  return {t:(a?((S.phase==='baby'&&a.baby)?a.baby:a.label):st.type).replace('…',''),
+          s:`${st.loops||2}×`};
+}
+function drawScript(){
+  const el=$('script');
+  if(!S.steps.length){ el.innerHTML=
+    `<li style="border:0;padding:0"><div class="empty">Nothing planned yet.<br>
+     Tap something under <b>What should it do?</b></div></li>`; return }
+  el.innerHTML=S.steps.map((st,i)=>{const L=stepLabel(st,i);
+    return `<li class="${i===S.sel?'on':''}" data-i="${i}">
+      <span class="n mono">${i+1}</span>
+      <span class="what">${L.t}<small class="mono">${L.s}</small></span>
+      ${st.type!=='move'?`<button class="tiny" data-more="${i}">+1</button>`:''}
+      <button class="tiny" data-up="${i}" ${i===0?'disabled':''} title="Move earlier">▲</button>
+      <button class="tiny" data-x="${i}" style="background:var(--no);color:#fff"
+              title="Remove this step">✕</button></li>`;
+  }).join('');
+  const on=(sel,fn)=>el.querySelectorAll(sel).forEach(b=>b.onclick=e=>{
+    e.stopPropagation(); fn(+b.dataset.up||+b.dataset.x||+b.dataset.more||0,b); refresh() });
+  el.querySelectorAll('[data-up]').forEach(b=>b.onclick=()=>{const i=+b.dataset.up;
+    [S.steps[i-1],S.steps[i]]=[S.steps[i],S.steps[i-1]]; refresh()});
+  el.querySelectorAll('[data-x]').forEach(b=>b.onclick=()=>{S.steps.splice(+b.dataset.x,1); refresh()});
+  el.querySelectorAll('[data-more]').forEach(b=>b.onclick=()=>{const st=S.steps[+b.dataset.more];
+    st.loops=(st.loops||2)>=6?1:(st.loops||2)+1; refresh()});
+}
+
+// ---------- the screen: tap to place, drag to move ----------
+const at=e=>{const r=cv.getBoundingClientRect();
+  return {x:(e.clientX-r.left)/r.width*SCR.w, y:(e.clientY-r.top)/r.height*SCR.h}};
+function hitProp(p0){
+  for(let i=S.props.length-1;i>=0;i--){ const p=S.props[i], d=SD.props[p.name];
+    const k=p.size/Math.max(d.w,d.h), w=d.w*k, h=d.h*k;
+    if(p0.x>=p.x-w/2&&p0.x<=p.x+w/2&&p0.y>=p.y-h&&p0.y<=p.y) return i }
+  return -1;
+}
+cv.addEventListener('pointerdown',e=>{
+  const p=at(e), b=ph().bounds;
+  if(armed==='move'){
+    S.steps.push({type:'move',x:Math.max(b[0],Math.min(b[1],p.x)),
+                              y:Math.max(b[2],Math.min(b[3],p.y))});
+    armed=null; $('movehint').style.display='none'; refresh(); return;
+  }
+  if(armed==='spot'){
+    const x=Math.max(b[0],Math.min(b[1],p.x)), y=Math.max(b[2],Math.min(b[3],p.y));
+    const pr=(sel>=0&&S.props[sel])?S.props[sel]:null;
+    const act=$('spotact').value;
+    const a=ACTS.find(v=>v.k===act);
+    const nm=pr ? pr.name.replace(/_/g,' ')
+                : (a?((S.phase==='baby'&&a.baby)?a.baby:a.label).replace('…','') : act);
+    S.spots.push(pr
+      ? {id:nextId(),name:nm,action:act,prop:pr.id,dx:x-pr.x,dy:y-pr.y}
+      : {id:nextId(),name:nm,action:act,x,y});
+    armed=null; $('spothint').style.display='none'; refresh(); return;
+  }
+  const h=hitProp(p);
+  sel=h; propPanel();
+  if(h>=0){ dragging={i:h,dx:S.props[h].x-p.x,dy:S.props[h].y-p.y};
+            cv.setPointerCapture(e.pointerId) }
+  still();
+});
+cv.addEventListener('pointermove',e=>{ if(!dragging)return; const p=at(e);
+  const t=S.props[dragging.i];
+  t.x=Math.max(2,Math.min(SCR.w-2,p.x+dragging.dx));
+  t.y=Math.max(20,Math.min(SCR.h-2,p.y+dragging.dy)); still() });
+cv.addEventListener('pointerup',()=>{ if(dragging){dragging=null;saveLocal()} });
+
+// ---------- props ----------
+function drawProps(){
+  $('propchips').innerHTML=Object.keys(SD.props).map(n=>
+    `<button class="chip sm" data-p="${n}"><img src="${SD.props[n].img}" alt="">${n.replace(/_/g,' ')}</button>`
+  ).join('');
+  $('propchips').querySelectorAll('[data-p]').forEach(b=>b.onclick=()=>{
+    S.props.push({id:nextId(),name:b.dataset.p,x:SCR.w/2,y:SD.scr.floor+18,size:28,flip:false});
+    sel=S.props.length-1; propPanel(); still(); saveLocal();
+    say('Drag it where you want it');
+  });
+}
+function propPanel(){
+  const on=sel>=0&&S.props[sel];
+  $('propedit').style.display=on?'block':'none';
+  if(on){ $('propname').textContent=S.props[sel].name; $('psize').value=S.props[sel].size }
+}
+$('psize').oninput=e=>{ if(S.props[sel]){S.props[sel].size=+e.target.value; still()} };
+$('pflip').onclick=()=>{ if(S.props[sel]){S.props[sel].flip=!S.props[sel].flip; still(); saveLocal()} };
+$('pdel').onclick=()=>{ if(S.props[sel]){S.props.splice(sel,1); sel=-1; propPanel(); still(); saveLocal()} };
+addEventListener('keydown',e=>{
+  if(/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
+  if((e.key==='Delete'||e.key==='Backspace')&&sel>=0){e.preventDefault();$('pdel').click()}
+  if(e.key===' '){e.preventDefault();$('play').click()}
+});
+
+// ---------- places ----------
+// A place is a spot in the room with something to do there: crawl to the bed, then sleep.
+// Steps store the place's id, not its coordinates, so moving the bed moves where the
+// capybara goes - the bed stays the bed.
+function drawSpotOptions(){
+  $('spotact').innerHTML=actionList().filter(a=>a.k!=='move').map(a=>{
+    const lbl=(S.phase==='baby'&&a.baby)?a.baby:a.label;
+    return `<option value="${a.k}">${(a.k==='Idle'||a.k==='Onesie')?'Wait':lbl}</option>`}).join('');
+}
+function drawSpots(){
+  const el=$('spots');
+  if(!S.spots.length){ el.innerHTML=
+    '<div class="empty">No places yet.<br>Pick what happens there, then tap <b>Add a place</b>.</div>';
+    return }
+  el.innerHTML=S.spots.map((sp,i)=>{
+    const a=ACTS.find(x=>x.k===sp.action);
+    const doing=a?((S.phase==='baby'&&a.baby)?a.baby:a.label).replace('...',''):sp.action;
+    const q=spotPos(sp);
+    return `<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;
+        background:var(--paper);border:3px solid var(--line);border-radius:11px;padding:7px 9px">
+      <input value="${sp.name}" data-nm="${i}" aria-label="Name of this place"
+        style="flex:1;min-width:0;font:inherit;font-weight:700;border:0;background:transparent;
+        color:var(--ink);padding:2px">
+      <span class="mono" style="font-size:11px;color:var(--soft)">${doing} &middot;
+        ${Math.round(q.x)},${Math.round(q.y)}${sp.prop?' &bull; moves with it':''}</span>
+      <button class="tiny" data-use="${i}">Use</button>
+      <button class="tiny" data-delsp="${i}" style="background:var(--no);color:#fff">&times;</button>
+    </div>`}).join('');
+  el.querySelectorAll('[data-nm]').forEach(inp=>inp.onchange=()=>{
+    S.spots[+inp.dataset.nm].name=inp.value.slice(0,24)||'Place'; refresh() });
+  el.querySelectorAll('[data-use]').forEach(b=>b.onclick=()=>{
+    const sp=S.spots[+b.dataset.use];
+    S.steps.push({type:'goto',spot:sp.id});
+    S.steps.push({type:sp.action,loops:2});
+    refresh() });
+  el.querySelectorAll('[data-delsp]').forEach(b=>b.onclick=()=>{
+    const id=S.spots[+b.dataset.delsp].id;
+    S.spots.splice(+b.dataset.delsp,1);
+    S.steps=S.steps.filter(st=>st.spot!==id);   // steps pointing here go with it
+    refresh() });
+}
+$('addspot').onclick=()=>{
+  armed='spot';
+  const pr=(sel>=0&&S.props[sel])?S.props[sel]:null;
+  $('spothint').style.display='block';
+  $('spothint').textContent=pr
+    ? `Tap where the capybara should end up. It will stay with the ${pr.name.replace(/_/g,' ')}.`
+    : 'Tap the room where the capybara should end up.';
+  still();
+};
+
+// ---------- rooms & who ----------
+function drawRooms(){
+  $('rooms').innerHTML=Object.keys(SD.rooms).map(n=>
+    `<button data-r="${n}" aria-pressed="${n===S.room}" title="${n}">
+       <img src="${SD.rooms[n]}" alt="${n}"></button>`).join('');
+  $('rooms').querySelectorAll('[data-r]').forEach(b=>b.onclick=()=>{
+    S.room=b.dataset.r; drawRooms(); still(); saveLocal() });
+}
+function setPhase(p){
+  S.phase=p;
+  $('who-baby').setAttribute('aria-pressed',p==='baby');
+  $('who-adult').setAttribute('aria-pressed',p==='adult');
+  $('who-baby').classList.toggle('primary',p==='baby');
+  $('who-adult').classList.toggle('primary',p==='adult');
+  const b=ph().bounds;
+  S.start.y=Math.max(b[2],Math.min(b[3],S.start.y));
+  S.steps=S.steps.filter(st=>st.type==='move'||has(clipName(st.type)));
+  refresh();
+}
+$('who-baby').onclick=()=>setPhase('baby');
+$('who-adult').onclick=()=>setPhase('adult');
+$('csize').oninput=e=>{ S.size=+e.target.value; $('csizev').textContent=S.size+'%';
+  still(); saveLocal() };
+$('csizer').onclick=()=>{ S.size=100; $('csize').value=100; $('csizev').textContent='100%';
+  still(); saveLocal() };
+$('clear').onclick=()=>{ S.steps=[]; refresh() };
+$('undo').onclick=()=>{ S.steps.pop(); refresh() };
+
+// ---------- save / open ----------
+const KEY='capybara-playhouse';
+function saveLocal(){ try{ localStorage.setItem(KEY,JSON.stringify(
+  {phase:S.phase,room:S.room,steps:S.steps,props:S.props,spots:S.spots,
+   start:S.start,size:S.size})) }catch(e){} }
+function loadState(o){
+  if(!o||typeof o!=='object') throw new Error('That file is not a scene');
+  S.phase=SD.phases[o.phase]?o.phase:'baby';
+  S.room=SD.rooms[o.room]?o.room:Object.keys(SD.rooms)[0];
+  S.steps=Array.isArray(o.steps)?o.steps.filter(s=>s&&(s.type==='move'||s.type==='goto'||has(clipName(s.type)))):[];
+  S.props=Array.isArray(o.props)?o.props.filter(p=>p&&SD.props[p.name]):[];
+  S.props.forEach(p=>{ if(!p.id) p.id=nextId() });
+  S.spots=Array.isArray(o.spots)?o.spots.filter(sp=>sp&&sp.action):[];
+  S.spots.forEach(sp=>{ if(!sp.id) sp.id=nextId() });
+  S.steps=S.steps.filter(st=>st.type!=='goto'||spotById(st.spot));
+  if(o.start) S.start={x:+o.start.x||80,y:+o.start.y||SD.scr.floor};
+  S.size=Math.max(30,Math.min(200,+o.size||100));
+  $('csize').value=S.size; $('csizev').textContent=S.size+'%';
+  sel=-1; propPanel(); setPhase(S.phase); drawRooms();
+}
+// Saving a file: inside the published viewer this goes through the downloads capability
+// (the viewer confirms each save). Running locally there is no `claude`, so fall back to a
+// plain link. If the runtime exists but withholds the capability, the buttons are hidden
+// rather than left as dead controls.
+let DL;
+async function downloader(){
+  if(DL!==undefined) return DL;
+  try{ DL = (typeof claude!=='undefined' && claude.use) ? await claude.use('downloads') : null }
+  catch(e){ DL=null }
+  return DL;
+}
+const hosted=()=>typeof claude!=='undefined' && !!(claude && claude.use);
+async function saveFile(data,name){
+  const d=await downloader();
+  if(d){
+    try{ await d.save({filename:name,data}); return name }
+    catch(err){
+      const c=err&&err.code;
+      if(c==='declined')      { say('Save cancelled'); return null }
+      if(c==='rate_limited')  { say('One at a time — try again in a moment',true); return null }
+      if(c==='too_large')     { say('That GIF is too big to save. Try fewer steps.',true); return null }
+      say('Could not save it'+(err&&err.message?' — '+err.message:''),true); return null;
+    }
+  }
+  if(hosted()) { say('Saving is not available here',true); return null }
+  const blob=data instanceof Blob?data:new Blob([data],{type:'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name;
+  a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),4000); return name;
+}
+const stampName=()=>new Date().toLocaleString('sv').replace(/[-:]/g,'').replace(' ','-').slice(0,13);
+$('save').onclick=async()=>{
+  const n=await saveFile(JSON.stringify({format:'capybara-playhouse',v:1,phase:S.phase,
+    room:S.room,steps:S.steps,props:S.props,spots:S.spots,start:S.start,size:S.size},null,1),
+    `my-scene-${stampName()}.json`);
+  if(n) say('Saved '+n);
+};
+$('open').onclick=()=>$('file').click();
+$('file').onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
+  try{ loadState(JSON.parse(await f.text())); say('Opened '+f.name) }
+  catch(err){ say(err.message,true) } e.target.value='' };
+
+// ---------- GIF ----------
+// Real LZW. The decoder adds no entry for the first code after a CLEAR, so its table runs
+// one behind ours; it widens at (1<<size), which is (1<<size)+1 here.
+function gif(imgs,w,h,delayCs){
+  let buf=new Uint8Array(1<<20),pos=0;
+  const need=n=>{ if(pos+n<=buf.length)return; let c=buf.length; while(c<pos+n)c*=2;
+    const b=new Uint8Array(c); b.set(buf.subarray(0,pos)); buf=b };
+  const wb=v=>{need(1);buf[pos++]=v&255}, w16=v=>{wb(v);wb(v>>8)};
+  const ws=s=>{for(let i=0;i<s.length;i++)wb(s.charCodeAt(i))};
+  const count=new Map();
+  for(const d of imgs) for(let i=0;i<d.length;i+=4){ if(d[i+3]<128) continue;
+    const k=(d[i]<<16)|(d[i+1]<<8)|d[i+2]; count.set(k,(count.get(k)||0)+1) }
+  let cols=[...count.keys()];
+  if(cols.length>255){ const q=new Map();
+    for(const [k,n] of count){ const t=((k>>16&0xF0)<<16)|((k>>8&0xF0)<<8)|(k&0xF0);
+      q.set(t,(q.get(t)||0)+n) }
+    cols=[...q.entries()].sort((a,b)=>b[1]-a[1]).slice(0,255).map(e=>e[0]) }
+  const exact=new Map(); cols.forEach((c,i)=>exact.set(c,i+1));
+  const near=new Map();
+  const look=k=>{ let v=exact.get(k); if(v!==undefined)return v;
+    v=near.get(k); if(v!==undefined)return v;
+    const r=k>>16&255,g=k>>8&255,b=k&255; let best=1,bd=1e9;
+    for(let i=0;i<cols.length;i++){const c=cols[i],dr=r-(c>>16&255),dg=g-(c>>8&255),db=b-(c&255);
+      const d=dr*dr+dg*dg+db*db; if(d<bd){bd=d;best=i+1}}
+    near.set(k,best); return best };
+  ws('GIF89a'); w16(w); w16(h); wb(0xF7); wb(0); wb(0);
+  for(let i=0;i<256;i++){const c=i===0?0:(cols[i-1]??0); wb(c>>16); wb(c>>8); wb(c)}
+  ws('!'); wb(0xFF); wb(11); ws('NETSCAPE2.0'); wb(3); wb(1); w16(0); wb(0);
+  // The room never moves, so after the first frame only a small rectangle around the
+  // capybara actually changes. Emit just that rectangle, leave the rest standing
+  // (disposal 1), and mark unchanged pixels inside it transparent so they compress away.
+  const MIN=8, CLEAR=256, EOI=257;
+  const px=new Uint16Array(w*h), out=new Uint8Array(w*h*2+64);
+  let prev=null;
+  for(const d of imgs){
+    let x0=0,y0=0,x1=w-1,y1=h-1;
+    if(prev){
+      x0=w; y0=h; x1=-1; y1=-1;
+      for(let y=0;y<h;y++){ const row=y*w*4;
+        for(let x=0;x<w;x++){ const i=row+x*4;
+          if(d[i]!==prev[i]||d[i+1]!==prev[i+1]||d[i+2]!==prev[i+2]||d[i+3]!==prev[i+3]){
+            if(x<x0)x0=x; if(x>x1)x1=x; if(y<y0)y0=y; if(y>y1)y1=y; } } }
+      if(x1<0){ x0=0;y0=0;x1=0;y1=0 }                 // nothing moved: a 1x1 no-op frame
+    }
+    const rw=x1-x0+1, rh=y1-y0+1;
+    let n=0;
+    for(let y=y0;y<=y1;y++) for(let x=x0;x<=x1;x++){
+      const i=(y*w+x)*4;
+      const same=prev&&d[i]===prev[i]&&d[i+1]===prev[i+1]&&d[i+2]===prev[i+2]&&d[i+3]===prev[i+3];
+      px[n++]= (same||d[i+3]<128) ? 0 : look((d[i]<<16)|(d[i+1]<<8)|d[i+2]);
+    }
+    let lp=0,cur=0,nb=0,size=MIN+1,next=EOI+1; const dict=new Map();
+    const emit=c=>{cur|=c<<nb;nb+=size;while(nb>=8){out[lp++]=cur&255;cur>>=8;nb-=8}};
+    emit(CLEAR); let prefix=px[0];
+    for(let p=1;p<n;p++){ const k=px[p], key=(prefix<<12)|k, got=dict.get(key);
+      if(got!==undefined){prefix=got;continue}
+      emit(prefix);
+      if(next<4096){ dict.set(key,next); next++;
+        if(next===(1<<size)+1&&size<12) size++; }
+      else { emit(CLEAR); dict.clear(); next=EOI+1; size=MIN+1 }
+      prefix=k }
+    emit(prefix); emit(EOI); if(nb>0) out[lp++]=cur&255;
+    ws('!'); wb(0xF9); wb(4); wb(0x05); w16(delayCs); wb(0); wb(0);   // disposal 1, transparent 0
+    ws(','); w16(x0); w16(y0); w16(rw); w16(rh); wb(0); wb(MIN);
+    for(let i=0;i<lp;i+=255){ const m=Math.min(255,lp-i); wb(m);
+      for(let j=0;j<m;j++) wb(out[i+j]) }
+    wb(0);
+    prev=d;
+  }
+  wb(0x3B);
+  return new Blob([buf.subarray(0,pos)],{type:'image/gif'});
+}
+$('gif').onclick=()=>{
+  const tl=timeline(); if(!tl.length) return say('Plan something first',true);
+  if(tl.length>320) return say('That scene is very long — try fewer steps',true);
+  say('Making your GIF…');
+  setTimeout(()=>{
+    const keepZ=ZOOM; ZOOM=GIF_ZOOM;                 // smaller pixels, sendable file
+    const W=SCR.w*ZOOM, H=SCR.h*ZOOM;
+    const off=document.createElement('canvas'); off.width=W; off.height=H;
+    const g=off.getContext('2d');
+    const frames=tl.map(p=>{ g.clearRect(0,0,W,H); paintTo(g,p);
+      return g.getImageData(0,0,W,H).data });
+    ZOOM=keepZ;
+    const b=gif(frames,W,H,Math.max(2,Math.round(100/FPS)));
+    const mb=b.size/1024/1024, tag=mb<1?(b.size/1024|0)+' KB':mb.toFixed(1)+' MB';
+    saveFile(b,`my-scene-${stampName()}.gif`).then(n=>{ if(n) say(`Saved ${n} — ${tag}`) });
+  },40);
+};
+function paintTo(g,pose){                 // same as paint(), on any context, at the live ZOOM
+  const room=img(SD.rooms[S.room]);
+  g.imageSmoothingEnabled=false;
+  if(room.complete&&room.naturalWidth) g.drawImage(room,0,0,SCR.w*ZOOM,SCR.h*ZOOM);
+  const items=S.props.map(p=>({y:p.y,draw:()=>drawProp(g,p)}));
+  items.push({y:pose.y,draw:()=>drawSprite(g,pose.clip,pose.frame,pose.x,pose.y,charScale())});
+  items.sort((a,b)=>a.y-b.y).forEach(i=>i.draw());
+}
+
+// ---------- go ----------
+drawRooms(); drawProps(); drawSpotOptions(); setPhase('baby');
+try{ const raw=localStorage.getItem(KEY); if(raw) loadState(JSON.parse(raw)) }catch(e){}
+let ready=0;
+const all=[...Object.values(SD.rooms), ...Object.values(SD.props).map(p=>p.img)];
+Object.values(SD.clips).forEach(c=>c.frames.forEach(f=>all.push(f)));
+all.forEach(src=>{ const i=img(src);
+  if(i.complete) ready++; else i.onload=()=>{ if(++ready%40===0||ready===all.length) still() } });
+still();
+</script>

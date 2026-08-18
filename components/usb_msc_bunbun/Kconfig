@@ -1,0 +1,12 @@
+menu "bunbun USB card reader (W-020)"
+
+config BUNBUN_USB_MSC
+    bool "Enable the USB card-reader boot mode"
+    default n
+    depends on IDF_TARGET_ESP32S3
+    help
+        Injects an MSC-only USB personality into TinyUSB for the dedicated
+        card-reader boot mode. Requires USB_DEVICE_UAC_AS_PART=y so the UAC
+        component stands down its own descriptor injection.
+
+endmenu

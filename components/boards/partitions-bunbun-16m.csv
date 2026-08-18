@@ -1,0 +1,21 @@
+# Partition table for bunbun on the Freenove ESP32-S3 CYD (16MB flash).
+#
+# Derived from partitions-16m.csv, with the OTA slots trimmed from 6MB to 4MB to make room for
+# the art. The firmware is ~1.7MB, so 4MB per slot is still more than double what is needed and
+# OTA keeps working.
+#
+# `assets` MUST keep this exact name and subtype: bunbun locates it with
+#   esp_partition_find_first(ESP_PARTITION_TYPE_DATA, 0x40, "assets")
+# and silently renders nothing if the lookup fails. Flashed separately from the firmware, the
+# same way it was on the Arduino build:
+#   python -m esptool --chip esp32s3 -p COM24 write_flash 0xC20000 assets/bunbun.pak
+#
+# Name,     Type, SubType,  Offset,   Size,     Flags
+nvs,        data, nvs,      0x9000,   0x10000,
+otadata,    data, ota,      0x19000,  0x2000,
+phy_init,   data, phy,      0x1B000,  0x1000,
+nvs_key,    data, nvs_keys, 0x1C000,  0x1000,
+ota_0,      app,  ota_0,    0x20000,  0x400000,
+ota_1,      app,  ota_1,    0x420000, 0x400000,
+storage,    data, spiffs,   0x820000, 0x400000,
+assets,     data, 0x40,     0xC20000, 0x3E0000,

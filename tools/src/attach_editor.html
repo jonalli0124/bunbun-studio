@@ -1,0 +1,2493 @@
+<meta charset="utf-8">
+<title>Animation Creation</title>
+<style>
+  :root{ --bg:#f4f1ea; --panel:#fffdf8; --ink:#241f1a; --mut:#7a7168;
+         --line:#ddd5c8; --accent:#9151d3; --warn:#c2410c; --char:#0f766e; }
+  @media (prefers-color-scheme: dark){ :root:not([data-theme=light]){
+    --bg:#1a1714;--panel:#232019;--ink:#f0ebe2;--mut:#9c9287;--line:#3a342b;
+    --warn:#fb923c;--char:#5eead4; }}
+  :root[data-theme=dark]{ --bg:#1a1714;--panel:#232019;--ink:#f0ebe2;--mut:#9c9287;
+    --line:#3a342b;--warn:#fb923c;--char:#5eead4; }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:14px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+  header{padding:14px 18px;border-bottom:1px solid var(--line);display:flex;gap:14px;
+         align-items:baseline;flex-wrap:wrap}
+  h1{font-size:15px;margin:0;font-weight:650}
+  .hint{color:var(--mut);font-size:12px}
+  /* THREE COLUMNS, like the Scene Assembler: the animation | the stage | the props.
+     Dividers drag, widths are remembered, and the stage grows with the monitor. */
+  main{display:grid;gap:0 10px;padding:16px;align-items:start;
+       grid-template-columns:var(--wAnim,300px) 10px minmax(380px,1fr) 10px var(--wProps,352px);
+       grid-template-areas:"anim g1 stage g2 props"}
+  .col-anim{grid-area:anim}.col-stage{grid-area:stage}.col-props{grid-area:props}
+  .col-anim,.col-stage,.col-props{display:flex;flex-direction:column;gap:14px;min-width:0}
+  .gut{cursor:col-resize;align-self:stretch;border-radius:4px;position:relative}
+  .gut::after{content:'';position:absolute;left:4px;top:0;bottom:0;width:2px;
+    background:var(--line);border-radius:2px}
+  .gut:hover::after,.gut.live::after{background:var(--accent)}
+  .gut1{grid-area:g1}.gut2{grid-area:g2}
+  @media (max-width:1200px){ main{grid-template-columns:1fr;
+    grid-template-areas:"stage" "anim" "props"} .gut{display:none} }
+  /* the stage: centred, scaling with the window; the height budget leaves room for the
+     transport and the frame strip below it */
+  .stagebox{position:relative;display:flex;justify-content:center}
+  .stagebox canvas{width:auto;height:auto;max-width:100%;
+    max-height:calc(100vh - 340px);min-height:240px}
+  .fsBtn{position:absolute;top:8px;right:8px;z-index:3;padding:4px 9px;opacity:.85}
+  .fsBtn:hover{opacity:1}
+  body.fs main{grid-template-columns:1fr;grid-template-areas:"stage"}
+  body.fs .col-anim,body.fs .col-props,body.fs .gut,body.fs .col-out{display:none}
+  body.fs .stagebox canvas{max-width:calc(100vw - 60px);max-height:calc(100vh - 240px)}
+  /* the output drawer: baked + render live collapsed against the right edge and slide out
+     on hover - the assembler's JSON drawer, verbatim (min-width, because width loses) */
+  .col-out{position:fixed;right:0;top:64px;bottom:16px;width:26px;z-index:40;
+    transition:min-width .18s ease;display:flex;flex-direction:column;overflow:hidden}
+  .col-out:hover,.col-out:focus-within,.col-out.open{min-width:min(430px,55vw)}
+  .col-out .panel{flex:1;display:flex;flex-direction:column;overflow:auto;
+    box-shadow:-6px 0 18px rgba(0,0,0,.12);padding-left:34px}
+  .col-out pre{max-height:none;flex:1;min-height:120px}
+  .drawerTab{position:absolute;left:0;top:0;bottom:0;width:26px;display:flex;
+    align-items:center;justify-content:center;cursor:default}
+  .drawerTab span{writing-mode:vertical-rl;font-size:11px;color:var(--mut);
+    letter-spacing:.08em;user-select:none}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px}
+  canvas{image-rendering:pixelated;display:block;border-radius:6px;
+         background:repeating-conic-gradient(#0000 0 25%,#8883 0 50%) 0 0/16px 16px}
+  #stage{cursor:grab} #stage.drag{cursor:grabbing}
+  .side{min-width:310px;max-width:370px;display:flex;flex-direction:column;gap:14px}
+  label{display:block;font-size:12px;color:var(--mut);margin-bottom:4px}
+  select,input[type=range]{width:100%}
+  select{padding:6px;border:1px solid var(--line);border-radius:6px;
+         background:var(--bg);color:var(--ink);font:inherit}
+  .row{display:flex;gap:8px}.row>*{flex:1}
+  .val{font-variant-numeric:tabular-nums;font-weight:600}
+  button{font:inherit;padding:7px 10px;border:1px solid var(--line);border-radius:6px;
+         background:var(--bg);color:var(--ink);cursor:pointer}
+  button:hover{border-color:var(--accent)}
+  button.pri{background:var(--accent);color:#fff;border-color:var(--accent)}
+  button.mini{padding:1px 6px;font-size:12px;line-height:1.4}
+  button:disabled{opacity:.35;cursor:default}
+  pre{background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:10px;
+      font-size:11px;overflow:auto;max-height:150px;margin:0}
+  #stack{display:flex;flex-direction:column;gap:5px;margin-bottom:10px}
+  .lyr{display:flex;gap:6px;align-items:center;padding:5px 7px;border:1px solid var(--line);
+       border-radius:7px;background:var(--bg);cursor:pointer;font-size:13px}
+  .lyr.sel{border-color:var(--accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 28%,transparent)}
+  .lyr.off{opacity:.4}
+  .lyr.chr{border-style:dashed;color:var(--char);font-weight:700}
+  .lyr img{width:22px;height:22px;image-rendering:pixelated}
+  .lyr .nm{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600}
+  .lyr .an{color:var(--mut);font-size:11px;font-weight:400}
+  #warn{color:var(--warn);font-size:12px;margin-top:8px;display:none}
+  #strip{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+  .cell{border:1px solid var(--line);border-radius:8px;padding:5px;background:var(--bg);
+        text-align:center;width:86px;cursor:pointer}
+  .cell:hover{border-color:var(--accent)}
+  .cell.cur{border-color:var(--accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 30%,transparent)}
+  .cell.skip{opacity:.35}
+  .cell canvas{width:74px;height:74px}
+  .cell .lab{font-size:11px;color:var(--mut);font-variant-numeric:tabular-nums}
+  .cell .ctl{display:flex;gap:3px;justify-content:center;margin-top:3px}
+  /* ---- the pixel editor overlay ---- */
+  #pxWrap{position:fixed;inset:0;background:rgba(20,16,12,.55);z-index:60;display:none;
+    align-items:center;justify-content:center}
+  #pxWrap.on{display:flex}
+  #pxPanel{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    padding:14px;display:flex;gap:14px;max-width:min(96vw,720px);max-height:92vh;overflow:auto}
+  #pxCv{image-rendering:pixelated;border:1px solid var(--line);border-radius:4px;
+    background:repeating-conic-gradient(#0000 0 25%,#8883 0 50%) 0 0/12px 12px;cursor:crosshair}
+  .pxSide{display:flex;flex-direction:column;gap:8px;min-width:170px}
+  .pxPal{display:grid;grid-template-columns:repeat(8,22px);gap:3px}
+  .pxPal .c{width:22px;height:22px;border-radius:4px;border:1px solid var(--line);cursor:pointer}
+  .pxPal .c.sel{outline:2px solid var(--accent)}
+  .pxTools{display:flex;gap:4px;flex-wrap:wrap}
+  .pxTools button.sel{background:var(--accent);color:#fff;border-color:var(--accent)}
+</style>
+
+<header>
+  <h1>Animation Creation <span class="hint" style="font-weight:400">&middot; part of the Scene Assembler</span></h1>
+  <span class="hint">anchors derived per frame · placement &amp; scale are constant offsets ·
+    click a prop to select · drag to move · arrows nudge · Del removes</span>
+</header>
+
+<main>
+  <div class="panel">
+    <canvas id="stage" width="680" height="680"></canvas>
+    <div class="row" style="margin-top:10px">
+      <button class="pri" id="play">▶ play</button><button id="pause">❚❚ pause</button>
+      <button id="stop">■ stop</button><button id="prev">‹</button><button id="next">›</button>
+    </div>
+    <div style="margin-top:10px">
+      <label>speed <span class="val" id="fv">7</span> fps</label>
+      <input type="range" id="fps" min="1" max="24" step="1" value="7">
+    </div>
+    <div id="gamewrap" style="margin-top:14px;display:none">
+      <label>in the game <span class="hint">&mdash; 320&times;240, real sprite scale &middot;
+        drag to place it anywhere</span></label>
+      <canvas id="gameview" width="960" height="720"
+              style="width:100%;height:auto;border-radius:6px;background:#0a0508"></canvas>
+      <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line)">
+        <label>time of day <span class="val" id="todl">13:00</span>
+          <button class="mini" id="todOff" style="float:right">lighting: on</button></label>
+        <input type="range" id="tod" min="0" max="1439" step="5" value="780">
+        <div class="row" style="margin-top:8px">
+          <button class="mini" id="lampM">lamps: auto</button>
+          <div><label>light size <span class="val" id="lszl">100%</span></label>
+            <input type="range" id="lsz" min="30" max="220" step="5" value="100"></div>
+        </div>
+        <div class="row" style="margin-top:8px">
+          <button class="mini" id="rn">rain</button>
+          <button class="mini" id="cl">clouds</button>
+          <select id="cst" style="flex:1">
+            <option value="shipped" selected>shipped (3 sizes)</option>
+            <option value="wisps">wisps</option>
+            <option value="puffs">puffs</option>
+            <option value="bank">bank</option>
+            <option value="scatter">scatter</option>
+          </select>
+        </div>
+        <div class="row" style="margin-top:6px">
+          <div><label>n <span class="val" id="cnl">3</span></label>
+            <input type="range" id="cn" min="0" max="10" step="1" value="3"></div>
+          <div><label>size <span class="val" id="cwl">100%</span></label>
+            <input type="range" id="cw" min="30" max="300" step="5" value="100"></div>
+        </div>
+        <div class="row" style="margin-top:6px">
+          <div><label>speed <span class="val" id="csl">100%</span></label>
+            <input type="range" id="cs" min="10" max="300" step="10" value="100"></div>
+          <div><label>opacity <span class="val" id="col">72%</span></label>
+            <input type="range" id="co" min="10" max="100" step="2" value="72"></div>
+        </div>
+        <div class="hint">the firmware ships 3 clouds at 100% / 100% / 72%</div>
+      </div>
+
+      <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line)">
+        <label>where actions can happen
+          <span class="hint">&mdash; a pose placed in the room is an instruction, not scenery</span></label>
+        <div class="row">
+          <select id="aClip"></select>
+          <button style="flex:0 0 auto" class="mini" id="aAdd">+ place it</button>
+          <button style="flex:0 0 auto" class="mini" id="aDel">remove</button>
+        </div>
+        <div class="hint" id="aList" style="margin-top:6px"></div>
+        <div id="aRules" style="margin-top:8px"></div>
+      </div>
+
+      <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line)">
+        <label>zones <span class="hint">&mdash; drag on the room to draw one</span></label>
+        <div class="row">
+          <button class="mini" id="zFloor">+ walkable floor</button>
+          <button class="mini" id="zKeep">+ keep out</button>
+          <button class="mini" id="zClose">finish shape</button>
+          <button class="mini" id="zDel">remove</button>
+        </div>
+        <div class="hint">click round the shape, then click the first corner again (or
+          <b>finish shape</b>). Click inside a finished one to select it, then drag its corners.</div>
+        <div class="hint" id="zList" style="margin-top:6px"></div>
+      </div>
+
+      <div class="row" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line)">
+        <select id="rpAdd"></select>
+        <button style="flex:0 0 auto" id="rpNew">+ put in the room</button>
+      </div>
+      <div id="rpList" style="display:flex;flex-wrap:wrap;gap:5px;margin-top:8px"></div>
+      <div id="rpEdit" style="display:none;margin-top:8px">
+        <div class="row">
+          <div><label>size <span class="val" id="rpsv">100</span>%</label>
+            <input type="range" id="rpScale" min="10" max="400" step="5" value="100"></div>
+          <div><label>turn <span class="val" id="rprv">0</span>&deg;</label>
+            <input type="range" id="rpRot" min="-180" max="180" step="5" value="0"></div>
+        </div>
+        <div class="row" style="margin-top:6px">
+          <div><label>fade <span class="val" id="rpov">100</span>%</label>
+            <input type="range" id="rpOpac" min="0" max="100" step="5" value="100"></div>
+          <div style="flex:0 0 auto;align-self:end">
+            <button class="mini" id="rpLamp" title="make this object a light source">make light</button>
+            <button class="mini" id="rpFlip">flip &harr;</button>
+            <button class="mini" id="rpDel" style="background:var(--warn);color:#fff">remove</button></div>
+        </div>
+        <div style="margin-top:8px">
+          <label>what can be done here <span class="hint">&mdash; a permission, not a script</span></label>
+          <div id="rpCan" class="row" style="flex-wrap:wrap;gap:5px"></div>
+        </div>
+        <div class="hint" id="rpWhere"></div>
+        <div id="rpLampBox" style="display:none;margin-top:8px;padding-top:8px;
+             border-top:1px solid var(--line)">
+          <div class="row">
+            <div><label>brightness <span class="val" id="rplpv">100</span>%</label>
+              <input type="range" id="rpPower" min="10" max="300" step="5" value="100"></div>
+            <div><label>spread <span class="val" id="rplsv">100</span>%</label>
+              <input type="range" id="rpSpread" min="20" max="300" step="5" value="100"></div>
+          </div>
+          <div class="row" style="margin-top:6px">
+            <div><label>bulb height <span class="val" id="rpbhv">auto</span></label>
+              <input type="range" id="rpBulb" min="-40" max="140" step="2" value="0"></div>
+            <div style="flex:0 0 auto;align-self:end">
+              <button class="mini" id="rpBulbAuto">auto</button></div>
+          </div>
+          <div class="hint">turn it with the object's own rotation &mdash; a sconce on its side
+            washes the wall instead of the floor</div>
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:8px">
+        <div><label>scale everything <span class="val" id="gsv">145</span>%
+          <span class="hint" id="gsnote"></span></label>
+          <div class="hint">the character and every attached object, together</div>
+          <input type="range" id="gscale" min="40" max="220" step="1" value="145"></div>
+        <div style="flex:0 0 110px"><label>x <span class="val" id="gxv">160</span></label>
+          <input type="range" id="gx" min="0" max="320" step="1" value="160"></div>
+        <div style="flex:0 0 110px"><label>y <span class="val" id="gyv">200</span></label>
+          <input type="range" id="gy" min="0" max="240" step="1" value="200"></div>
+        <div style="flex:0 0 130px"><label>depth <span class="val" id="gzv">auto</span>
+          <span class="hint">higher = in front</span></label>
+          <input type="range" id="gz" min="0" max="240" step="1" value="200"></div>
+        <div style="flex:0 0 auto;align-self:end">
+          <button class="mini" id="gzauto" title="depth follows y again">auto</button></div>
+        <div style="flex:0 0 auto;align-self:end">
+          <button class="mini" id="gfloor" title="Put the feet back on the floor line">floor</button></div>
+      </div>
+    </div>
+
+    <div class="hint" style="margin-top:8px">frames &mdash; click to jump there, shift-click to
+      show/hide the selected layer on it &middot; ◀ ▶ move, ⧉ duplicate, × skip, −/+ scale</div>
+    <div id="strip"></div>
+    <div class="row" style="margin-top:8px">
+      <button id="ord_reset">reset order</button><button id="ord_rev">reverse</button>
+      <button id="ord_ping">ping-pong</button>
+    </div>
+  </div>
+
+  <div class="side">
+    <div class="panel">
+      <label>this animation is called
+        <span class="hint">&mdash; the saved file is named after it</span></label>
+      <input id="animName" placeholder="e.g. Bathing, silly play" style="width:100%;padding:8px;
+        font:inherit;font-weight:600;border:1px solid var(--line);border-radius:8px;
+        background:var(--bg);color:var(--ink);margin-bottom:10px">
+      <label>clip</label><select id="clip"></select>
+      <label style="margin-top:10px">room behind it
+        <span class="hint">&mdash; a backdrop to judge against; the room itself is built in the
+        Scene Assembler</span></label><select id="room"></select>
+      <button style="margin-top:10px;width:100%" id="demo">load bathe demo (5 layers)</button>
+      <div class="row" style="margin-top:10px">
+        <button id="undo">↶ undo</button><button id="redo">↷ redo</button>
+      </div>
+      <div class="hint" id="hstat" style="margin-top:4px"></div>
+    </div>
+
+    <div class="panel">
+      <label>the character <span class="hint">— breathing, for held frames</span></label>
+      <label style="margin-top:6px">breathe <span class="val" id="brev">0</span>%
+        <span class="hint">scale pulse, pinned at the feet</span></label>
+      <input type="range" id="breathe" min="0" max="15" step="0.5" value="0">
+      <div class="row" style="margin-top:8px">
+        <div><label>cycle <span class="val" id="perv">8</span> fr</label>
+          <input type="range" id="period" min="2" max="24" step="1" value="8"></div>
+        <div><label>hold each frame <span class="val" id="holdv">1</span>×</label>
+          <input type="range" id="hold" min="1" max="16" step="1" value="1"></div>
+      </div>
+      <div style="margin-top:6px">
+        <label>breathe from</label>
+        <select id="pivot">
+          <option value="feet" selected>the feet &mdash; swells upward</option>
+          <option value="middle">the middle &mdash; whole body pulses</option>
+        </select>
+      </div>
+      <div class="hint" id="tlinfo" style="margin-top:6px"></div>
+    </div>
+
+    <div class="panel">
+      <label>stack <span class="hint">— top of list draws in front · shift-click to multi-select</span></label>
+      <div id="stack"></div>
+      <div class="row">
+        <button class="mini" id="zTop">⤒ front</button><button class="mini" id="zUp">↑ forward</button>
+        <button class="mini" id="zDn">↓ back</button><button class="mini" id="zBot">⤓ back</button>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <select id="addProp"></select>
+        <button style="flex:0 0 auto" class="pri" id="add">+ add</button>
+        <button style="flex:0 0 auto" id="pxOpen" title="draw your own prop, right here">&#127912;</button>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <button id="dup">duplicate</button><button id="mirror">mirror to other hand</button>
+      </div>
+    </div>
+
+    <div class="panel" id="edit">
+      <label>anchor <span class="hint">(derived per frame)</span></label>
+      <select id="anchor">
+        <option value="mid">between hands</option>
+        <option value="L">left hand</option>
+        <option value="R">right hand</option>
+        <option value="head">above head</option>
+        <option value="feet">floor (feet line)</option>
+      </select>
+
+      <label style="margin-top:10px">scale <span class="val" id="sv">1.00</span>×
+        <span class="hint" id="pxs"></span></label>
+      <input type="range" id="scale" min="0.05" max="2" step="0.01" value="1">
+
+      <label style="margin-top:10px">rotation <span class="val" id="rv">0</span>°</label>
+      <input type="range" id="rot" min="-180" max="180" step="5" value="0">
+      <div class="row" style="margin-top:6px">
+        <button class="mini" id="r0">0°</button><button class="mini" id="rm15">−15°</button>
+        <button class="mini" id="rp15">+15°</button><button class="mini" id="rflip">flip ↔</button>
+      </div>
+
+      <label style="margin-top:10px">colour
+        <span class="hint" id="colx"></span>
+        <button class="mini" id="cres" style="float:right">reset</button></label>
+      <div class="row" style="align-items:center">
+        <div><label>hue <span class="val" id="huv">0</span>°</label>
+          <input type="range" id="hue" min="0" max="360" step="5" value="0"></div>
+        <div><label>sat <span class="val" id="sav">100</span>%</label>
+          <input type="range" id="sat" min="0" max="250" step="5" value="100"></div>
+        <div><label>bright <span class="val" id="brv">100</span>%</label>
+          <input type="range" id="bri" min="40" max="180" step="5" value="100"></div>
+      </div>
+      <label style="margin-top:10px">opacity <span class="val" id="opv">100</span>%</label>
+      <input type="range" id="opac" min="0" max="100" step="5" value="100">
+
+      <div class="row" style="margin-top:8px;align-items:center">
+        <div style="flex:0 0 auto"><label>tint</label>
+          <input type="color" id="tint" value="#ffffff" style="width:44px;height:28px;padding:0;
+            border:1px solid var(--line);border-radius:6px;background:var(--bg)"></div>
+        <div><label>tint strength <span class="val" id="tsv">0</span>%</label>
+          <input type="range" id="tstr" min="0" max="100" step="5" value="0"></div>
+      </div>
+
+      <label style="margin-top:10px">follow anchor <span class="val" id="fwv">100</span>%
+        <span class="hint" id="fwx"></span></label>
+      <input type="range" id="follow" min="0" max="100" step="5" value="100">
+      <div class="hint">100% = locked to the hand · 0% = parked at its average spot</div>
+
+      <label style="margin-top:10px">jiggle <span class="val" id="jgv">0</span> px
+        &nbsp;/&nbsp; wobble <span class="val" id="jrv">0</span>°</label>
+      <div class="row">
+        <input type="range" id="jig" min="0" max="6" step="0.5" value="0">
+        <input type="range" id="jrot" min="0" max="30" step="1" value="0">
+      </div>
+      <div class="hint">deterministic per frame &mdash; the export bakes it in</div>
+
+      <label style="margin-top:10px">breathe this object <span class="val" id="puv">0</span>%
+        &nbsp;/&nbsp; cycle <span class="val" id="ppv">8</span> fr</label>
+      <div class="row">
+        <input type="range" id="pulse" min="0" max="30" step="1" value="0">
+        <input type="range" id="pper" min="2" max="24" step="1" value="8">
+      </div>
+
+      <label style="margin-top:10px">show on frames
+        <span class="hint">&mdash; blank = all &middot; strip positions, e.g. <code>3-5</code>, <code>1,3</code></span></label>
+      <input type="text" id="fsel" placeholder="all frames" style="width:100%;padding:6px;
+        border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);font:inherit">
+      <div id="fchips" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px"></div>
+
+      <label style="margin-top:10px">visibility</label>
+      <label style="color:var(--ink);display:flex;gap:7px;align-items:center;cursor:pointer">
+        <input type="checkbox" id="always" checked style="width:auto;margin:0"> always show</label>
+      <div id="liftbox" style="margin-top:8px;display:none">
+        <label>hide when hands within <span class="val" id="lv">3</span> px of rest</label>
+        <input type="range" id="lift" min="1" max="20" step="1" value="3">
+        <div class="hint">for props the hands carry — drops them when the arms lower</div>
+      </div>
+      <div id="warn"></div>
+
+      <div class="row" style="margin-top:10px">
+        <div><label>offset x</label><div class="val" id="ox">0</div></div>
+        <div><label>offset y</label><div class="val" id="oy">0</div></div>
+        <div style="flex:0 0 auto;align-self:end"><button id="reset">reset</button></div>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <button id="nudgeL">←</button><button id="nudgeU">↑</button>
+        <button id="nudgeD">↓</button><button id="nudgeR">→</button>
+      </div>
+    </div>
+
+    <div class="panel" style="display:none"><!-- RETIRED: the library lived here. The scene
+      assembler imports saved FILES now, so keeping a second copy in browser storage was one
+      more thing to explain. Hidden rather than deleted so old handlers and storage stay valid. -->
+      <label>library <span class="hint">&mdash; every animation you have saved</span></label>
+      <div id="libList" style="display:flex;flex-direction:column;gap:4px;margin-bottom:6px"></div>
+      <div class="row">
+        <select id="libSel"></select>
+        <button style="flex:0 0 auto" class="mini" id="libPrev">&#9664;</button>
+        <button style="flex:0 0 auto" class="mini" id="libNext">&#9654;</button>
+      </div>
+      <div class="row" style="margin-top:6px">
+        <button class="mini" id="libAdd">+ add exported animation</button>
+        <input type="file" id="libFile" accept=".json,application/json" multiple style="display:none">
+      </div>
+      <div class="row" style="margin-top:6px">
+        <input id="libName" placeholder="name this one" style="flex:1;padding:6px;
+          border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);font:inherit">
+        <button style="flex:0 0 auto" class="mini pri" id="libSave">keep</button>
+        <button style="flex:0 0 auto" class="mini" id="libDel">forget</button>
+      </div>
+      <div class="row" style="margin-top:6px;align-items:center">
+        <span class="hint" style="flex:0 0 auto">this animation happens</span>
+        <button class="mini" id="arAny">anywhere he walks</button>
+        <select id="arNeeds" style="flex:0 0 150px;font-size:12px;padding:3px">
+          <option value="sit">only on a sit spot</option>
+          <option value="sleep">only on a sleep spot</option>
+          <option value="bathe">only in a bath spot</option>
+          <option value="eat">only at an eat spot</option>
+          <option value="surface">only on a surface</option>
+          <option value="play">only at a play spot</option>
+        </select>
+      </div>
+      <div class="hint" id="libInfo" style="margin-top:6px"></div>
+    </div><!-- the hidden library ends here; saving and exporting stay visible -->
+
+    <div class="panel">
+      <label>this animation
+        <span class="hint">&mdash; save it as a file, load one to keep working, and import the
+        saved file into the Scene Assembler</span></label>
+      <div class="row">
+        <button class="pri" id="save">💾 save animation</button><button id="imp">📂 load animation</button>
+        <button id="fresh" style="flex:0 0 auto" title="empty stage, nothing attached - save first if you want this one back">✨ fresh</button>
+      </div>
+      <input type="file" id="impf" accept=".json,application/json" style="display:none">
+      <label style="margin-top:12px">baked output
+        <span class="hint">&mdash; computed x/y/rotation per frame. For code, not for re-opening.</span></label>
+      <div class="row"><button id="copy">copy baked</button><button id="dl">download baked</button></div>
+
+      <label style="margin-top:12px">render <span class="hint">— composed frames</span></label>
+      <div class="row" style="align-items:end">
+        <div style="flex:0 0 auto"><label>scale</label>
+          <select id="xscale" style="width:auto">
+            <option value="1">1×</option><option value="2">2×</option>
+            <option value="4" selected>4×</option><option value="8">8×</option>
+          </select></div>
+        <div style="flex:0 0 auto"><label>crop</label>
+          <select id="xcrop" style="width:auto">
+            <option value="pad" selected>padded</option><option value="frame">96×96</option>
+            <option value="scene">game scene 320×240</option>
+          </select></div>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <button id="xgif">🎞 GIF</button><button id="xpng">🖼 frames</button>
+      </div>
+      <button class="pri" style="width:100%;margin-top:8px" id="xzip">📦 ZIP bundle — everything</button>
+      <div class="hint" id="saved" style="margin-top:6px"></div>
+      <pre id="out"></pre>
+    </div>
+  </div>
+</main>
+
+<div id="pxWrap">
+  <div id="pxPanel">
+    <div><canvas id="pxCv" width="384" height="384"></canvas></div>
+    <div class="pxSide">
+      <label>your prop's name</label>
+      <input id="pxName" placeholder="e.g. cookie, magic wand" style="padding:7px;font:inherit;
+        border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink)">
+      <div class="row"><div><label>size</label>
+        <select id="pxSize"><option>16</option><option selected>24</option><option>32</option></select></div>
+        <div><label>start from</label><select id="pxFrom"><option value="">blank</option></select></div>
+      </div>
+      <div class="pxTools">
+        <button id="pxPen" class="sel" title="draw">&#9998;</button>
+        <button id="pxEra" title="erase">&#9723;</button>
+        <button id="pxFill" title="fill">&#129700;</button>
+        <button id="pxPick" title="pick a colour off the drawing">&#128393;</button>
+        <button id="pxMirror" title="draw both halves at once">&#8646; mirror</button>
+        <button id="pxUndo" title="undo">&#8630;</button>
+        <button id="pxClear" title="wipe it">&#10006;</button>
+      </div>
+      <div class="pxPal" id="pxPal"></div>
+      <div class="row" style="align-items:center">
+        <label style="flex:0 0 auto;margin:0">more colours</label>
+        <input type="color" id="pxCustom" value="#8a5a2b" style="width:40px;height:26px;padding:0;
+          border:1px solid var(--line);border-radius:6px;background:var(--bg)">
+      </div>
+      <div class="row" style="margin-top:auto">
+        <button class="pri" id="pxSave">keep it</button>
+        <button id="pxClose">close</button>
+      </div>
+      <div class="hint">it becomes a prop like any other &mdash; attach it, bake it, send it
+        to the device</div>
+    </div>
+  </div>
+</div>
+<script>/*ATTACH_DATA*/</script>
+<script>
+// Test windows announce themselves with ?sandbox=name and get their own storage keys, so a
+// throwaway tab can never overwrite the real autosave. Same rule as the Scene Assembler.
+window.SBX=new URLSearchParams(location.search).get('sandbox');
+// ---- THE NEW SHAPE: reshuffle the parsed markup into the assembler's three columns.
+// Moving nodes keeps their ids and their handlers; nothing below this block changes.
+(function(){
+  const g=id=>document.getElementById(id);
+  const main=document.querySelector('main');
+  const bigPanel=main.querySelector(':scope > .panel');
+  const side=main.querySelector(':scope > .side');
+  const panels=[...side.querySelectorAll(':scope > .panel')];
+  const mk=cls=>{ const d=document.createElement('div'); d.className=cls; return d };
+  const colAnim=mk('col-anim'), colStage=mk('col-stage'), colProps=mk('col-props');
+  const gut1=mk('gut gut1'), gut2=mk('gut gut2');
+  main.append(colAnim,gut1,colStage,gut2,colProps);
+  colStage.appendChild(bigPanel);
+  // left: what the animation IS - name/clip/backdrop, the character, save/load
+  colAnim.append(panels[0],panels[1]);
+  // right: what is ATTACHED - the stack and the prop editor
+  colProps.append(panels[2],panels[3]);
+  colAnim.appendChild(panels[4]);            // the retired library, still hidden
+  // every export lives in the LEFT column - only the baked-JSON viewer is killed. The pre
+  // stays in the DOM because copy/download still read what gets written into it.
+  colAnim.appendChild(panels[5]);
+  const bakedPre=document.getElementById('out');
+  if(bakedPre) bakedPre.style.display='none';
+  // the stage gets its box and the fullscreen button
+  const stage=g('stage'), box=mk('stagebox');
+  stage.parentNode.insertBefore(box,stage); box.appendChild(stage);
+  const fs=document.createElement('button');
+  fs.className='mini fsBtn'; fs.id='fsBtn'; fs.title='fill the window (Esc leaves)';
+  fs.innerHTML='&#x26F6;'; box.appendChild(fs);
+  fs.onclick=()=>{ document.body.classList.toggle('fs');
+    fs.innerHTML=document.body.classList.contains('fs')?'\u2716':'\u26F6'; };
+  addEventListener('keydown',e=>{ if(e.key==='Escape'&&document.body.classList.contains('fs')){
+    document.body.classList.remove('fs'); fs.innerHTML='\u26F6'; }});
+  // dividers: drag for more room, widths remembered - the assembler's wire(), verbatim
+  const CKEY='bunbun-anim-tool-columns';
+  try{ const w=JSON.parse(localStorage.getItem(CKEY)||'{}');
+    if(w.anim)  document.documentElement.style.setProperty('--wAnim', w.anim +'px');
+    if(w.props) document.documentElement.style.setProperty('--wProps', w.props+'px'); }catch(e){}
+  const wire=(gut,varName,col,fromLeft,slot)=>{
+    gut.addEventListener('pointerdown',e=>{
+      e.preventDefault(); gut.classList.add('live');
+      try{ gut.setPointerCapture(e.pointerId) }catch(err){}
+      const startX=e.clientX, startW=col.getBoundingClientRect().width;
+      const move=ev=>{ const w=Math.max(230, Math.min(560,
+          startW+(fromLeft?1:-1)*(ev.clientX-startX)));
+        document.documentElement.style.setProperty(varName, w+'px') };
+      const up=()=>{ gut.classList.remove('live');
+        gut.removeEventListener('pointermove',move); gut.removeEventListener('pointerup',up);
+        try{ const w=JSON.parse(localStorage.getItem(CKEY)||'{}');
+          w[slot]=Math.round(col.getBoundingClientRect().width);
+          localStorage.setItem(CKEY,JSON.stringify(w)) }catch(err){} };
+      gut.addEventListener('pointermove',move); gut.addEventListener('pointerup',up);
+    });
+  };
+  wire(gut1,'--wAnim', colAnim, true, 'anim');
+  wire(gut2,'--wProps',colProps,false,'props');
+  side.remove();
+})();
+const S=96, PAD=20, FULL=S+PAD*2, Z=5, FIT=16;   // PAD: bleed room so props never clip
+// The stack IS the z-order. Index 0 draws first (backmost); the character is a row in it,
+// so "behind the character" is simply "below the character row".
+const CHAR={char:true};
+let DATA=null, clip=null, stack=[CHAR], sel=-1, multi=new Set();
+let order=[], pos=0, timer=null, fps=7;
+// Character-level animation. `hold` repeats each source frame, so a single held frame can
+// still breathe — one frame of Adult_Sleep, scaled in and out, reads as snoring.
+const CH={breathe:0, period:8, hold:1, pivot:'feet'};
+// The game draws 96px art scaled up (game.h: SCALE_BABY 0.78*1.45, SCALE_ADULT 1.00*1.45)
+// onto a 320x240 room with the floor at y=200. This preview reproduces that exactly, so the
+// question "how big is this actually going to look" has a real answer.
+const GAME={w:320,h:240,floor:200,z:3};
+const GAMESCALE={baby:0.78*1.45, adult:1.00*1.45};
+let gRoom='', gScale=null, gX=160, gY=GAME.floor, gZ=null;  // gZ null = depth follows y
+// Room objects live in ROOM coordinates and ignore the character entirely. Depth is by y,
+// the same painter's rule the game uses, so something nearer the front draws in front.
+let rprops=[], rsel=-1;
+// The scene says WHERE, never what happens. A floor is where they may walk, a keep-out is
+// where they may not, and an affordance is a permission - "this may be sat on" - not a script.
+let zones=[], zsel=-1, zdraft=null, zmode='', zvert=-1;
+// A placed pose is an INSTRUCTION: "this action may happen here, in this pose". It is ghosted
+// while you work and never drawn in an export, because during a run the live actor performs it.
+let acts=[], asel=-1, amode='';
+// Some actions can happen ANYWHERE he can stand; others need something that affords them -
+// sitting needs a chair. The scene says which, and the sim then picks the where.
+let arules={};
+const RULE_DEFAULT=c=>{
+  const base=c.replace(/^(Adult|Baby)_/,'').toLowerCase();
+  if(base==='sit')   return {mode:'needs', needs:'sit'};
+  if(base==='sleep') return {mode:'needs', needs:'sleep'};
+  if(base==='eat')   return {mode:'needs', needs:'eat'};
+  if(base==='bathe') return {mode:'needs', needs:'bathe'};
+  return {mode:'anywhere'};
+};
+const ruleFor=c=>arules[c]||(arules[c]=RULE_DEFAULT(c));
+// which clips the scene actually cares about: the one being authored, plus every placed pose
+const rulePoses=()=>[...new Set([clip,...acts.map(a=>a.clip)])].filter(Boolean);
+const inPoly=(x,y,pts)=>{            // ray cast, so a concave floor still tests correctly
+  let hit=false;
+  for(let i=0,j=pts.length-1;i<pts.length;j=i++){
+    const [xi,yi]=pts[i],[xj,yj]=pts[j];
+    if(((yi>y)!==(yj>y)) && x < (xj-xi)*(y-yi)/((yj-yi)||1e-9)+xi) hit=!hit }
+  return hit};
+const nearPt=(x,y,p,r)=>Math.abs(x-p[0])<=r && Math.abs(y-p[1])<=r;
+const AFFORD=[['sit','may be sat on'],['sleep','may be slept on'],
+              ['bathe','may be bathed in'],['eat','may be eaten at'],
+              ['surface','things may be put on it'],['play','may be played with']];
+const AFFORD_KEYS=AFFORD.map(a=>a[0]);
+const rpDefaults=n=>({prop:n,x:160,y:GAME.floor,scale:1,rot:0,flip:false,opac:100,z:null});
+const guessPhase=()=>/^Baby/i.test(clip||'')?'baby':'adult';
+const defaultScale=()=>Math.round(GAMESCALE[guessPhase()]*100);
+// the played sequence: source frame indices, each repeated `hold` times
+function seqList(){
+  const live=order.filter(o=>!o.skip), out=[];
+  for(const o of live) for(let h=0;h<CH.hold;h++) out.push(o);
+  return out;
+}
+const playedAt=s=>{const Q=seqList(); return Q.length?Q[((s%Q.length)+Q.length)%Q.length]:null};
+const csOf=e=>(e&&e.cs!=null)?e.cs:100;
+// scale pulse about the character's own feet, so it inflates upward and never floats
+function breath(f,s){
+  if(!f||!f.bbox) return null;
+  const per=csOf(playedAt(s))/100;
+  const pulse=CH.breathe?(CH.breathe/100)*Math.sin(2*Math.PI*s/Math.max(2,CH.period)):0;
+  let k=per*(1+pulse);
+  // GAME RESOLUTION: on the shelf this character is (gScale/100 * 1.45 * 0.75) device px
+  // per source px. A breath below one device pixel never shows there, so it must not show
+  // here - the stage zoom was making sub-pixel breathing look real.
+  { const hDev=(f.bbox[3]-f.bbox[1])*(gScale/100)*1.45*0.75;
+    if(hDev>0.5) k=Math.round(k*hDev)/hDev; }
+  if(Math.abs(k-1)<1e-6) return null;
+  const cx=(f.bbox[0]+f.bbox[2])/2;
+  // feet: the bottom stays put and the body swells upward (a real breath)
+  // middle: the whole silhouette pulses evenly, which reads as animation
+  const cy = CH.pivot==='middle' ? (f.bbox[1]+f.bbox[3])/2 : f.bbox[3];
+  return {k, cx, cy};
+}
+const warp=(p,B)=> (!B||!p) ? p : [B.cx+(p[0]-B.cx)*B.k, B.cy+(p[1]-B.cy)*B.k];
+const imgs={}, propImgs={};
+const $=id=>document.getElementById(id);
+// BIG feedback for big moments (Mila: her first save showed nothing she could see).
+// A cheerful center-top banner, gone after a few seconds - the gray hints stay for details.
+function toast(msg){
+  let t=document.getElementById('kidToast');
+  if(!t){ t=document.createElement('div'); t.id='kidToast';
+    t.style.cssText='position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:99;'+
+      'background:#27ae60;color:#fff;font-size:17px;font-weight:700;padding:12px 22px;'+
+      'border-radius:12px;box-shadow:0 6px 18px rgba(0,0,0,.25);transition:opacity .4s';
+    document.body.appendChild(t); }
+  t.textContent=msg; t.style.opacity='1';
+  clearTimeout(t._h); t._h=setTimeout(()=>{ t.style.opacity='0' },3500);
+}
+const ctx=$('stage').getContext('2d');
+const load=(src,bag,key)=>new Promise(r=>{const i=new Image();
+  i.onload=()=>{bag[key]=i;r()}; i.onerror=()=>{console.warn('image failed',key);r()}; i.src=src});
+const charAt=()=>stack.indexOf(CHAR);
+const cur=()=>sel>=0&&stack[sel]&&!stack[sel].char ? stack[sel] : null;
+
+async function boot(){
+  if(window.ATTACH_DATA){ DATA=window.ATTACH_DATA; }          // built, self-contained
+  else {
+    try{ DATA=await (await fetch('attach_data.json',{cache:'no-store'})).json(); }
+    catch(e){ document.body.innerHTML='<p style="padding:24px;font:16px system-ui">'+
+      'No data. Either open the built page in <code>tools/build/</code>, or run '+
+      '<code>py -m http.server</code> next to <code>attach_data.json</code>.</p>'; return; }
+  }
+  $('clip').innerHTML=Object.keys(DATA.clips).map(k=>`<option>${k}</option>`).join('');
+  // marks say how it feels, props are things it has - group them so the list reads
+  const kindOf=k=>DATA.props[k].kind||'prop';
+  const group=(want)=>Object.keys(DATA.props).filter(k=>kindOf(k)===want)
+    .map(k=>`<option>${k}</option>`).join('');
+  $('addProp').innerHTML=
+    `<optgroup label="feelings (over the head)">${group('mark')}</optgroup>`+
+    `<optgroup label="things">${group('prop')}</optgroup>`+
+    `<optgroup label="lights">${group('light')}</optgroup>`;
+  // default to a THING, not alphabetical "angry" - the guide says "+ add gives bunbun
+  // things to hold" and the box should agree with it
+  { const firstThing=$('addProp').querySelector('optgroup[label="things"] option');
+    if(firstThing) $('addProp').value=firstThing.value; }
+  $('aClip').innerHTML=Object.keys(DATA.clips).map(k=>`<option>${k}</option>`).join('');
+  const rk=Object.keys(DATA.rooms||{});
+  $('room').innerHTML='<option value="">none (checkerboard)</option>'+
+    rk.map(k=>`<option value="${k}">${k}</option>`).join('');
+  rk.forEach(k=>load(DATA.rooms[k],imgs,'room|'+k));
+  // only things belong on a floor - a feeling is not furniture
+  const byKind=w=>Object.keys(DATA.props).filter(k=>(DATA.props[k].kind||'prop')===w)
+    .map(k=>`<option>${k}</option>`).join('');
+  $('rpAdd').innerHTML=
+    `<optgroup label="things">${byKind('prop')}</optgroup>`+
+    `<optgroup label="lights">${byKind('light')}</optgroup>`;
+  Object.keys(DATA.props).forEach(k=>load(DATA.props[k].img,imgs,'prop|'+k));
+  if(DATA.clips['Adult_Idle']) $('clip').value='Adult_Idle';   // a friendly first page,
+  clip=$('clip').value; await ensureClip(); resetOrder();       // not alphabetical angry
+  stack=[CHAR]; render();                                       // and empty hands
+}
+async function ensureClip(){
+  const c=DATA.clips[clip];
+  await Promise.all(c.frames.map((f,i)=>imgs[clip+'|'+i]?null:load(f.img,imgs,clip+'|'+i)));
+}
+const fitScale=n=>+(FIT/Math.max(DATA.props[n].w,DATA.props[n].h)).toFixed(2);
+async function addLayer(name,anchor,over,at){
+  if(!propImgs[name]) await load(DATA.props[name].img,propImgs,name);
+  const L=Object.assign({prop:name,anchor:anchor||'mid',off:{x:0,y:0},
+    scale:fitScale(name),lift:0,rot:0,flip:false,follow:1,jig:0,jrot:0,on:true,
+    hue:0,sat:100,bri:100,tint:'#ffffff',tstr:0,opac:100,
+    pulse:0,pper:8,frames:null},over||{});
+  const i = at==null ? stack.length : at;
+  stack.splice(i,0,L); sel=i; syncEdit(); return L;
+}
+// ONE list of authored fields. Every copy path (duplicate, mirror, save, import) reads it,
+// so adding a new control can never again silently drop out of a copy.
+const FIELDS=['prop','anchor','scale','rot','flip','follow','jig','jrot','lift','on',
+              'hue','sat','bri','tint','tstr','opac','pulse','pper','frames'];
+// "3-5, 1, 7" -> [1,3,4,5]  ·  null means every frame
+function parseFramesPos(str,nf){
+  const set=new Set();
+  for(const part of String(str).split(',')){
+    const p=part.trim(); if(!p) continue;
+    const m=p.match(/^(\d+)\s*-\s*(\d+)$/);
+    if(m){ const a=Math.min(+m[1],+m[2]), b=Math.max(+m[1],+m[2]);
+           for(let i=a;i<=b;i++) if(i>=0&&i<nf) set.add(i); }
+    else if(/^\d+$/.test(p) && +p>=0 && +p<nf) set.add(+p);
+  }
+  if(!set.size || set.size===nf) return null;
+  return [...set].sort((a,b)=>a-b);
+}
+// positions -> "1, 3-5"
+function fmtPos(arr){
+  if(!arr||!arr.length) return '';
+  const out=[]; let a=arr[0], b=arr[0];
+  for(let i=1;i<=arr.length;i++){
+    if(arr[i]===b+1){ b=arr[i]; continue }
+    out.push(a===b?`${a}`:`${a}-${b}`); a=b=arr[i];
+  }
+  return out.join(', ');
+}
+// slot ids -> the positions they currently sit at
+const idsToPos=ids=>{ if(!ids) return null;
+  const L=liveSlots();
+  return ids.map(id=>L.findIndex(o=>o.id===id)).filter(i=>i>=0).sort((a,b)=>a-b) };
+const fmtFrames=ids=>fmtPos(idsToPos(ids));
+function parseFrames(str,_nf){
+  const L=liveSlots(), pos=parseFramesPos(str,L.length);
+  if(!pos) return null;
+  const ids=pos.map(i=>L[i]&&L[i].id).filter(Boolean);
+  return ids.length&&ids.length<L.length?ids:null;
+}
+const authored=L=>{
+  const o=Object.assign({off:{...L.off}},...FIELDS.map(k=>({[k]:L[k]})));
+  o.showOnFramePositions=idsToPos(o.frames);  // stable across saves and reloads
+  delete o.frames;                            // never collide with the baked file's `frames`
+  return o;
+};
+
+let slotN=0;
+const newSlot=(i,cs)=>({i,skip:false,cs:cs==null?100:cs,id:++slotN});
+const resetOrder=()=>{order=DATA.clips[clip].frames.map((_,i)=>newSlot(i));pos=0};
+const liveSlots=()=>order.filter(o=>!o.skip);
+const slotPos=id=>liveSlots().findIndex(o=>o.id===id);
+const HAND=a=>a==='L'||a==='R'||a==='mid';
+function anchorPt(f,L){
+  if(L.anchor==='head') return f.head;
+  if(L.anchor==='feet') return f.bbox?[(f.bbox[0]+f.bbox[2])>>1, f.bbox[3]]:null;
+  return f[L.anchor];
+}
+function visible(f,L,slot){
+  if(!anchorPt(f,L)) return false;
+  if(L.frames && slot!=null && !L.frames.includes(slot)) return false;  // per-slot selection
+  if(!HAND(L.anchor) || !L.lift) return true;        // head/floor never lift-gated
+  const c=DATA.clips[clip];
+  if(!f.mid||c.rest==null) return true;
+  return f.mid[1] <= c.rest-L.lift;
+}
+// mean anchor position over the played frames — the pivot a damped follow shrinks toward
+const meanCache={};
+function anchorMean(L){
+  const key=clip+'|'+L.anchor+'|'+order.filter(o=>!o.skip).map(o=>o.i).join(',');
+  if(meanCache[key]) return meanCache[key];
+  const c=DATA.clips[clip]; let sx=0,sy=0,n=0;
+  for(const o of order){ if(o.skip) continue;
+    const a=anchorPt(c.frames[o.i],L); if(a){sx+=a[0];sy+=a[1];n++} }
+  return meanCache[key] = n?[sx/n,sy/n]:null;
+}
+// where the prop actually lands: damped anchor + authored offset + jiggle
+function placed(f,L,seq,B){
+  const a=warp(anchorPt(f,L),B); if(!a) return null;   // anchors ride the breath too
+  const m=warp(anchorMean(L),B)||a, fw=L.follow==null?1:L.follow;
+  let x=m[0]+(a[0]-m[0])*fw+L.off.x, y=m[1]+(a[1]-m[1])*fw+L.off.y;
+  if(L.jig){ x+=Math.sin(seq*2.4)*L.jig; y+=Math.cos(seq*3.1)*L.jig*0.6; }
+  return [x,y];
+}
+const spin=(L,seq)=>L.rot+(L.jrot?Math.sin(seq*2.0)*L.jrot:0);
+// each object can breathe on its own cycle, independent of the character's
+const puff=(L,seq)=>L.pulse?1+(L.pulse/100)*Math.sin(2*Math.PI*seq/Math.max(2,L.pper||8)):1;
+const tinted={};                       // cache: prop + tint colour + strength -> canvas
+function tintedProp(L){
+  const p=propImgs[L.prop];
+  if(!L.tstr || L.tint==='#ffffff') return p;
+  const key=L.prop+'|'+L.tint+'|'+L.tstr;
+  if(tinted[key]) return tinted[key];
+  const d=DATA.props[L.prop], cv=document.createElement('canvas');
+  cv.width=d.w; cv.height=d.h;
+  const q=cv.getContext('2d'); q.imageSmoothingEnabled=false;
+  q.drawImage(p,0,0);
+  q.globalCompositeOperation='source-atop';        // tint only the opaque pixels
+  q.globalAlpha=L.tstr/100; q.fillStyle=L.tint;
+  q.fillRect(0,0,d.w,d.h);
+  return tinted[key]=cv;
+}
+const cssFilter=L=>(L.hue||L.sat!==100||L.bri!==100)
+  ? `hue-rotate(${L.hue}deg) saturate(${L.sat}%) brightness(${L.bri}%)` : 'none';
+function drawLayer(g,f,L,k,seq,fi,B){
+  const p=tintedProp(L), c=placed(f,L,seq,B);
+  if(!p||!c||!L.on||!visible(f,L,fi)) return;
+  const sc=L.scale*puff(L,seq);
+  const pw=DATA.props[L.prop].w*sc, ph=DATA.props[L.prop].h*sc;
+  const cx=(c[0]+PAD)*k, cy=(c[1]+PAD)*k, rot=spin(L,seq);   // rotate about the placed centre
+  const fil=cssFilter(L), al=(L.opac==null?100:L.opac)/100;
+  if(al<=0) return;
+  if(!rot && !L.flip && fil==='none' && al===1){ g.drawImage(p,cx-pw*k/2,cy-ph*k/2,pw*k,ph*k); return; }
+  g.save(); g.filter=fil; g.globalAlpha=al; g.translate(cx,cy); g.rotate(rot*Math.PI/180);
+  if(L.flip) g.scale(-1,1);
+  g.drawImage(p,-pw*k/2,-ph*k/2,pw*k,ph*k); g.restore();
+}
+function paint(g,fi,w,seq,slot){
+  const f=DATA.clips[clip].frames[fi], k=w/FULL, im=imgs[clip+'|'+fi];
+  const B=breath(f,seq||0);
+  g.clearRect(0,0,w,w); g.imageSmoothingEnabled=false;
+  const drawChar=()=>{ if(!im) return;
+    if(!B){ g.drawImage(im,PAD*k,PAD*k,S*k,S*k); return }
+    g.save(); g.imageSmoothingEnabled=false;
+    g.translate((B.cx+PAD)*k,(B.cy+PAD)*k); g.scale(B.k,B.k);
+    g.translate(-(B.cx+PAD)*k,-(B.cy+PAD)*k);
+    g.drawImage(im,PAD*k,PAD*k,S*k,S*k); g.restore(); };
+  for(const it of stack){                        // straight down the stack, back to front
+    if(it.char) drawChar();
+    else drawLayer(g,f,it,k,seq,slot,B);
+  }
+  g.strokeStyle='#8884'; g.lineWidth=1;                     // the real 96x96 frame edge
+  g.strokeRect(PAD*k+.5,PAD*k+.5,S*k-1,S*k-1);
+}
+
+// ================= lighting & weather, ported from the scene builder =================
+// The builder is the lighting record; these are its functions, not new ones.
+let todMin=780, todOn=true, raining=false, clouding=false;
+let cloudSpeed=1, cloudSize=1, cloudAlpha=0.72, cloudN=3, cloudStyle='shipped';
+const litCache={key:'',cv:null}, skyCache={};
+
+function daylight(h){                       // main.cpp:2809
+  if(h>=8&&h<17)return 1;
+  if(h>=6&&h<8)return (h-6)/2;
+  if(h>=17&&h<20)return 1-(h-17)/3;
+  return 0}
+const nightAmount=h=>1-daylight(h);
+const smoothstep=(a,b,x)=>{const t=Math.max(0,Math.min(1,(x-a)/(b-a)));return t*t*(3-2*t)};
+
+// sky and the hills beyond the glass: blue-dominant, or the daylit green of the field
+function skyMask(name){
+  if(skyCache[name])return skyCache[name];
+  const im=imgs['room|'+name]; if(!im||!im.complete||!im.naturalWidth)return null;
+  const c=document.createElement('canvas'); c.width=GAME.w; c.height=GAME.h;
+  const g=c.getContext('2d'); g.imageSmoothingEnabled=false;
+  try{ g.drawImage(im,0,0,GAME.w,GAME.h) }catch(e){ return null }
+  let d; try{ d=g.getImageData(0,0,GAME.w,GAME.h).data }catch(e){ return null }
+  const m=new Uint8Array(GAME.w*GAME.h);
+  for(let i=0,px=0;px<GAME.w*GAME.h;px++,i+=4){
+    const R=d[i],G=d[i+1],B=d[i+2];
+    if(B>R+18&&B>120)m[px]=1;
+    else if(G>R+12&&G>B+8&&G>90)m[px]=2;
+  }
+  skyCache[name]=m; return m}
+
+function skyBounds(name){
+  const m=skyMask(name); if(!m)return null;
+  let x0=999,y0=999,x1=-1,y1=-1;
+  for(let y=0;y<GAME.h;y++)for(let x=0;x<GAME.w;x++)
+    if(m[y*GAME.w+x]===1){if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y}
+  return x1<0?null:{x0,y0,x1,y1,m}}
+
+// the room at this hour: night regrade indoors, the landscape going to night WITH the sky
+function litRoom(name){
+  const im=imgs['room|'+name];
+  if(!im||!im.complete||!im.naturalWidth) return null;
+  if(!todOn) return im;
+  const h=todMin/60, night=nightAmount(h), day=daylight(h);
+  // rain gloom: rainAmount * daylight * 0.14, so a shower dims a bright afternoon
+  // and never stacks onto night (updateDimPalette)
+  const dim=Math.min(0.78, night*0.60 + (raining?1:0)*day*0.14);
+  const lamp=lampNow(), gs=lampGeoms();
+  const key=name+'|'+todMin+'|'+(raining?'R':'')+'|'+lampMode+'|'+lightScale+'|'
+    +gs.map(q=>[Math.round(q.sx),Math.round(q.sy),Math.round(q.px),Math.round(q.py),
+                Math.round(q.rx),q.power].join(':')).join(',');
+  if(litCache.key===key && litCache.cv) return litCache.cv;
+  const cv=litCache.cv||document.createElement('canvas');
+  cv.width=GAME.w; cv.height=GAME.h;
+  const g=cv.getContext('2d'); g.imageSmoothingEnabled=false;
+  g.clearRect(0,0,GAME.w,GAME.h); g.drawImage(im,0,0,GAME.w,GAME.h);
+  litCache.cv=cv; litCache.key=key;
+  if(dim<0.004 && (lamp<0.004||!gs.length)) return cv;   // full daylight, lamps out
+  const k=1-dim, mask=skyMask(name);
+  let img; try{ img=g.getImageData(0,0,GAME.w,GAME.h) }catch(e){ return cv }
+  const d=img.data;
+  for(let y=0;y<GAME.h;y++)for(let x=0;x<GAME.w;x++){
+    const i=(y*GAME.w+x)*4, out=mask?mask[y*GAME.w+x]:0;
+    let R=d[i],G=d[i+1],B=d[i+2];
+    if(out){
+      const sky=out===1;
+      const nr=sky?16:24, ng=sky?20:28, nb=sky?90:74;
+      const amt=night*(sky?1:0.88);
+      R+=(nr-R)*amt; G+=(ng-G)*amt; B+=(nb-B)*amt;
+      // A rain sky is overcast whatever the clock says. The builder's rain term is
+      // rainAmount*daylight*0.14 and applies INDOORS only, so a shower left the window
+      // bright blue behind its own drops. Pull the sky toward slate, on top of the hour.
+      if(raining){
+        const gr=sky?86:78, gg=sky?94:86, gb=sky?104:92;
+        const w=0.45*(1-night*0.5);        // strongest by day, still present at dusk
+        R+=(gr-R)*w; G+=(gg-G)*w; B+=(gb-B)*w;
+      }
+    }else{
+      // indoors: warm dark - red held up, blue pulled down, never a blue regrade
+      R*=k+0.06*(1-k); G*=k; B*=k-0.04*(1-k);
+    }
+    if(lamp>0.004&&!out&&gs.length){
+      let acc=0;
+      for(const L of gs){
+        // measured ALONG the beam, not down the screen, so a turned lamp still works
+        let inten=0;
+        const ex=x-L.sx, ey=y-L.sy, axLen=Math.max(1,L.len);
+        const u=(ex*L.ux+ey*L.uy)/axLen, v=Math.abs(-ex*L.uy+ey*L.ux);
+        if(u>=0&&u<=1){
+          const hw=L.half+(L.rx-L.half)*u, dd=v/Math.max(1,hw);
+          if(dd<1){const along=u<0.88?1:1-0.45*((u-0.88)/0.12);
+            inten=along*(1-smoothstep(0.72,1,dd))*0.62}}
+        // the pool lies FLAT on the floor, never tilted with the beam
+        if(L.hitsFloor){
+          const ddx=(x-L.px)/L.rx, ddy=(y-L.py)/L.ry, rr=Math.sqrt(ddx*ddx+ddy*ddy);
+          if(rr<1){const pp=1-smoothstep(0.82,1,rr); if(pp>inten)inten=pp}}
+        acc+=inten*L.power}
+      if(acc>0.004){const w=Math.min(1.6,acc)*lamp;   // lamps add, and can overlap brighter
+        R=Math.min(255,R+92*w); G=Math.min(255,G+72*w); B=Math.min(255,B+34*w)}}
+    d[i]=R; d[i+1]=G; d[i+2]=B;
+  }
+  g.putImageData(img,0,0);
+  return cv}
+
+// The firmware ships three clouds, {14x4 sp7} {10x3 sp9.5} {18x5 sp5}. The other styles are
+// the same three shapes re-proportioned, keeping the firmware's drift speeds.
+const CLOUD_STYLES={
+  shipped:[{w:14,h:4,sp:7},{w:10,h:3,sp:9.5},{w:18,h:5,sp:5}],
+  wisps:  [{w:26,h:2,sp:9},{w:20,h:2,sp:11},{w:32,h:3,sp:7}],
+  puffs:  [{w:9,h:6,sp:6},{w:7,h:5,sp:8},{w:12,h:7,sp:5}],
+  bank:   [{w:40,h:6,sp:4},{w:34,h:5,sp:5},{w:46,h:7,sp:3}],
+  scatter:[{w:6,h:3,sp:11},{w:5,h:2,sp:13},{w:8,h:3,sp:9}]};
+const DROPS=[], CLOUDS=[];
+let skyBox=null;
+function rebuildClouds(){
+  const base=CLOUD_STYLES[cloudStyle]||CLOUD_STYLES.shipped;
+  CLOUDS.length=0;
+  for(let i=0;i<cloudN;i++){const b=base[i%3];
+    CLOUDS.push({x:0,y:0,w:Math.max(2,Math.round(b.w*cloudSize)),
+                 h:Math.max(1,Math.round(b.h*cloudSize)),sp:b.sp})}}
+rebuildClouds();
+
+function weatherInit(name){
+  skyBox=skyBounds(name); if(!skyBox)return;
+  skyBox._n=name;                 // tag it here, or the next step re-seeds everything
+  const {x0,y0,x1,y1}=skyBox;
+  DROPS.length=0;
+  for(let i=0;i<18;i++)DROPS.push({x:x0+Math.random()*(x1-x0),y:y0+Math.random()*(y1-y0),
+    sp:26+Math.random()*18});
+  for(const c of CLOUDS){c.x=x0+Math.random()*(x1-x0);c.y=y0+2+Math.random()*Math.max(1,(y1-y0)/2)}}
+
+function weatherStep(dt,name){
+  if(!skyBox||skyBox._n!==name){weatherInit(name);if(skyBox)skyBox._n=name}
+  if(!skyBox)return; const {x0,y0,x1,y1}=skyBox;
+  if(raining)for(const d of DROPS){
+    d.y+=d.sp*dt; d.x+=d.sp*0.22*dt;
+    if(d.y>y1||d.x>x1){d.x=x0+Math.random()*(x1-x0);d.y=y0}}
+  if(clouding)for(const c of CLOUDS){
+    c.x+=c.sp*cloudSpeed*dt;
+    if(c.x-c.w>x1){c.x=x0-c.w;c.y=y0+2+Math.random()*Math.max(1,(y1-y0)/2)}}}
+
+// both paint ONLY on sky pixels, so they stay inside the window exactly as the device keeps them
+function drawWeather(g,name,Zg){
+  if(!skyBox||(!raining&&!clouding))return;
+  const m=skyBox.m, W=GAME.w;
+  if(clouding)for(const c of CLOUDS){
+    g.fillStyle='rgba(255,255,255,'+cloudAlpha+')';
+    for(let yy=0;yy<c.h;yy++)for(let xx=0;xx<c.w;xx++){
+      const px=Math.round(c.x+xx),py=Math.round(c.y+yy);
+      if(px<0||px>=GAME.w||py<0||py>=GAME.h)continue;
+      if(m[py*W+px]!==1)continue;                 // clipped to the sky, i.e. to the window
+      const taper=(xx<2||xx>c.w-3)&&(yy===0||yy===c.h-1);
+      if(!taper)g.fillRect(px*Zg,py*Zg,Zg,Zg)}}
+  if(raining)for(const d of DROPS){
+    const px=Math.round(d.x),py=Math.round(d.y);
+    if(px<0||px>=GAME.w||py<0||py>=GAME.h)continue;
+    if(m[py*W+px]!==1)continue;                   // rain does not fall through the room
+    g.fillStyle='rgba(150,190,240,0.85)';g.fillRect(px*Zg,py*Zg,Zg,Zg*2)}}
+
+let wLoop=false,wLast=0;
+function startWeatherLoop(){
+  if(wLoop)return; wLoop=true; wLast=performance.now();
+  (function tick(){
+    if(!raining&&!clouding){wLoop=false;render();return}
+    const now=performance.now();
+    if(now-wLast>=45){                       // ~22fps is plenty for drifting cloud
+      weatherStep(Math.min(0.05,(now-wLast)/1000),gRoom); wLast=now;
+      if(!timer)render();
+    }
+    requestAnimationFrame(tick)})()}
+const hhmm=m=>String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0');
+
+
+// ---------------- designated lighting, ported from the builder ----------------
+let lampMode='auto', lightScale=1;
+function lampLevel(h){                      // main.cpp:2817
+  if(h>=18)return Math.min(1,(h-18)/0.25);
+  if(h<6)return 1;
+  if(h<6.25)return Math.max(0,1-(h-6)/0.25);
+  return 0}
+const lampNow=()=>{const h=todMin/60;
+  return lampMode==='on'?1:lampMode==='off'?0:lampLevel(h)};
+const lampItems=()=>rprops.filter(p=>p.lamp);
+
+// MOUNTED OR STANDING, judged by where the thing sits - not by how big its sprite is.
+// A fixture anchored high on the wall throws from below its mount (the firmware's sconce,
+// -27); anything standing on the floor throws from its shade, near the top of the sprite.
+function bulbHeightOf(fx){
+  if(!fx)return -27;
+  if(typeof fx.bulbY==='number')return fx.bulbY;
+  const d=DATA.props[fx.prop];
+  const h=d?d.h*fx.scale:0;
+  if(fx.y<120)return -27;                 // up on the wall
+  return Math.max(6,Math.round(h-6));     // standing: the shade, just under the top
+}
+
+function geomFor(fx){
+  const ax=fx?fx.x:297, ay=fx?fx.y:29, rot=fx?(fx.rot||0):0;
+  const pw=fx&&fx.lampPower?fx.lampPower:1;                 // brightness ONLY
+  const sc=lightScale*(fx&&fx.lampSize?fx.lampSize:1);      // spread, kept separate
+  const bulbUp=bulbHeightOf(fx);
+  // A wall sconce throws INTO the room, so the default is "toward the middle". Flip is about
+  // the ART - it says which way the fixture is drawn, not where the light goes.
+  const mir=(ax>160)?1:-1;
+  const standing=bulbUp>0;
+  const sx=ax-(standing?0:3*mir), sy=ay-bulbUp;
+  const floorY=210;                        // FLOOR_Y + 10
+  const drop=Math.max(1,floorY-sy), ref=210-56;   // the firmware's own drop, as reference
+  const t=drop/ref;
+  // a sconce angles off its wall (the full 58 the firmware uses); a standing lamp mostly
+  // pours straight down, so it keeps only a quarter of that lean
+  const lean=standing?0.25:1;
+  const vx0=-58*t*mir*lean, vy0=drop;
+  const a=rot*Math.PI/180, ca=Math.cos(a), sa=Math.sin(a);
+  let vx=vx0*ca-vy0*sa, vy=vx0*sa+vy0*ca;
+  const L0=Math.max(1,Math.hypot(vx,vy)); let ux=vx/L0, uy=vy/L0;
+  // The pool is where the axis MEETS THE FLOOR, and it lies FLAT on it. A beam angled up or
+  // sideways never reaches the floor, so it gets no pool: it just washes whatever it crosses.
+  let px,py,len,hitsFloor=false;
+  const reach=(uy>0.001)?(floorY-sy)/uy:1e9;
+  if(uy>0.15&&reach<=340){
+    len=reach; hitsFloor=true; px=sx+ux*len; py=floorY;
+  }else{
+    len=Math.max(40,drop); px=sx+ux*len; py=sy+uy*len;
+  }
+  return {sx,sy,px,py,ux,uy,len,hitsFloor,
+          rx:96*Math.max(0.45,t)*sc, ry:22*Math.max(0.5,t)*sc,
+          half:12*sc, rot, mir, fx, scale:sc, power:pw}}
+const lampGeoms=()=>{const L=lampItems(); return L.length?L.map(geomFor):[]};
+
+function rpSize(p){ const d=DATA.props[p.prop]; const k=p.scale;
+  return {w:d.w*k, h:d.h*k} }
+function drawRoomProp(g,p,Zg,selected){
+  const d=DATA.props[p.prop], im=imgs['prop|'+p.prop];
+  if(!im||!im.complete||!im.naturalWidth) return;
+  const {w,h}=rpSize(p);
+  g.save(); g.imageSmoothingEnabled=false;
+  g.globalAlpha=(p.opac==null?100:p.opac)/100;
+  g.translate(p.x*Zg, p.y*Zg);
+  if(p.rot) g.rotate(p.rot*Math.PI/180);
+  if(p.flip) g.scale(-1,1);
+  g.drawImage(im, -w/2*Zg, -h*Zg, w*Zg, h*Zg);   // stands on its own base
+  g.restore();
+  if(selected){
+    g.strokeStyle='#e8392d'; g.lineWidth=2; g.setLineDash([5,4]);
+    g.strokeRect((p.x-w/2)*Zg-2,(p.y-h)*Zg-2,w*Zg+4,h*Zg+4); g.setLineDash([]);
+  }
+}
+function paintScene(g,fi,seq,Zg,showSel){
+  g.imageSmoothingEnabled=false;
+  g.clearRect(0,0,GAME.w*Zg,GAME.h*Zg);
+  const rm=litRoom(gRoom)||imgs['room|'+gRoom];
+  if(rm&&(rm.complete===undefined||rm.complete)) g.drawImage(rm,0,0,GAME.w*Zg,GAME.h*Zg);
+  drawWeather(g,gRoom,Zg);            // inside the window, behind everything in the room
+  // compose the authored frame at 1:1, then blit it at the game's sprite scale with the
+  // sprite's own feet line landing on the room's floor line
+  const src=composeFrame(fi,seq,1,'pad');
+  const sc=(gScale==null?defaultScale():gScale)/100;
+  const feet=PAD+90, midx=PAD+S/2;
+  // everything sorts by y, so what is lower in the room draws in front
+  const items=rprops.map((p,i)=>({y:(p.z==null?p.y:p.z),
+    go:()=>drawRoomProp(g,p,Zg,showSel&&i===rsel)}));
+  items.push({y:(gZ==null?gY:gZ),
+    go:()=>g.drawImage(src,(gX-midx*sc)*Zg,(gY-feet*sc)*Zg,FULL*sc*Zg,FULL*sc*Zg)});
+  items.sort((a,b)=>a.y-b.y).forEach(it=>it.go());
+  if(showSel) for(let i=0;i<acts.length;i++){              // stage marks, editor only
+    const a=acts[i], c=DATA.clips[a.clip];
+    if(!c) continue;
+    const im=imgs[a.clip+'|0'];
+    const sc=(gScale==null?defaultScale():gScale)/100;
+    if(im&&im.complete){
+      g.save(); g.globalAlpha=i===asel?0.55:0.34;
+      g.drawImage(im,(a.x-S/2*sc)*Zg,(a.y-90*sc)*Zg,S*sc*Zg,S*sc*Zg);
+      g.restore(); }
+    g.strokeStyle=i===asel?'#e8392d':'rgba(232,57,45,0.6)';
+    g.lineWidth=2; g.setLineDash([4,3]);
+    g.beginPath(); g.ellipse(a.x*Zg,a.y*Zg,9*Zg,3*Zg,0,0,7); g.stroke(); g.setLineDash([]);
+    g.fillStyle=g.strokeStyle; g.font='700 '+(4*Zg)+'px ui-sans-serif,system-ui';
+    g.textAlign='center'; g.fillText(a.clip.replace(/^(Adult|Baby)_/,''),a.x*Zg,(a.y-8)*Zg);
+    g.textAlign='left';
+  }
+  if(showSel){                                              // zones, editor only
+    const tracePoly=(pts,close)=>{ g.beginPath();
+      pts.forEach((p,i)=>i?g.lineTo(p[0]*Zg,p[1]*Zg):g.moveTo(p[0]*Zg,p[1]*Zg));
+      if(close) g.closePath() };
+    for(let i=0;i<zones.length;i++){const z=zones[i];
+      if(!z.pts||z.pts.length<3) continue;
+      const floor=z.kind==='floor';
+      tracePoly(z.pts,true);
+      g.fillStyle=floor?'rgba(60,180,90,0.16)':'rgba(240,130,30,0.20)'; g.fill();
+      g.strokeStyle=floor?'rgba(60,180,90,0.95)':'rgba(240,130,30,0.95)';
+      g.lineWidth=(i===zsel)?3:2; g.setLineDash(i===zsel?[]:[6,4]); g.stroke(); g.setLineDash([]);
+      const cx=z.pts.reduce((a,p)=>a+p[0],0)/z.pts.length;
+      const cy=z.pts.reduce((a,p)=>a+p[1],0)/z.pts.length;
+      g.fillStyle=g.strokeStyle; g.font='700 '+(4*Zg)+'px ui-sans-serif,system-ui';
+      g.textAlign='center'; g.fillText(floor?'walkable':'keep out',cx*Zg,cy*Zg); g.textAlign='left';
+      if(i===zsel) z.pts.forEach((p,vi)=>{            // handles, so it can be reshaped
+        g.fillStyle=vi===zvert?'#fff':g.strokeStyle;
+        g.fillRect(p[0]*Zg-3,p[1]*Zg-3,6,6);
+        g.strokeStyle='#000'; g.lineWidth=1; g.strokeRect(p[0]*Zg-3,p[1]*Zg-3,6,6);
+        g.strokeStyle=floor?'rgba(60,180,90,0.95)':'rgba(240,130,30,0.95)'; });
+    }
+    if(zdraft&&zdraft.pts.length){
+      tracePoly(zdraft.pts,false);
+      g.strokeStyle='#fff'; g.lineWidth=2; g.setLineDash([4,4]); g.stroke(); g.setLineDash([]);
+      zdraft.pts.forEach(p=>{ g.fillStyle='#fff'; g.fillRect(p[0]*Zg-3,p[1]*Zg-3,6,6) });
+      const f=zdraft.pts[0];
+      g.strokeStyle='#fff'; g.lineWidth=1;
+      g.strokeRect(f[0]*Zg-5,f[1]*Zg-5,10,10);       // click here to close
+    }
+                                                              // floor guide, editor only
+    g.strokeStyle='rgba(255,255,255,.18)'; g.lineWidth=1;
+    g.beginPath(); g.moveTo(0,GAME.floor*Zg+.5); g.lineTo(GAME.w*Zg,GAME.floor*Zg+.5); g.stroke(); }
+}
+function drawGame(fi,seq){
+  const wrap=$('gamewrap');
+  // THE SCENE LAYER IS RETIRED FROM THIS TOOL. Rooms, placed objects, zones, lighting and
+  // weather are the Scene Assembler's job now; this is a one-animation editor. The block and
+  // all its controls stay in the page - hidden - so old project files still load, and their
+  // roomObjects are carried untouched for the assembler to use.
+  wrap.style.display='none'; return;
+  if(!DATA.rooms || !gRoom || !DATA.rooms[gRoom]){ wrap.style.display='none'; return }
+  wrap.style.display='';
+  const cv=$('gameview'), g=cv.getContext('2d'), Zg=GAME.z;
+  cv.width=GAME.w*Zg; cv.height=GAME.h*Zg;
+  paintScene(g,fi,seq,Zg,true);
+  const sc=(gScale==null?defaultScale():gScale)/100;
+  $('gsv').textContent=Math.round(sc*100);
+  $('gxv').textContent=gX; $('gyv').textContent=gY;
+  $('gx').value=gX; $('gy').value=gY;
+  $('gzv').textContent=gZ==null?'auto':gZ; $('gz').value=gZ==null?gY:gZ;
+  $('gsnote').textContent=` (game uses ${defaultScale()}% for the ${guessPhase()})`;
+  rpDraw();
+  const aSig=JSON.stringify([acts.map(a=>[a.clip,Math.round(a.x),Math.round(a.y)]),asel]);
+  if(changed('acts',aSig))
+  $('aList').innerHTML = acts.length
+    ? acts.map((a,i)=>`<button class="mini" data-a2="${i}" style="${i===asel?
+        'background:var(--accent);color:#fff;border-color:var(--accent)':''}"
+        >${a.clip.replace(/^(Adult|Baby)_/,'')} @${Math.round(a.x)},${Math.round(a.y)}</button>`).join(' ')
+    : 'none \u2014 place a pose where you want it to be able to happen';
+  $('aList').querySelectorAll('[data-a2]').forEach(b=>b.onclick=()=>{ asel=+b.dataset.a2; render() });
+  { const poses=rulePoses();
+    const rSig=JSON.stringify([poses,poses.map(c=>ruleFor(c))]);
+    if(changed('arules',rSig))
+    $('aRules').innerHTML='<div style="font-size:12px;color:var(--mut);margin-bottom:4px">'+
+      'where each action is allowed</div>'+
+      poses.map(c=>{const r=ruleFor(c);
+        return `<div class="row" style="align-items:center;margin-bottom:4px">
+          <span style="flex:1;font-size:12px">${c.replace(/^(Adult|Baby)_/,'')}</span>
+          <button class="mini" data-rm="${c}" style="${r.mode==='anywhere'?
+            'background:var(--accent);color:#fff;border-color:var(--accent)':''}"
+            >anywhere on the floor</button>
+          <select data-rn="${c}" style="flex:0 0 120px;font-size:12px;padding:2px">
+            ${AFFORD_KEYS.map(k=>
+              `<option value="${k}"${r.mode==='needs'&&r.needs===k?' selected':''}>needs ${k}</option>`).join('')}
+          </select></div>`}).join('');
+    $('aRules').querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{
+      const c=b.dataset.rm; arules[c]={mode:'anywhere'}; render() });
+    $('aRules').querySelectorAll('[data-rn]').forEach(sl=>sl.onchange=()=>{
+      arules[sl.dataset.rn]={mode:'needs',needs:sl.value}; render() }); }
+  { const f=zones.filter(z=>z.kind==='floor').length, k=zones.length-f;
+    const zSig=JSON.stringify([zones.map(z=>[z.kind,(z.pts||[]).length]),zsel]);
+    if(changed('zones',zSig))
+    $('zList').innerHTML = zones.length
+      ? zones.map((z,i)=>`<button class="mini" data-z="${i}" style="${i===zsel?
+          'background:var(--accent);color:#fff;border-color:var(--accent)':''}"
+          >${z.kind==='floor'?'floor':'keep out'} ${(z.pts||[]).length} corners</button>`).join(' ')
+        + `<span class="hint"> &mdash; ${f} walkable, ${k} keep-out</span>`
+      : 'none yet \u2014 with none, the whole floor is walkable';
+    $('zList').querySelectorAll('[data-z]').forEach(b=>b.onclick=()=>{ zsel=+b.dataset.z; render() }); }
+}
+const _sig={};
+function changed(key,val){ if(_sig[key]===val) return false; _sig[key]=val; return true }
+function render(){
+  const live=order.filter(o=>!o.skip); if(!live.length) return;
+  const SQ=seqList();
+  const seq=pos%SQ.length, slotE=SQ[seq], fi=slotE.i, c=DATA.clips[clip], f=c.frames[fi];
+  paint(ctx,fi,FULL*Z,seq,slotE.id);
+  const B=breath(f,seq);
+  const L0=cur();
+  if(L0){ const a=warp(anchorPt(f,L0),B), p=placed(f,L0,seq,B);
+    if(a){ctx.strokeStyle='#e8392d';ctx.lineWidth=2;ctx.beginPath();      // the raw anchor
+          ctx.arc((a[0]+PAD)*Z,(a[1]+PAD)*Z,7,0,7);ctx.stroke();}
+    if(p&&a&&(Math.abs(p[0]-a[0])>0.5||Math.abs(p[1]-a[1])>0.5)){        // where it actually sits
+      ctx.strokeStyle='#e8392d55';ctx.setLineDash([4,4]);
+      ctx.beginPath();ctx.moveTo((a[0]+PAD)*Z,(a[1]+PAD)*Z);ctx.lineTo((p[0]+PAD)*Z,(p[1]+PAD)*Z);
+      ctx.stroke();ctx.setLineDash([]);} }
+
+  // list is rendered top-of-stack first, so "up" in the list == "in front"
+  const ci=charAt();
+  const stackSig=JSON.stringify([stack.map(it=>it.char?'C':[it.prop,it.anchor,it.on].join()),sel,[...multi]]);
+  if(changed('stack',stackSig))
+  $('stack').innerHTML=stack.map((it,i)=>i).reverse().map(i=>{const it=stack[i];
+    return it.char
+      ? `<div class="lyr chr ${i===sel?'sel':''}" data-i="${i}"><span style="width:22px;text-align:center">▣</span>
+         <span class="nm">the character</span><span class="an">${ci} of ${stack.length-1}</span></div>`
+      : `<div class="lyr ${(i===sel||multi.has(i))?'sel':''} ${it.on?'':'off'}" data-i="${i}">
+         <img src="${DATA.props[it.prop].img}" style="filter:${cssFilter(it)}">
+         <span class="nm">${it.prop}</span>
+         <span class="an">${(DATA.props[it.prop].kind||'prop')==='mark'?'feeling':'thing'}
+           · ${it.anchor} · ${i<ci?'behind':'front'}</span>
+         <button class="mini" data-t="${i}">${it.on?'👁':'—'}</button>
+         <button class="mini" data-d="${i}">×</button></div>`}).join('');
+  const P=(s,fn)=>$('stack').querySelectorAll(s).forEach(b=>b.onclick=e=>{e.stopPropagation();fn(+b.dataset.t||+b.dataset.d);render()});
+  $('stack').querySelectorAll('.lyr').forEach(e=>e.onclick=ev=>{
+    const i=+e.dataset.i;
+    if(ev.shiftKey||ev.ctrlKey||ev.metaKey){        // add/remove from the group
+      if(stack[i].char) return;
+      multi.has(i)?multi.delete(i):multi.add(i);
+      if(!multi.has(sel)&&multi.size) sel=[...multi][0];
+    } else { multi.clear(); sel=i }
+    syncEdit(); render() });
+  P('[data-t]',i=>{stack[i].on=!stack[i].on});
+  P('[data-d]',i=>{stack.splice(i,1); if(sel>=stack.length)sel=stack.length-1; syncEdit()});
+  const atTop=sel===stack.length-1, atBot=sel===0;
+  $('zTop').disabled=$('zUp').disabled=(sel<0||atTop);
+  $('zBot').disabled=$('zDn').disabled=(sel<0||atBot);
+
+  $('edit').style.display = L0 ? '' : 'none';
+  if(L0){ const d=DATA.props[L0.prop];
+    $('ox').textContent=L0.off.x; $('oy').textContent=L0.off.y;
+    $('sv').textContent=L0.scale.toFixed(2); $('lv').textContent=L0.lift||3;
+    $('rv').textContent=L0.rot;
+    $('huv').textContent=L0.hue; $('sav').textContent=L0.sat; $('brv').textContent=L0.bri;
+    $('tsv').textContent=L0.tstr; $('opv').textContent=L0.opac==null?100:L0.opac;
+    $('colx').textContent=(cssFilter(L0)==='none'&&!L0.tstr)?'— original':'— modified';
+    $('fwv').textContent=Math.round(L0.follow*100);
+    $('jgv').textContent=L0.jig; $('jrv').textContent=L0.jrot;
+    $('puv').textContent=L0.pulse||0; $('ppv').textContent=L0.pper||8;
+    $('pxs').textContent=`→ ${Math.round(d.w*L0.scale)}×${Math.round(d.h*L0.scale)} px`;
+    { // how far the anchor actually travels, and how far the prop will
+      const xs=live.map(o=>anchorPt(c.frames[o.i],L0)).filter(Boolean);
+      const tr=xs.length?Math.round(Math.max(...xs.map(a=>a[1]))-Math.min(...xs.map(a=>a[1]))):0;
+      $('fwx').textContent=`— anchor travels ${tr}px, prop ${Math.round(tr*L0.follow)}px`; }
+    const hid = L0.on && anchorPt(f,L0) && !visible(f,L0,slotE.id);
+    const byFrame = L0.frames && !L0.frames.includes(slotE.id);
+    const nofr = live.filter(o=>!visible(c.frames[o.i],L0,o.id)).length;
+    $('warn').style.display = (hid||!L0.on||!anchorPt(f,L0)) ? 'block':'none';
+    $('warn').textContent = !L0.on ? 'Layer is toggled off (👁).'
+      : !anchorPt(f,L0) ? `No "${L0.anchor}" anchor on this frame.`
+      : byFrame ? `Not shown on frame ${slotPos(slotE.id)} — this layer runs on ${fmtFrames(L0.frames)}.`
+      : `Hidden on this frame by the lift rule — hands at y${f.mid?f.mid[1]:'?'}, `+
+        `needs ≤${c.rest-L0.lift}. Hidden on ${nofr}/${live.length} frames. Tick "always show".`;
+    // per-frame chips, labelled exactly like the frame strip
+    $('fsel').value=fmtFrames(L0.frames);
+    $('fchips').innerHTML=liveSlots().map((o,i)=>{
+      const on=!L0.frames||L0.frames.includes(o.id);
+      const dup=liveSlots().filter(q=>q.i===o.i).length>1
+        ? '#'+(liveSlots().slice(0,i+1).filter(q=>q.i===o.i).length) : '';
+      return `<button class="mini" data-f="${o.id}" title="${c.frames[o.i].name} ${dup}"
+        style="min-width:30px;${on?'background:var(--accent);color:#fff;border-color:var(--accent)':'opacity:.5'}"
+        >${i}${dup?'<span style="opacity:.7">'+dup+'</span>':''}</button>`}).join('')+
+      `<button class="mini" data-f="all" style="margin-left:6px">all</button>`;
+    $('fchips').querySelectorAll('[data-f]').forEach(b=>b.onclick=()=>{
+      const L=liveSlots();
+      if(b.dataset.f==='all'){ L0.frames=null; render(); return }
+      const id=+b.dataset.f;
+      const set=new Set(L0.frames||L.map(o=>o.id));
+      set.has(id)?set.delete(id):set.add(id);
+      L0.frames = (!set.size||set.size===L.length) ? null : [...set];
+      render(); });
+  }
+  $('fv').textContent=fps;
+  $('brev').textContent=CH.breathe; $('perv').textContent=CH.period; $('holdv').textContent=CH.hold;
+  $('tlinfo').textContent=`${live.length} frame${live.length===1?'':'s'} × ${CH.hold} = `+
+    `${SQ.length} played, ${(SQ.length/fps).toFixed(1)}s at ${fps} fps`;
+
+  const stripSig=JSON.stringify([order.map(o=>[o.i,o.skip,o.cs,o.id]),slotE.id,clip,
+    CH.hold,CH.breathe,CH.period,CH.pivot,
+    stack.map(it=>it.char?'C':[it.prop,it.off.x,it.off.y,it.scale,it.rot,it.on,it.opac].join())]);
+  if(changed('strip',stripSig)){
+  $('strip').innerHTML=order.map((o,k)=>`<div class="cell ${o.id===slotE.id?'cur':''} ${o.skip?'skip':''}" data-cell="${k}">
+      <canvas id="t${k}" width="74" height="74"></canvas>
+      <div class="lab">${c.frames[o.i].name.replace('.png','')}${
+        order.filter(q=>q.i===o.i).length>1?' <span style="opacity:.6">#'+
+        (order.slice(0,k+1).filter(q=>q.i===o.i).length)+'</span>':''}</div>
+      <div class="ctl"><button class="mini" data-m="${k}:-1" title="Move earlier">◀</button>
+        <button class="mini" data-c="${k}" title="Duplicate this frame">⧉</button>
+        <button class="mini" data-s="${k}" title="Skip this frame">×</button>
+        <button class="mini" data-m="${k}:1" title="Move later">▶</button></div>
+      <div class="ctl" style="margin-top:2px">
+        <button class="mini" data-sd="${k}" title="Smaller">−</button>
+        <button class="mini" data-sr="${k}" title="Back to 100%"
+          style="min-width:38px;${csOf(o)!==100?'color:var(--accent);font-weight:700':''}"
+          >${csOf(o)}%</button>
+        <button class="mini" data-su="${k}" title="Bigger">+</button></div></div>`).join('');
+  order.forEach((o,k)=>paint($('t'+k).getContext('2d'),o.i,74,k,o.id));
+  // click a frame to scrub to it; with a layer selected, shift-click toggles that layer on it
+  $('strip').querySelectorAll('[data-cell]').forEach(el=>el.onclick=ev=>{
+    if(ev.target.closest('button')) return;
+    const k=+el.dataset.cell, slot=order[k];
+    if((ev.shiftKey||ev.ctrlKey||ev.metaKey)&&cur()&&!slot.skip){
+      const L=cur(), all=liveSlots();
+      const set=new Set(L.frames||all.map(q=>q.id));
+      set.has(slot.id)?set.delete(slot.id):set.add(slot.id);
+      L.frames=(!set.size||set.size===all.length)?null:[...set];
+    } else {
+      const at=liveSlots().findIndex(q=>q.id===slot.id);
+      if(at>=0){ stopT(); pos=at*CH.hold }
+    }
+    render(); });
+  $('strip').querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>{
+    const [k,d]=b.dataset.m.split(':').map(Number), j=k+d;
+    if(j<0||j>=order.length)return;[order[k],order[j]]=[order[j],order[k]];render()});
+  $('strip').querySelectorAll('[data-s]').forEach(b=>b.onclick=()=>{
+    order[+b.dataset.s].skip=!order[+b.dataset.s].skip;render()});
+  }
+  $('strip').querySelectorAll('[data-c]').forEach(b=>b.onclick=()=>{
+    const k=+b.dataset.c;
+    order.splice(k+1,0,newSlot(order[k].i,csOf(order[k]))); render()});
+  const bump=(k,d)=>{const e=order[k]; e.cs=Math.max(50,Math.min(160,csOf(e)+d)); render()};
+  $('strip').querySelectorAll('[data-sd]').forEach(b=>b.onclick=()=>bump(+b.dataset.sd,-2));
+  $('strip').querySelectorAll('[data-su]').forEach(b=>b.onclick=()=>bump(+b.dataset.su,+2));
+  $('strip').querySelectorAll('[data-sr]').forEach(b=>b.onclick=()=>{
+    order[+b.dataset.sr].cs=100; render()});
+
+  drawGame(fi,seq);
+  $('out').textContent=JSON.stringify(spec(),null,1);
+  autosave(); if(typeof pushHistory==='function') pushHistory();
+}
+function syncEdit(){ const L=cur(); if(!L)return;
+  $('anchor').value=L.anchor; $('scale').value=L.scale; $('rot').value=L.rot;
+  $('follow').value=Math.round(L.follow*100); $('jig').value=L.jig; $('jrot').value=L.jrot;
+  $('pulse').value=L.pulse||0; $('pper').value=L.pper||8;
+  $('hue').value=L.hue; $('sat').value=L.sat; $('bri').value=L.bri;
+  $('tint').value=L.tint; $('tstr').value=L.tstr; $('opac').value=L.opac==null?100:L.opac;
+  $('always').checked=!L.lift; $('lift').value=L.lift||3;
+  $('liftbox').style.display=L.lift?'':'none'; }
+function move(to){ if(sel<0)return; to=Math.max(0,Math.min(stack.length-1,to));
+  const [it]=stack.splice(sel,1); stack.splice(to,0,it); sel=to; render(); }
+function spec(){
+  const c=DATA.clips[clip], live=seqList(), ci=charAt();   // the PLAYED sequence, holds included
+  const ms=Math.round(1000/fps);
+  return {format:'bunbun-attach-baked',kind:'resolved per-frame output - not re-openable',
+    clip,fps,frameMs:ms,durationMs:ms*live.length,
+    exportedAt:new Date().toISOString(), exportedAtLocal:new Date().toLocaleString(),
+    rest:c.rest,characterZ:ci,character:{...CH},
+    scene:{room:gRoom||null, width:GAME.w, height:GAME.h, floor:GAME.floor,
+           light:{timeOfDay:hhmm(todMin), minutes:todMin, on:todOn,
+                  daylight:+daylight(todMin/60).toFixed(3),
+                  night:+nightAmount(todMin/60).toFixed(3)},
+           lamps:{mode:lampMode, level:+lampNow().toFixed(3), sizeScale:lightScale,
+                  sources:lampItems().map(p=>{const gm=geomFor(p);
+                    return {object:p.prop, x:p.x, y:p.y,
+                      power:p.lampPower||1, spread:p.lampSize||1,
+                      bulbY:(typeof p.bulbY==='number')?p.bulbY:bulbHeightOf(p),
+                      bulb:{x:Math.round(gm.sx), y:Math.round(gm.sy)},
+                      lands:gm.hitsFloor?{x:Math.round(gm.px), y:Math.round(gm.py)}:null}})},
+           actions:acts.map(a=>({pose:a.clip,x:Math.round(a.x),y:Math.round(a.y)})),
+           // an action is either free on the walkable floor, or it needs a place that
+           // affords it - the sim then chooses which of those places to use
+           // every animation the library holds, and whether this room uses it
+           animations:Object.entries(libAll())
+             .filter(([,rec])=>rec&&rec.kind==='animation')
+             .map(([n,rec])=>({name:n, clip:rec.anim&&rec.anim.clip,
+               enabled:isOn(n),
+               rule:(rec.rule&&rec.rule.mode==='needs')?{needs:rec.rule.needs}:{anywhere:true}})),
+           animation:{name:($('libName').value||'').trim()||null,
+                      clip:clip,
+                      rule: animRule.mode==='anywhere' ? {anywhere:true} : {needs:animRule.needs},
+                      where: ruleText(animRule)},
+           actionRules:Object.fromEntries(rulePoses().map(c=>{const r=ruleFor(c);
+             return [c, r.mode==='anywhere' ? {anywhere:true} : {needs:r.needs}]})),
+           walkable:zones.filter(z=>z.kind==='floor')
+                   .map(z=>({pts:z.pts.map(p=>[Math.round(p[0]),Math.round(p[1])])})),
+           keepOut:zones.filter(z=>z.kind==='keepout')
+                   .map(z=>({pts:z.pts.map(p=>[Math.round(p[0]),Math.round(p[1])])})),
+           weather:{rain:raining, clouds:clouding, style:cloudStyle,
+                    count:cloudN, size:cloudSize, speed:cloudSpeed, opacity:cloudAlpha},
+           character:{x:gX, y:gY, z:(gZ==null?gY:gZ), zAuto:gZ==null,
+                     scalePercent:(gScale==null?defaultScale():gScale)},
+           objects:rprops.map(p=>({object:p.prop, x:p.x, y:p.y,
+             scale:+p.scale.toFixed(3), rotation:p.rot, flip:p.flip,
+             opacity:p.opac==null?100:p.opac, z:(p.z==null?p.y:p.z), zAuto:p.z==null,
+             can:(p.can&&p.can.length)?p.can:null,
+             usePoint:(p.can&&p.can.length)?{x:Math.round(p.x),y:Math.round(p.y)}:null,
+             width:Math.round(DATA.props[p.prop].w*p.scale),
+             height:Math.round(DATA.props[p.prop].h*p.scale)}))},
+    order:live.map((o,s)=>({frame:c.frames[o.i].name,t:s*ms,characterScale:csOf(o)})),
+    layers:stack.map((L,i)=>L.char?null:({z:i,behind:i<ci,object:L.prop,anchor:L.anchor,
+      offset:L.off,scale:+L.scale.toFixed(2),rotation:L.rot,flip:L.flip,
+      follow:L.follow,jiggle:L.jig,wobble:L.jrot,pulse:L.pulse||0,pulseCycle:L.pper||8,
+      colour:{hue:L.hue,saturation:L.sat,brightness:L.bri,tint:L.tint,tintStrength:L.tstr,
+              opacity:L.opac==null?100:L.opac,cssFilter:cssFilter(L)},
+      liftThreshold:L.lift,alwaysShow:!L.lift,enabled:L.on,
+      frameFilter:L.frames?fmtFrames(L.frames):null,
+      frameFilterPositions:idsToPos(L.frames),
+      frames:live.map((o,s)=>{const f=c.frames[o.i],p=placed(f,L,s);
+        return {frame:f.name,t:s*ms,visible:L.on&&visible(f,L,o.id),
+                scale:+(L.scale*puff(L,s)).toFixed(3),
+                x:p?+p[0].toFixed(1):null,y:p?+p[1].toFixed(1):null,
+                rotation:+spin(L,s).toFixed(1)}})})).filter(Boolean)};
+}
+const play=()=>{stopT();timer=setInterval(()=>{pos++;render()},1000/fps)};
+const stopT=()=>{if(timer){clearInterval(timer);timer=null}};
+// everything a move applies to: the whole group when one exists, else the selected layer
+function moveSet(){
+  if(multi.size) return [...multi].map(i=>stack[i]).filter(L=>L&&!L.char);
+  const L=cur(); return L?[L]:[];
+}
+const nudge=(dx,dy)=>{const set=moveSet(); if(!set.length)return;
+  set.forEach(L=>{L.off.x+=dx;L.off.y+=dy}); render()};
+
+function pick(e){                       // topmost drawn layer under the cursor wins
+  const r=$('stage').getBoundingClientRect();
+  const x=(e.clientX-r.left)/Z-PAD, y=(e.clientY-r.top)/Z-PAD;
+  const SQ=seqList(), seq=pos%SQ.length, fi0=SQ[seq].i, slot0=SQ[seq].id;
+  const f=DATA.clips[clip].frames[fi0], B=breath(f,seq);
+  for(let i=stack.length-1;i>=0;i--){
+    const L=stack[i]; if(L.char) continue;
+    const c=placed(f,L,seq,B); if(!L.on||!c||!visible(f,L,slot0)) continue;
+    const d=DATA.props[L.prop], sc=L.scale*puff(L,seq), hw=d.w*sc/2, hh=d.h*sc/2, m=3;
+    if(Math.abs(x-c[0])<=Math.max(hw,m) && Math.abs(y-c[1])<=Math.max(hh,m)) return i;
+  }
+  return -1;
+}
+let drag=false,last=null;
+$('stage').addEventListener('pointerdown',e=>{
+  const h=pick(e);
+  if(h>=0){
+    if(e.shiftKey||e.ctrlKey||e.metaKey){ multi.add(h); sel=h }
+    else if(!multi.has(h)){ multi.clear(); sel=h }
+    syncEdit();
+  } else if(!(e.shiftKey||e.ctrlKey||e.metaKey)) { multi.clear() }
+  if(!cur()){render();return}
+  drag=true;last=e;$('stage').classList.add('drag');$('stage').setPointerCapture(e.pointerId);render()});
+$('stage').addEventListener('pointermove',e=>{if(!drag)return;
+  const set=moveSet(); if(!set.length)return;
+  const dx=Math.round((e.clientX-last.clientX)/Z), dy=Math.round((e.clientY-last.clientY)/Z);
+  if(!dx&&!dy) return;
+  set.forEach(L=>{L.off.x+=dx;L.off.y+=dy}); last=e; render()});
+$('stage').addEventListener('pointerup',()=>{drag=false;$('stage').classList.remove('drag')});
+addEventListener('keydown',e=>{
+  if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){   // works even inside a slider
+    e.preventDefault(); e.shiftKey?redo():undo(); return }
+  if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='y'){ e.preventDefault(); redo(); return }
+  if(/^(SELECT|INPUT)$/.test(e.target.tagName)) return;
+  const m={ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]}[e.key];
+  if(m){e.preventDefault();nudge(...m);return}
+  if((e.key==='Delete'||e.key==='Backspace')&&cur()){
+    e.preventDefault();
+    const kill=multi.size?[...multi].sort((a,b)=>b-a):[sel];
+    kill.forEach(i=>{ if(!stack[i].char) stack.splice(i,1) });
+    multi.clear(); if(sel>=stack.length)sel=stack.length-1; syncEdit(); render()}
+  if(e.key===']'){e.preventDefault();move(sel+1)} if(e.key==='['){e.preventDefault();move(sel-1)}
+  if(e.key==='Escape'&&(zdraft||zmode)){ e.preventDefault(); zdraft=null; zmode='';
+    $('zFloor').classList.remove('pri'); $('zKeep').classList.remove('pri'); render(); return }
+  if(e.key==='Enter'&&zdraft){ e.preventDefault(); closeZone(); return }
+  if(e.key===' '){e.preventDefault();timer?stopT():play()}});
+
+$('room').onchange=e=>{ gRoom=e.target.value; litCache.key=''; skyBox=null;
+  if(gRoom&&DATA.rooms[gRoom]&&!imgs['room|'+gRoom]) load(DATA.rooms[gRoom],imgs,'room|'+gRoom).then(render);
+  render() };
+function rpDraw(){
+  const rpSig=JSON.stringify([rprops.map(p=>[p.prop,Math.round(p.x),Math.round(p.y),p.lamp]),rsel]);
+  if(changed('rprops',rpSig))
+  $('rpList').innerHTML=rprops.map((p,i)=>
+    `<button class="mini" data-rp="${i}" style="${i===rsel?
+      'background:var(--accent);color:#fff;border-color:var(--accent)':''}"
+      >${p.prop.replace(/_/g,' ')}</button>`).join('')
+    || '<span class="hint">nothing in the room yet</span>';
+  $('rpList').querySelectorAll('[data-rp]').forEach(b=>b.onclick=()=>{
+    rsel=+b.dataset.rp; rpSync(); render() });
+  $('rpEdit').style.display = (rsel>=0&&rprops[rsel]) ? '' : 'none';
+  const p=rprops[rsel];
+  if(p){ $('rpsv').textContent=Math.round(p.scale*100); $('rprv').textContent=p.rot;
+    $('rpov').textContent=p.opac==null?100:p.opac;
+    const {w,h}=rpSize(p);
+    $('rpLamp').classList.toggle('pri',!!p.lamp);
+    $('rpLamp').textContent=p.lamp?'light \u2713':'make light';
+    $('rpLampBox').style.display=p.lamp?'':'none';
+    if(p.lamp){ $('rplpv').textContent=Math.round((p.lampPower||1)*100);
+      $('rplsv').textContent=Math.round((p.lampSize||1)*100);
+      $('rpPower').value=Math.round((p.lampPower||1)*100);
+      $('rpSpread').value=Math.round((p.lampSize||1)*100);
+      $('rpbhv').textContent=(typeof p.bulbY==='number')?p.bulbY:'auto';
+      $('rpBulb').value=(typeof p.bulbY==='number')?p.bulbY:bulbHeightOf(p); }
+    { const can=p.can||[];
+      $('rpCan').innerHTML=AFFORD.map(([k,label])=>
+        `<button class="mini" data-can="${k}" title="${label}" style="${can.includes(k)?
+          'background:var(--accent);color:#fff;border-color:var(--accent)':''}">${k}</button>`).join('');
+      $('rpCan').querySelectorAll('[data-can]').forEach(b=>b.onclick=()=>{
+        const k=b.dataset.can, set=new Set(p.can||[]);
+        set.has(k)?set.delete(k):set.add(k);
+        p.can=[...set]; render() }); }
+    $('rpWhere').textContent=`at ${Math.round(p.x)},${Math.round(p.y)} `+
+      `\u00b7 ${Math.round(w)}\u00d7${Math.round(h)} px \u00b7 drag it in the room`; }
+}
+function rpSync(){ const p=rprops[rsel]; if(!p) return;
+  $('rpScale').value=Math.round(p.scale*100); $('rpRot').value=p.rot;
+  $('rpOpac').value=p.opac==null?100:p.opac; }
+$('rpNew').onclick=()=>{ const n=$('rpAdd').value; if(!DATA.props[n]) return;
+  const isLight=(DATA.props[n].kind==='light');
+  if(!imgs['prop|'+n]) load(DATA.props[n].img,imgs,'prop|'+n).then(render);
+  const d=DATA.props[n];
+  const p=rpDefaults(n); p.scale=+(24/Math.max(d.w,d.h)).toFixed(2);   // start about 24px
+  if(isLight){ p.lamp=true; p.lampPower=1; p.lampSize=1; p.y=64; litCache.key='' }
+  rprops.push(p); rsel=rprops.length-1; rpSync(); render(); };
+$('rpScale').oninput=e=>{ const p=rprops[rsel]; if(p){p.scale=+e.target.value/100; render()} };
+$('rpRot').oninput=e=>{ const p=rprops[rsel]; if(p){p.rot=+e.target.value; render()} };
+$('rpOpac').oninput=e=>{ const p=rprops[rsel]; if(p){p.opac=+e.target.value; render()} };
+$('rpFlip').onclick=()=>{ const p=rprops[rsel]; if(p){p.flip=!p.flip; render()} };
+$('rpLamp').onclick=()=>{ const p=rprops[rsel]; if(!p)return;
+  p.lamp=!p.lamp; if(p.lamp){ p.lampPower=p.lampPower||1; p.lampSize=p.lampSize||1 }
+  litCache.key=''; render() };
+$('rpPower').oninput=e=>{ const p=rprops[rsel]; if(p){p.lampPower=+e.target.value/100;
+  litCache.key=''; render()} };
+$('rpSpread').oninput=e=>{ const p=rprops[rsel]; if(p){p.lampSize=+e.target.value/100;
+  litCache.key=''; render()} };
+$('rpBulb').oninput=e=>{ const p=rprops[rsel]; if(p){p.bulbY=+e.target.value;
+  litCache.key=''; render()} };
+$('rpBulbAuto').onclick=()=>{ const p=rprops[rsel]; if(p){delete p.bulbY;
+  litCache.key=''; render()} };
+$('lampM').onclick=()=>{ lampMode = lampMode==='auto'?'on':lampMode==='on'?'off':'auto';
+  $('lampM').textContent='lamps: '+lampMode; litCache.key=''; render() };
+$('lsz').oninput=e=>{ lightScale=+e.target.value/100; $('lszl').textContent=e.target.value+'%';
+  litCache.key=''; render() };
+$('rpDel').onclick=()=>{ if(rsel<0)return; rprops.splice(rsel,1); rsel=-1; rpSync(); render() };
+const wxTouch=()=>{ litCache.key=''; if(raining||clouding) startWeatherLoop(); render() };
+$('tod').oninput=e=>{ todMin=+e.target.value; $('todl').textContent=hhmm(todMin);
+  litCache.key=''; render() };
+$('todOff').onclick=()=>{ todOn=!todOn; litCache.key='';
+  $('todOff').textContent='lighting: '+(todOn?'on':'off'); render() };
+$('rn').onclick=()=>{ raining=!raining; if(raining)weatherInit(gRoom);
+  $('rn').classList.toggle('pri',raining); wxTouch() };
+$('cl').onclick=()=>{ clouding=!clouding; if(clouding)weatherInit(gRoom);
+  $('cl').classList.toggle('pri',clouding); wxTouch() };
+$('cst').onchange=e=>{ cloudStyle=e.target.value; rebuildClouds(); weatherInit(gRoom); wxTouch() };
+$('cn').oninput=e=>{ cloudN=+e.target.value; $('cnl').textContent=cloudN;
+  rebuildClouds(); weatherInit(gRoom); wxTouch() };
+$('cw').oninput=e=>{ cloudSize=+e.target.value/100; $('cwl').textContent=e.target.value+'%';
+  rebuildClouds(); weatherInit(gRoom); wxTouch() };
+$('cs').oninput=e=>{ cloudSpeed=+e.target.value/100; $('csl').textContent=e.target.value+'%'; wxTouch() };
+$('co').oninput=e=>{ cloudAlpha=+e.target.value/100; $('col').textContent=e.target.value+'%'; wxTouch() };
+function closeZone(){
+  if(zdraft && zdraft.pts.length>=3){ zones.push({kind:zdraft.kind,pts:zdraft.pts});
+    zsel=zones.length-1 }
+  zdraft=null; zmode=''; zvert=-1;
+  $('zFloor').classList.remove('pri'); $('zKeep').classList.remove('pri');
+  render();
+}
+$('zClose').onclick=closeZone;
+$('aAdd').onclick=()=>{ amode=amode?'':$('aClip').value; zmode=''; zdraft=null;
+  $('aAdd').classList.toggle('pri',!!amode);
+  $('zFloor').classList.remove('pri'); $('zKeep').classList.remove('pri'); render() };
+$('aDel').onclick=()=>{ if(asel>=0){ acts.splice(asel,1); asel=-1; render() } };
+$('zFloor').onclick=()=>{ zdraft=null; zmode=zmode==='floor'?'':'floor';
+  $('zFloor').classList.toggle('pri',zmode==='floor'); $('zKeep').classList.remove('pri'); render() };
+$('zKeep').onclick=()=>{ zdraft=null; zmode=zmode==='keepout'?'':'keepout';
+  $('zKeep').classList.toggle('pri',zmode==='keepout'); $('zFloor').classList.remove('pri'); render() };
+$('zDel').onclick=()=>{ if(zsel>=0){ zones.splice(zsel,1); zsel=-1; zvert=-1; render() } };
+$('gscale').oninput=e=>{ gScale=+e.target.value; render() };
+$('gx').oninput=e=>{ gX=+e.target.value; render() };
+$('gy').oninput=e=>{ gY=+e.target.value; render() };
+$('gfloor').onclick=()=>{ gY=GAME.floor; render() };
+$('gz').oninput=e=>{ gZ=+e.target.value; render() };
+$('gzauto').onclick=()=>{ gZ=null; render() };
+(()=>{ const gv=$('gameview'); let dg=null;
+  const at=e=>{ const r=gv.getBoundingClientRect();
+    return { x:Math.round((e.clientX-r.left)/r.width*GAME.w),
+             y:Math.round((e.clientY-r.top)/r.height*GAME.h) } };
+  // topmost room object under the cursor wins; nothing there means you are moving the character
+  const pick=q=>{ for(let i=rprops.length-1;i>=0;i--){ const p=rprops[i], {w,h}=rpSize(p);
+      if(q.x>=p.x-w/2&&q.x<=p.x+w/2&&q.y>=p.y-h&&q.y<=p.y) return i } return -1 };
+  gv.style.cursor='grab';
+  gv.addEventListener('pointerdown',e=>{ const q=at(e);
+    if(amode){ acts.push({clip:amode,x:q.x,y:q.y}); asel=acts.length-1; amode='';
+      $('aAdd').classList.remove('pri'); render(); return }
+    { const hitA=acts.findIndex(a=>Math.abs(a.x-q.x)<14&&Math.abs(a.y-q.y)<20);
+      if(hitA>=0 && !zmode){ asel=hitA; dg={kind:'act',dx:acts[hitA].x-q.x,dy:acts[hitA].y-q.y};
+        gv.setPointerCapture(e.pointerId); render(); return } }
+    if(zmode){
+      if(!zdraft) zdraft={kind:zmode,pts:[]};
+      const first=zdraft.pts[0];
+      if(first && zdraft.pts.length>=3 && nearPt(q.x,q.y,first,5)){ closeZone(); return }
+      zdraft.pts.push([q.x,q.y]); render(); return }
+    // grab a handle of the selected zone, or select the zone under the cursor
+    if(zsel>=0 && zones[zsel] && zones[zsel].pts){
+      const vi=zones[zsel].pts.findIndex(p=>nearPt(q.x,q.y,p,5));
+      if(vi>=0){ zvert=vi; gv.setPointerCapture(e.pointerId); render(); return } }
+    { // search from the top: a keep-out drawn inside the floor must win over the floor
+      let hit=-1;
+      for(let i=zones.length-1;i>=0;i--){
+        const z=zones[i];
+        if(z.pts&&z.pts.length>2&&inPoly(q.x,q.y,z.pts)){ hit=i; break } }
+      if(hit>=0 && pick(q)<0){ zsel=hit; zvert=-1; render(); return } }   // an object wins over a zone
+    const hit=pick(q);
+    gv.setPointerCapture(e.pointerId); gv.style.cursor='grabbing';
+    if(hit>=0){ rsel=hit; rpSync(); dg={kind:'prop',dx:rprops[hit].x-q.x,dy:rprops[hit].y-q.y} }
+    else { rsel=-1; dg={kind:'char'}; gX=q.x; gY=q.y }
+    render() });
+  gv.addEventListener('pointermove',e=>{
+    if(zvert>=0 && zsel>=0){ const q=at(e); zones[zsel].pts[zvert]=[q.x,q.y]; render(); return }
+    if(zdraft){ render(); return }
+    if(!dg)return; const q=at(e);
+    if(dg.kind==='act'){ const a=acts[asel]; if(a){ a.x=q.x+dg.dx; a.y=q.y+dg.dy } }
+    else if(dg.kind==='prop'){ const p=rprops[rsel]; if(p){ p.x=q.x+dg.dx; p.y=q.y+dg.dy } }
+    else { gX=q.x; gY=q.y }
+    render() });
+  gv.addEventListener('pointerup',()=>{
+    if(zvert>=0){ zvert=-1; render(); return }
+    dg=null; gv.style.cursor='grab' });
+})();
+$('clip').onchange=async e=>{stopT();clip=e.target.value;await ensureClip();resetOrder();gScale=null;$('gscale').value=defaultScale();render()};
+$('add').onclick=async()=>{await addLayer($('addProp').value,$('anchor').value);render()};
+$('dup').onclick=async()=>{const L=cur();if(!L)return;
+  await addLayer(L.prop,L.anchor,authored(L),sel+1);render()};
+// mirror moves the PLACEMENT to the other hand (x offset negates); the artwork copies verbatim
+$('mirror').onclick=async()=>{const L=cur();if(!L)return;const o={L:'R',R:'L'}[L.anchor];if(!o)return;
+  await addLayer(L.prop,o,Object.assign(authored(L),{anchor:o,off:{x:-L.off.x,y:L.off.y}}),sel+1);render()};
+$('zTop').onclick=()=>move(stack.length-1); $('zBot').onclick=()=>move(0);
+$('zUp').onclick=()=>move(sel+1);           $('zDn').onclick=()=>move(sel-1);
+$('anchor').onchange=e=>{const L=cur();if(L){L.anchor=e.target.value;render()}};
+$('scale').oninput=e=>{const L=cur();if(L){L.scale=+e.target.value;render()}};
+$('rot').oninput=e=>{const L=cur();if(L){L.rot=+e.target.value;render()}};
+const setRot=v=>{const L=cur();if(!L)return;L.rot=Math.max(-180,Math.min(180,v));syncEdit();render()};
+$('r0').onclick=()=>setRot(0); $('rm15').onclick=()=>setRot(cur()?cur().rot-15:0);
+$('rp15').onclick=()=>setRot(cur()?cur().rot+15:0);
+$('rflip').onclick=()=>{const L=cur();if(L){L.flip=!L.flip;render()}};
+$('fsel').onchange=e=>{const L=cur();if(!L)return;
+  L.frames=parseFrames(e.target.value); render()};
+$('hue').oninput=e=>{const L=cur();if(L){L.hue=+e.target.value;render()}};
+$('sat').oninput=e=>{const L=cur();if(L){L.sat=+e.target.value;render()}};
+$('bri').oninput=e=>{const L=cur();if(L){L.bri=+e.target.value;render()}};
+$('tint').oninput=e=>{const L=cur();if(L){L.tint=e.target.value;render()}};
+$('tstr').oninput=e=>{const L=cur();if(L){L.tstr=+e.target.value;render()}};
+$('opac').oninput=e=>{const L=cur();if(L){L.opac=+e.target.value;render()}};
+$('cres').onclick=()=>{const L=cur();if(L){L.hue=0;L.sat=100;L.bri=100;
+  L.tint='#ffffff';L.tstr=0;L.opac=100;syncEdit();render()}};
+$('follow').oninput=e=>{const L=cur();if(L){L.follow=+e.target.value/100;render()}};
+$('jig').oninput=e=>{const L=cur();if(L){L.jig=+e.target.value;render()}};
+$('jrot').oninput=e=>{const L=cur();if(L){L.jrot=+e.target.value;render()}};
+$('pulse').oninput=e=>{const L=cur();if(L){L.pulse=+e.target.value;render()}};
+$('pper').oninput=e=>{const L=cur();if(L){L.pper=+e.target.value;render()}};
+$('lift').oninput=e=>{const L=cur();if(L){L.lift=+e.target.value;render()}};
+$('always').onchange=e=>{const L=cur();if(!L)return;
+  L.lift=e.target.checked?0:(+$('lift').value||3);
+  $('liftbox').style.display=e.target.checked?'none':''; render()};
+$('reset').onclick=()=>{const L=cur();if(L){L.off={x:0,y:0};L.scale=fitScale(L.prop);
+  L.rot=0;L.flip=false;L.follow=1;L.jig=0;L.jrot=0;L.pulse=0;L.pper=8;syncEdit();render()}};
+$('nudgeL').onclick=()=>nudge(-1,0); $('nudgeR').onclick=()=>nudge(1,0);
+$('nudgeU').onclick=()=>nudge(0,-1); $('nudgeD').onclick=()=>nudge(0,1);
+$('fps').oninput=e=>{fps=+e.target.value;if(timer)play();render()};
+$('breathe').oninput=e=>{CH.breathe=+e.target.value;render()};
+$('pivot').onchange=e=>{CH.pivot=e.target.value;render()};
+$('period').oninput=e=>{CH.period=+e.target.value;render()};
+$('hold').oninput=e=>{CH.hold=+e.target.value;pos=0;render()};
+$('play').onclick=play; $('pause').onclick=stopT;
+$('stop').onclick=()=>{stopT();pos=0;render()};
+$('prev').onclick=()=>{stopT();const n=seqList().length;pos=(pos-1+n)%n;render()};
+$('next').onclick=()=>{stopT();pos++;render()};
+$('ord_reset').onclick=()=>{resetOrder();render()};
+$('ord_rev').onclick=()=>{order.reverse();render()};
+$('ord_ping').onclick=()=>{const b=order.filter(o=>!o.skip);
+  order=b.concat(b.slice(1,-1).reverse().map(o=>newSlot(o.i,csOf(o))));render()};
+$('demo').onclick=async()=>{
+  stopT(); clip='Adult_Bathe'; $('clip').value=clip; await ensureClip(); resetOrder();
+  stack=[CHAR];
+  await addLayer('duck','feet',{off:{x:26,y:-5},scale:0.31},0);      // behind the character
+  await addLayer('bubble_cloud','head',{off:{x:14,y:-6},scale:0.21});
+  await addLayer('bubbles','head',{off:{x:-15,y:-4},scale:0.28});
+  await addLayer('soap','L',{off:{x:-2,y:0},scale:0.24});
+  await addLayer('bubble_cloud','R',{off:{x:2,y:-1},scale:0.28});
+  render();
+};
+$('copy').onclick=()=>navigator.clipboard.writeText(JSON.stringify(spec(),null,1));
+// 2026-08-16T14:32:09 -> "20260816-1432", safe in a filename and sorts chronologically
+const fileStamp=()=>new Date().toLocaleString('sv').replace(/[-:]/g,'').replace(' ','-').slice(0,13);
+let DLCAP;
+async function downloader(){
+  if(DLCAP!==undefined) return DLCAP;
+  try{ DLCAP=(typeof claude!=='undefined'&&claude.use)?await claude.use('downloads'):null }
+  catch(e){ DLCAP=null }
+  return DLCAP;
+}
+const hosted=()=>typeof claude!=='undefined' && !!(claude&&claude.use);
+async function handOver(data,name){
+  const d=await downloader();
+  if(d){
+    try{ await d.save({filename:name,data}); return name }
+    catch(err){ const c=err&&err.code;
+      if(c==='declined')     { flash('Save cancelled'); return null }
+      if(c==='rate_limited') { flash('One save at a time — try again',true); return null }
+      if(c==='too_large')    { flash('Too big to save — lower the render scale',true); return null }
+      flash('Could not save'+(err&&err.message?' — '+err.message:''),true); return null }
+  }
+  if(hosted()){ flash('Saving is not available here',true); return null }
+  const blob=data instanceof Blob?data:new Blob([data],{type:'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name;
+  a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),5000); return name;
+}
+// WHAT YOU CALLED IT is what the file should be called. Everything used to be named after the
+// CLIP, so every export came out as Adult_Sit_... and the assembler could only ever list it as
+// "Adult Sit" - which is why a room full of animations all read like clip names. The "name this
+// one" box is the answer and was simply never used here.
+// The visible name box at the top IS the name; the old library field mirrors it so every
+// export path that already reads libName keeps working unchanged.
+(()=>{ const top=$('animName'), old=$('libName');
+  if(top&&old){ top.value=old.value||'';
+    top.oninput=()=>{ old.value=top.value };
+    old.addEventListener('change',()=>{ top.value=old.value }); } })();
+// THE MOVES SHELF: every save also lands in browser storage, so the Scene Assembler can
+// offer it as a big button - no Downloads folder, no file picker, no timestamps (the
+// file round-trip was Mila's most grown-up-dependent step). The downloaded file remains,
+// as the grown-up interchange format.
+const SHELF='bunbun-moves-shelf'+(window.SBX?'--'+window.SBX:'');
+function shelfPut(name, proj){
+  try{
+    const s=JSON.parse(localStorage.getItem(SHELF)||'[]').filter(e=>e.name!==name);
+    s.unshift({name, at:Date.now(), proj});
+    localStorage.setItem(SHELF, JSON.stringify(s.slice(0,24)));
+  }catch(e){}
+}
+const exportStem=()=>{
+  const named=(($('animName')&&$('animName').value)||($('libName')&&$('libName').value)||'').trim();
+  return (named||clip).replace(/[\/:*?"<>|]+/g,'-').replace(/\s+/g,'_').slice(0,50);
+};
+const save=(obj,name)=>{ handOver(JSON.stringify(obj,null,1),name)
+  .then(n=>{ if(n) flash('saved '+n) }); return name };
+$('dl').onclick=()=>save(spec(),`anim_${exportStem()}_attach_${fileStamp()}.json`);
+
+// ---- project: the AUTHORED state, so a save can be re-opened and edited ----
+const stamp=()=>({savedAt:new Date().toISOString(),
+                  savedAtLocal:new Date().toLocaleString()});
+// ONE ANIMATION IN, ONE ANIMATION OUT. This used to serialise the whole retired scene layer -
+// room objects, zones, lighting, weather - which made every saved animation carry a room it no
+// longer edits ("why is there all this room stuff / weather stuff in the json?"). The room
+// name stays as a note of the backdrop it was judged against; the scene itself is the Scene
+// Assembler's file, not this one. loadProject still READS old fat files fine - extra keys are
+// simply ignored.
+// ---- THE PIXEL EDITOR ----
+const PX={n:24, grid:null, tool:'pen', color:'#8a5a2b', mirror:false, hist:[], drawing:false};
+const PX_PAL=['#241f1a','#6d685a','#b3a98e','#f6f1e4','#8a5a2b','#c98a4b','#e8b06b','#f4d8a8',
+  '#c0392b','#e8501e','#f0c84a','#7a9e3b','#27ae60','#2a7ab8','#8a6ee6','#fd6bb0'];
+function pxInit(){
+  const pal=$('pxPal');
+  pal.innerHTML=PX_PAL.map(c=>`<div class="c" data-c="${c}" style="background:${c}"></div>`).join('');
+  pal.querySelectorAll('.c').forEach(el=>el.onclick=()=>{ PX.color=el.dataset.c;
+    pal.querySelectorAll('.c').forEach(x=>x.classList.toggle('sel',x===el)); pxTool('pen'); });
+  $('pxCustom').oninput=e=>{ PX.color=e.target.value; pxTool('pen');
+    pal.querySelectorAll('.c').forEach(x=>x.classList.remove('sel')); };
+  pxBlank(24);
+}
+function pxBlank(n){ PX.n=n; PX.grid=Array.from({length:n},()=>Array(n).fill(null)); pxPaint(); }
+function pxSnapshot(){ PX.hist.push(PX.grid.map(r=>r.slice())); if(PX.hist.length>60) PX.hist.shift(); }
+function pxPaint(){
+  const cv=$('pxCv'), g=cv.getContext('2d'), n=PX.n, cell=cv.width/n;
+  g.clearRect(0,0,cv.width,cv.height);
+  for(let y=0;y<n;y++) for(let x=0;x<n;x++)
+    if(PX.grid[y][x]){ g.fillStyle=PX.grid[y][x]; g.fillRect(x*cell,y*cell,cell,cell); }
+  g.strokeStyle='rgba(128,120,100,.25)'; g.lineWidth=1;
+  for(let i=1;i<n;i++){ g.beginPath(); g.moveTo(i*cell,0); g.lineTo(i*cell,cv.height); g.stroke();
+    g.beginPath(); g.moveTo(0,i*cell); g.lineTo(cv.width,i*cell); g.stroke(); }
+}
+function pxCell(e){ const r=$('pxCv').getBoundingClientRect(), n=PX.n;
+  const x=Math.floor((e.clientX-r.left)/r.width*n), y=Math.floor((e.clientY-r.top)/r.height*n);
+  return (x>=0&&x<n&&y>=0&&y<n)?{x,y}:null; }
+function pxApply(x,y){
+  const n=PX.n;
+  const put=(cx,cy,v)=>{ if(cx>=0&&cx<n&&cy>=0&&cy<n) PX.grid[cy][cx]=v; };
+  if(PX.tool==='pen'){ put(x,y,PX.color); if(PX.mirror) put(n-1-x,y,PX.color); }
+  else if(PX.tool==='era'){ put(x,y,null); if(PX.mirror) put(n-1-x,y,null); }
+  else if(PX.tool==='pick'){ if(PX.grid[y][x]){ PX.color=PX.grid[y][x]; $('pxCustom').value=PX.color; }
+    pxTool('pen'); return; }
+  else if(PX.tool==='fill'){
+    const from=PX.grid[y][x], to=PX.color; if(from===to) return;
+    const q=[[x,y]], seen=new Set();
+    while(q.length){ const [cx,cy]=q.pop(), k=cx+','+cy;
+      if(seen.has(k)||cx<0||cx>=n||cy<0||cy>=n||PX.grid[cy][cx]!==from) continue;
+      seen.add(k); PX.grid[cy][cx]=to; q.push([cx+1,cy],[cx-1,cy],[cx,cy+1],[cx,cy-1]); }
+  }
+  pxPaint();
+}
+function pxTool(t){ PX.tool=t;
+  const map={pen:'pxPen',era:'pxEra',fill:'pxFill',pick:'pxPick'};
+  for(const k in map) $(map[k]).classList.toggle('sel',k===t); }
+function pxToDataURL(){
+  const n=PX.n, c=document.createElement('canvas'); c.width=n; c.height=n;
+  const g=c.getContext('2d');
+  for(let y=0;y<n;y++) for(let x=0;x<n;x++)
+    if(PX.grid[y][x]){ g.fillStyle=PX.grid[y][x]; g.fillRect(x,y,1,1); }
+  return c.toDataURL('image/png');
+}
+// registering a drawing (or a loaded custom prop) as a first-class prop
+function registerCustomProp(name, dataURL, w, h){
+  DATA.props[name]={img:dataURL, w:w, h:h, kind:'prop', custom:true};
+  load(dataURL, imgs, 'prop|'+name);
+  let grp=$('addProp').querySelector('optgroup[label="your drawings"]');
+  if(!grp){ grp=document.createElement('optgroup'); grp.label='your drawings';
+    $('addProp').prepend(grp); }
+  if(![...grp.children].some(o=>o.value===name)){
+    const o=document.createElement('option'); o.textContent=name; grp.prepend(o); }
+}
+function pxWire(){
+  pxInit();
+  const cv=$('pxCv');
+  cv.addEventListener('pointerdown',e=>{ const c=pxCell(e); if(!c) return;
+    pxSnapshot(); PX.drawing=true; pxApply(c.x,c.y); cv.setPointerCapture(e.pointerId); });
+  cv.addEventListener('pointermove',e=>{ if(!PX.drawing) return;
+    const c=pxCell(e); if(c&&(PX.tool==='pen'||PX.tool==='era')) pxApply(c.x,c.y); });
+  cv.addEventListener('pointerup',()=>{ PX.drawing=false });
+  $('pxPen').onclick=()=>pxTool('pen'); $('pxEra').onclick=()=>pxTool('era');
+  $('pxFill').onclick=()=>pxTool('fill'); $('pxPick').onclick=()=>pxTool('pick');
+  $('pxMirror').onclick=()=>{ PX.mirror=!PX.mirror;
+    $('pxMirror').classList.toggle('sel',PX.mirror); };
+  $('pxUndo').onclick=()=>{ const h=PX.hist.pop(); if(h){ PX.grid=h; pxPaint(); } };
+  $('pxClear').onclick=()=>{ pxSnapshot(); pxBlank(PX.n); };
+  $('pxSize').onchange=e=>{ pxSnapshot(); pxBlank(+e.target.value); };
+  $('pxFrom').onchange=async e=>{
+    const nm=e.target.value; if(!nm) return;
+    if(!imgs['prop|'+nm]) await load(DATA.props[nm].img, imgs, 'prop|'+nm);
+    const im=imgs['prop|'+nm], n=PX.n;
+    const c=document.createElement('canvas'); c.width=n; c.height=n;
+    const g=c.getContext('2d',{willReadFrequently:true}); g.imageSmoothingEnabled=false;
+    g.drawImage(im,0,0,n,n);
+    const d=g.getImageData(0,0,n,n).data;
+    pxSnapshot();
+    for(let y=0;y<n;y++) for(let x=0;x<n;x++){ const i=(y*n+x)*4;
+      PX.grid[y][x]=d[i+3]>=128?('#'+[d[i],d[i+1],d[i+2]].map(v=>v.toString(16).padStart(2,'0')).join('')):null; }
+    pxPaint();
+  };
+  $('pxOpen').onclick=()=>{
+    $('pxFrom').innerHTML='<option value="">blank</option>'+
+      Object.keys(DATA.props).sort().map(k=>`<option>${k}</option>`).join('');
+    $('pxWrap').classList.add('on');
+  };
+  $('pxClose').onclick=()=>$('pxWrap').classList.remove('on');
+  $('pxSave').onclick=async()=>{
+    const nm=($('pxName').value||'').trim().toLowerCase().replace(/[^a-z0-9 _-]/g,'').slice(0,20);
+    if(!nm) return flash('give your drawing a name first',true);
+    if(!PX.grid.some(r=>r.some(Boolean))) return flash('draw something first',true);
+    registerCustomProp(nm, pxToDataURL(), PX.n, PX.n);
+    await new Promise(r=>setTimeout(r,120));     // the img finishes loading
+    $('addProp').value=nm;
+    $('pxWrap').classList.remove('on');
+    // keep it = HOLD it. The two-step (keep, then find it in a list, then + add) silently
+    // lost Mila's cookie; now the drawing lands in a hand immediately.
+    await addLayer(nm,'R');
+    render(); autosave();
+    toast(`"${nm}" is in bunbun's hand!`);
+  };
+}
+pxWire();
+
+const project=()=>Object.assign({format:'bunbun-attach-project',v:1,
+  kind:'one animation - re-open with load, or add to a scene in the Scene Assembler'},stamp(),
+  {name:(($('animName')&&$('animName').value)||'').trim()||undefined,
+   clip,fps,character:{...CH},
+   room:gRoom||undefined,                    // the backdrop it was judged against, nothing more
+   animRule:{...animRule},
+   stage:{x:gX,y:gY,z:gZ,scale:gScale},
+   order:order.map(o=>({i:o.i,skip:!!o.skip,cs:csOf(o)})),   // no ids: regenerated on load
+   layers:stack.map(it=>it.char?'CHARACTER':authored(it)),
+   // the child's own drawings ride along, so a reopened animation still owns every prop it
+   // wears - and the Scene Assembler can learn them on import
+   customProps:(()=>{ const cp={};
+     for(const k of Object.keys(DATA.props)) if(DATA.props[k].custom)
+       cp[k]={img:DATA.props[k].img, w:DATA.props[k].w, h:DATA.props[k].h};
+     return Object.keys(cp).length?cp:undefined; })()});
+async function loadProject(p){
+  if(!p||typeof p!=='object') throw new Error('file is not JSON');
+  if(p.format!=='bunbun-attach-project')
+    throw new Error(p.layers&&p.layers[0]&&p.layers[0].frames
+      ? 'that is a BAKED export — import the *_project.json saved with 💾'
+      : 'not an attach project file');
+  if(!DATA.clips[p.clip]) throw new Error(`clip "${p.clip}" is not in this data set`);
+  // the file's own drawings register FIRST, so its layers validate against them
+  if(p.customProps) for(const k of Object.keys(p.customProps)){
+    const c=p.customProps[k];
+    if(c&&c.img) registerCustomProp(k, c.img, c.w||24, c.h||24);
+  }
+  const prev={clip,order,fps,pos,stack,sel,                  // roll back if anything fails
+    gRoom,rprops,rsel,gX,gY,gZ,gScale,
+    todMin,todOn,lampMode,lightScale,
+    raining,clouding,cloudStyle,cloudN,cloudSize,cloudSpeed,cloudAlpha};
+  try{
+    stopT(); clip=p.clip; $('clip').value=clip; await ensureClip();
+    const nf=DATA.clips[clip].frames.length, skipped=[];
+    // drop order entries that point at frames this clip does not have
+    const ord=(p.order||[]).filter(o=>Number.isInteger(o.i)&&o.i>=0&&o.i<nf)
+                           .map(o=>({i:o.i,skip:!!o.skip,cs:o.cs==null?100:+o.cs,id:++slotN}));
+    const droppedFrames=(p.order||[]).length-ord.length;
+    order = ord.length?ord:DATA.clips[clip].frames.map((_,i)=>({i,skip:false}));
+    fps=p.fps||7; $('fps').value=fps; pos=0; stack=[]; multi.clear();
+    rprops=Array.isArray(p.roomObjects)?p.roomObjects.filter(o=>o&&DATA.props[o.prop])
+      .map(o=>Object.assign(rpDefaults(o.prop),o)):[];
+    rsel=-1;
+    zones=Array.isArray(p.zones)?p.zones
+      .filter(z=>z&&(z.kind==='floor'||z.kind==='keepout'))
+      .map(z=>z.pts ? {kind:z.kind,pts:z.pts.map(q=>[+q[0],+q[1]])}
+                    : {kind:z.kind,pts:[[+z.x0,+z.y0],[+z.x1,+z.y0],   // an old rectangle
+                                        [+z.x1,+z.y1],[+z.x0,+z.y1]]}) :[];
+    zsel=-1; zdraft=null; zmode=''; zvert=-1;
+    acts=Array.isArray(p.actions)?p.actions.filter(a=>a&&DATA.clips[a.clip||a.pose])
+      .map(a=>({clip:a.clip||a.pose,x:+a.x,y:+a.y})):[];
+    asel=-1; amode='';
+    arules=(p.actionRules&&typeof p.actionRules==='object')?{...p.actionRules}:{};
+    if(p.animRule&&p.animRule.mode) animRule={...p.animRule};
+    libOn=(p.libOn&&typeof p.libOn==='object')?{...p.libOn}:{};
+    if(p.room&&DATA.rooms&&DATA.rooms[p.room]){ gRoom=p.room; $('room').value=gRoom }
+    if(p.light){ todMin=+p.light.todMin||780; todOn=p.light.todOn!==false;
+      lampMode=p.light.lampMode||'auto'; lightScale=p.light.lightScale==null?1:+p.light.lightScale;
+      $('lampM').textContent='lamps: '+lampMode;
+      $('lsz').value=Math.round(lightScale*100); $('lszl').textContent=Math.round(lightScale*100)+'%';
+      $('tod').value=todMin; $('todl').textContent=hhmm(todMin);
+      $('todOff').textContent='lighting: '+(todOn?'on':'off') }
+    if(p.weather){ const w=p.weather;
+      raining=!!w.raining; clouding=!!w.clouding;
+      cloudStyle=w.cloudStyle||'shipped'; cloudN=w.cloudN==null?3:+w.cloudN;
+      cloudSize=w.cloudSize==null?1:+w.cloudSize; cloudSpeed=w.cloudSpeed==null?1:+w.cloudSpeed;
+      cloudAlpha=w.cloudAlpha==null?0.72:+w.cloudAlpha;
+      $('cst').value=cloudStyle; $('cn').value=cloudN; $('cnl').textContent=cloudN;
+      $('cw').value=Math.round(cloudSize*100); $('cwl').textContent=Math.round(cloudSize*100)+'%';
+      $('cs').value=Math.round(cloudSpeed*100); $('csl').textContent=Math.round(cloudSpeed*100)+'%';
+      $('co').value=Math.round(cloudAlpha*100); $('col').textContent=Math.round(cloudAlpha*100)+'%';
+      $('rn').classList.toggle('pri',raining); $('cl').classList.toggle('pri',clouding);
+      rebuildClouds(); if(raining||clouding){ weatherInit(gRoom); startWeatherLoop() } }
+    litCache.key='';
+    if(p.stage){ gX=+p.stage.x||gX; gY=+p.stage.y||gY;
+      gZ=(p.stage.z==null?null:+p.stage.z);
+      gScale=(p.stage.scale==null?null:+p.stage.scale) }
+    Object.assign(CH,{breathe:0,period:8,hold:1,pivot:'feet'},p.character||{});
+    $('breathe').value=CH.breathe; $('period').value=CH.period; $('hold').value=CH.hold;
+    $('pivot').value=CH.pivot||'feet';
+    // the LABELS follow too - a restored breathe of 5 read "0%" forever (Mila's finding)
+    if($('brev')) $('brev').textContent=CH.breathe;
+    if($('perv')) $('perv').textContent=CH.period;
+    if($('holdv')) $('holdv').textContent=CH.hold;
+    if(typeof p.name==='string' && $('animName')){ $('animName').value=p.name;
+      if($('libName')) $('libName').value=p.name; }
+    for(const l of (p.layers||[])){
+      if(l==='CHARACTER'){ stack.push(CHAR); continue }
+      if(!l||!DATA.props[l.prop]){ skipped.push(l&&l.prop||'?'); continue }
+      // Slot ids are regenerated on every load, so they cannot survive a save. POSITIONS
+      // are what persists; ids are only a within-session handle.
+      const slots=liveSlots();
+      const pos=l.showOnFramePositions;
+      const legacy=l.showOnFrames!==undefined?l.showOnFrames:l.frames;
+      let ids=null;
+      if(Array.isArray(pos)&&pos.length)
+        ids=pos.map(i=>slots[i]&&slots[i].id).filter(Boolean);
+      else if(Array.isArray(legacy)&&legacy.length)     // predates positions: source indices
+        ids=slots.filter(q=>legacy.includes(q.i)).map(q=>q.id);
+      l.frames=(ids&&ids.length&&ids.length<slots.length)?ids:null;
+      await addLayer(l.prop,l.anchor,l,stack.length);
+    }
+    if(charAt()<0) stack.push(CHAR);          // tolerate a file with no character row
+    sel=stack.length-1; syncEdit(); render();
+    const loaded=stack.length-1;
+    if(skipped.length||droppedFrames)
+      flash(`loaded ${loaded} object${loaded===1?'':'s'} — `+
+        [skipped.length?`SKIPPED unknown prop${skipped.length===1?'':'s'}: ${skipped.join(', ')}`:'',
+         droppedFrames?`dropped ${droppedFrames} out-of-range frame(s)`:''].filter(Boolean).join('; '),true);
+    return {loaded,skipped,droppedFrames};
+  }catch(err){
+    ({clip,order,fps,pos,stack,sel,
+      gRoom,rprops,rsel,gX,gY,gZ,gScale,
+      todMin,todOn,lampMode,lightScale,
+      raining,clouding,cloudStyle,cloudN,cloudSize,cloudSpeed,cloudAlpha}=prev);
+    litCache.key='';                          // put the editor back how it was
+    $('clip').value=clip; syncEdit(); render();
+    throw err;
+  }
+}
+$('save').onclick=()=>{
+  if(!(($('animName')&&$('animName').value)||'').trim())
+    flash('tip: name it at the top and the file will be called that', false);
+  const proj=project();
+  const shown=(proj.name||exportStem()).slice(0,30);
+  shelfPut(shown, proj);
+  flash('saved '+save(proj,`anim_${exportStem()}_${fileStamp()}.json`));
+  toast(`"${shown}" is saved! It's waiting on the shelf in the Scene Assembler.`) };
+$('imp').onclick=()=>$('impf').click();
+$('impf').onchange=async e=>{const f=e.target.files[0]; if(!f)return;
+  try{ const r=await loadProject(JSON.parse(await f.text()));
+       if(!r.skipped.length&&!r.droppedFrames) flash(`imported ${f.name} — ${r.loaded} objects`); }
+  catch(err){ flash('IMPORT FAILED — '+err.message+' (nothing changed)',true); }
+  e.target.value='';};
+let flashT=null;
+function flash(m,bad){ const el=$('saved'); el.textContent=m;
+  el.style.color = bad ? 'var(--warn)' : 'var(--mut)';
+  el.style.fontWeight = bad ? '600' : '400';
+  clearTimeout(flashT); flashT=setTimeout(()=>{el.textContent=''},bad?12000:4000); }
+
+// ============ export: composed frames, GIF, ZIP ============
+// All self-contained — no CDN, so this keeps working offline.
+
+function composeFrame(fi,seq,scale,crop){
+  if(crop==='scene'){                       // exactly what the in-game preview shows
+    const cv=document.createElement('canvas');
+    cv.width=GAME.w*scale; cv.height=GAME.h*scale;
+    paintScene(cv.getContext('2d'),fi,seq,scale,false);
+    return cv;
+  }
+  const w=(crop==='frame'?S:FULL)*scale;
+  const cv=document.createElement('canvas'); cv.width=w; cv.height=w;
+  const g=cv.getContext('2d'); g.imageSmoothingEnabled=false;
+  if(crop==='frame'){                      // draw padded, then shift so the 96 box fills it
+    const full=FULL*scale;
+    const tmp=document.createElement('canvas'); tmp.width=tmp.height=full;
+    const tg=tmp.getContext('2d'); tg.imageSmoothingEnabled=false;
+    paint(tg,fi,full,seq);
+    g.drawImage(tmp,PAD*scale,PAD*scale,S*scale,S*scale,0,0,w,w);
+  } else paint(g,fi,w,seq);
+  return cv;
+}
+const framesToRender=()=>seqList().map(e=>({i:e.i,cs:csOf(e),skip:false}));
+
+// ---- GIF (GIF89a, 256-colour, per-frame transparency, looping) ----
+// Real LZW with a growing dictionary, written into a resizing Uint8Array.
+// Code size steps up when `next` fills the current width, mirroring the decoder exactly.
+function gifEncode(imgs,w,h,delayCs){
+  let buf=new Uint8Array(1<<20), pos=0;
+  const need=n=>{ if(pos+n<=buf.length) return;
+    let cap=buf.length; while(cap<pos+n) cap*=2;
+    const b=new Uint8Array(cap); b.set(buf.subarray(0,pos)); buf=b; };
+  const wb=v=>{ need(1); buf[pos++]=v&255 };
+  const w16=v=>{ need(2); buf[pos++]=v&255; buf[pos++]=(v>>8)&255 };
+  const ws=s=>{ need(s.length); for(let i=0;i<s.length;i++) buf[pos++]=s.charCodeAt(i) };
+  return gifBody(imgs,w,h,delayCs,{wb,w16,ws,need,
+    done:()=>new Blob([buf.subarray(0,pos)],{type:'image/gif'}),
+    raw:()=>({get buf(){return buf},get pos(){return pos}})});
+}
+function gifBody(imgs,w,h,delayCs,W){
+  const count=new Map();
+  for(const d of imgs) for(let i=0;i<d.length;i+=4){
+    if(d[i+3]<128) continue;
+    const k=(d[i]<<16)|(d[i+1]<<8)|d[i+2]; count.set(k,(count.get(k)||0)+1);
+  }
+  let cols=[...count.keys()];
+  if(cols.length>255){                       // too many: 4 bits/channel, keep the commonest
+    const c2=new Map();
+    for(const [k,n] of count){
+      const q=((k>>16&0xF0)<<16)|((k>>8&0xF0)<<8)|(k&0xF0);
+      c2.set(q,(c2.get(q)||0)+n);
+    }
+    cols=[...c2.entries()].sort((a,b)=>b[1]-a[1]).slice(0,255).map(e=>e[0]);
+  }
+  const exact=new Map(); cols.forEach((c,i)=>exact.set(c,i+1));   // index 0 = transparent
+  const near=new Map();
+  const lookup=k=>{
+    let v=exact.get(k); if(v!==undefined) return v;
+    v=near.get(k); if(v!==undefined) return v;
+    const r=k>>16&255,g=k>>8&255,b=k&255; let best=1,bd=1e9;
+    for(let i=0;i<cols.length;i++){
+      const c=cols[i],dr=r-(c>>16&255),dg=g-(c>>8&255),db=b-(c&255);
+      const d=dr*dr+dg*dg+db*db; if(d<bd){bd=d;best=i+1}
+    }
+    near.set(k,best); return best;
+  };
+  const {wb,w16,ws}=W;
+  ws('GIF89a'); w16(w); w16(h);
+  wb(0xF7); wb(0); wb(0);                         // global table, 256 entries, 8-bit
+  for(let i=0;i<256;i++){ const c=i===0?0:(cols[i-1]??0); wb(c>>16); wb(c>>8); wb(c) }
+  ws('!'); wb(0xFF); wb(11); ws('NETSCAPE2.0'); wb(3); wb(1); w16(0); wb(0);   // loop forever
+
+  const MIN=8, CLEAR=1<<MIN, EOI=CLEAR+1;
+  const npx=w*h;
+  const px=new Uint16Array(npx);                  // palette indices for this frame
+  const lzw=new Uint8Array(npx*2+64);             // worst case is well under this
+
+  for(const d of imgs){
+    for(let i=0,p=0;p<npx;i+=4,p++)
+      px[p] = d[i+3]<128 ? 0 : lookup((d[i]<<16)|(d[i+1]<<8)|d[i+2]);
+
+    let lp=0, cur=0, nb=0, size=MIN+1, next=EOI+1;
+    const dict=new Map();
+    const emit=c=>{ cur|=c<<nb; nb+=size; while(nb>=8){ lzw[lp++]=cur&255; cur>>=8; nb-=8 } };
+    emit(CLEAR);
+    let prefix=px[0];
+    for(let p=1;p<npx;p++){
+      const k=px[p], key=(prefix<<12)|k;
+      const got=dict.get(key);
+      if(got!==undefined){ prefix=got; continue }
+      emit(prefix);
+      if(next<4096){
+        dict.set(key,next); next++;
+        // The decoder adds no entry for the first code after a CLEAR, so its table is
+        // always one behind ours. It widens at D===(1<<size); with D===next-1 that is
+        // next===(1<<size)+1 here. Using (1<<size) widens one code early and corrupts
+        // everything downstream.
+        if(next===(1<<size)+1 && size<12) size++;
+      }else{
+        emit(CLEAR); dict.clear(); next=EOI+1; size=MIN+1;
+      }
+      prefix=k;
+    }
+    emit(prefix); emit(EOI);
+    if(nb>0) lzw[lp++]=cur&255;
+
+    ws('!'); wb(0xF9); wb(4); wb(0x09); w16(delayCs); wb(0); wb(0);  // dispose=2, transparent=0
+    ws(','); w16(0); w16(0); w16(w); w16(h); wb(0);
+    wb(MIN);
+    for(let i=0;i<lp;i+=255){
+      const n=Math.min(255,lp-i); wb(n);
+      for(let j=0;j<n;j++) wb(lzw[i+j]);
+    }
+    wb(0);
+  }
+  wb(0x3B);
+  return W.done();
+}
+
+// ---- ZIP (store, no compression) ----
+const CRCT=(()=>{const t=new Uint32Array(256);
+  for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[n]=c>>>0}
+  return t})();
+const crc32=u=>{let c=0xFFFFFFFF;for(let i=0;i<u.length;i++)c=CRCT[(c^u[i])&255]^(c>>>8);
+  return (c^0xFFFFFFFF)>>>0};
+function zip(files){
+  const enc=new TextEncoder(), body=[], dir=[]; let off=0;
+  for(const f of files){
+    const nm=enc.encode(f.name), crc=crc32(f.data), sz=f.data.length;
+    const h=new DataView(new ArrayBuffer(30));
+    h.setUint32(0,0x04034b50,true); h.setUint16(4,20,true);
+    h.setUint32(14,crc,true); h.setUint32(18,sz,true); h.setUint32(22,sz,true);
+    h.setUint16(26,nm.length,true);
+    body.push(new Uint8Array(h.buffer),nm,f.data);
+    const c=new DataView(new ArrayBuffer(46));
+    c.setUint32(0,0x02014b50,true); c.setUint16(4,20,true); c.setUint16(6,20,true);
+    c.setUint32(16,crc,true); c.setUint32(20,sz,true); c.setUint32(24,sz,true);
+    c.setUint16(28,nm.length,true); c.setUint32(42,off,true);
+    dir.push(new Uint8Array(c.buffer),nm);
+    off+=30+nm.length+sz;
+  }
+  let dlen=0; dir.forEach(d=>dlen+=d.length);
+  const e=new DataView(new ArrayBuffer(22));
+  e.setUint32(0,0x06054b50,true); e.setUint16(8,files.length,true);
+  e.setUint16(10,files.length,true); e.setUint32(12,dlen,true); e.setUint32(16,off,true);
+  return new Blob([...body,...dir,new Uint8Array(e.buffer)],{type:'application/zip'});
+}
+const dlBlob=(blob,name)=>{ handOver(blob,name).then(n=>{ if(n) flash('saved '+n) }); return name };
+const pngBytes=async cv=>new Uint8Array(await (await new Promise(r=>cv.toBlob(r,'image/png'))).arrayBuffer());
+const b64Bytes=u=>{const s=atob(u.split(',')[1]),a=new Uint8Array(s.length);
+  for(let i=0;i<s.length;i++)a[i]=s.charCodeAt(i); return a};
+
+const xopts=()=>({scale:+$('xscale').value, crop:$('xcrop').value});
+function renderAll(){
+  const {scale,crop}=xopts();
+  return framesToRender().map((o,s)=>({name:DATA.clips[clip].frames[o.i].name,
+                                       cv:composeFrame(o.i,s,scale,crop)}));
+}
+$('xgif').onclick=()=>{
+  const live=framesToRender(); if(!live.length) return flash('no frames to export',true);
+  flash('encoding GIF…');
+  setTimeout(()=>{
+    const shots=renderAll(), w=shots[0].cv.width, h=shots[0].cv.height;
+    const data=shots.map(s=>s.cv.getContext('2d').getImageData(0,0,w,h).data);
+    const cs=Math.max(2,Math.round(1000/fps/10));
+    const blob=gifEncode(data,w,h,cs);
+    flash(`saved ${dlBlob(blob,`${exportStem()}_${fileStamp()}.gif`)} — ${w}×${w}, ${shots.length} frames, ${(blob.size/1024).toFixed(0)} KB`);
+  },30);
+};
+$('xpng').onclick=async()=>{
+  const shots=renderAll(); if(!shots.length) return flash('no frames to export',true);
+  const files=[]; let i=0;
+  for(const s of shots) files.push({name:`${String(i++).padStart(2,'0')}_${s.name}`,
+                                    data:await pngBytes(s.cv)});
+  flash(`saved ${dlBlob(zip(files),`${exportStem()}_frames_${fileStamp()}.zip`)} — ${files.length} PNGs`);
+};
+$('xzip').onclick=async()=>{
+  const live=framesToRender(); if(!live.length) return flash('no frames to export',true);
+  flash('building bundle…');
+  const {scale,crop}=xopts(), stampName=fileStamp(), root=`${exportStem()}_${stampName}`;
+  const shots=renderAll(), w=shots[0].cv.width, h=shots[0].cv.height, files=[];
+  const enc=new TextEncoder();
+
+  files.push({name:`${root}/attach.json`, data:enc.encode(JSON.stringify(spec(),null,1))});
+  files.push({name:`${root}/project.json`,data:enc.encode(JSON.stringify(project(),null,1))});
+  let i=0;
+  for(const s of shots) files.push({name:`${root}/frames/${String(i++).padStart(2,'0')}_${s.name}`,
+                                    data:await pngBytes(s.cv)});
+  const data=shots.map(s=>s.cv.getContext('2d').getImageData(0,0,w,h).data);
+  files.push({name:`${root}/animation.gif`,
+              data:new Uint8Array(await gifEncode(data,w,h,Math.max(2,Math.round(1000/fps/10))).arrayBuffer())});
+  // assets actually used, plus the untouched source frames
+  const used=[...new Set([...stack.filter(s=>!s.char).map(s=>s.prop),
+                          ...rprops.map(p=>p.prop)])];
+  const folderOf=k=>({mark:'marks',light:'lights'}[DATA.props[k].kind]||'props');
+  for(const p of used) files.push({name:`${root}/assets/${folderOf(p)}/${p}.png`,
+                                   data:b64Bytes(DATA.props[p].img)});
+  if(gRoom && DATA.rooms && DATA.rooms[gRoom])          // the backdrop, for reference
+    files.push({name:`${root}/assets/room/${gRoom}.png`,data:b64Bytes(DATA.rooms[gRoom])});
+  // once per SOURCE frame, not once per played frame - a held clip repeats the same file
+  for(const i of [...new Set(live.map(o=>o.i))]){ const fr=DATA.clips[clip].frames[i];
+    files.push({name:`${root}/assets/source/${fr.name}`,data:b64Bytes(fr.img)}) }
+  files.push({name:`${root}/README.txt`,data:enc.encode(
+`${clip} — attach editor bundle
+exported ${new Date().toLocaleString()}
+
+animation.gif        ${w}x${h}, ${shots.length} frames @ ${fps} fps
+frames/              the same composed frames as PNG, in play order
+assets/props/        things used, on the character and in the room
+assets/marks/        feelings composited above the head
+assets/lights/       light fixtures
+assets/room/         the backdrop, for reference (${gRoom||'none chosen'})
+assets/source/       the character frames, untouched
+                     all objects used: ${used.join(', ')||'none'}
+project.json         authored settings — re-open with 📂 import
+attach.json          baked output. Its "scene" block is the whole staging, in 320x240
+                     room coordinates with the floor at y=200:
+                       .character   x, y, z (depth) and scalePercent
+                       .objects[]   each one's x, y, z, scale, rotation, flip, opacity
+                                    and resolved pixel size
+                       .light       time of day, and the daylight/night values it gives
+                       .lamps       every fixture, with where its bulb sits and where
+                                    its beam lands on the floor
+                       .weather     rain and cloud, with style, count, size, speed, opacity
+                     Depth sorts by z; zAuto true means it was left to follow y.
+
+Render scale ${scale}x, crop "${crop}"${crop==='pad'?` (${PAD}px bleed each side; the
+character's own 96x96 frame sits at offset ${PAD*scale} at this scale)`:''}.
+Colour/tint are baked into frames and the GIF; the numbers are in attach.json.
+The "game scene" crop bakes in the room, the lighting for that hour, the lamps and the
+weather. The other crops render the character and its attached objects alone, on
+transparency - the staging is then only in attach.json, not in the pixels.
+`)});
+  const blob=zip(files);
+  flash(`saved ${dlBlob(blob,`${root}.zip`)} — ${files.length} files, ${(blob.size/1024/1024).toFixed(2)} MB`);
+};
+
+// ---- undo / redo ----
+// Snapshots are debounced, so one slider drag or one canvas drag = ONE undo step,
+// not one per pixel. History holds the authored project, the same thing save writes.
+let hist=[], redoS=[], histT=null, busy=false;
+const projectCore=()=>{const p=project(); delete p.savedAt; delete p.savedAtLocal; return p};
+function pushHistory(){
+  if(busy||timer) return;                       // never record while the clip is playing
+  clearTimeout(histT);
+  histT=setTimeout(()=>{
+    const s=JSON.stringify(projectCore());
+    if(hist[hist.length-1]===s) return;   // real change only, not a fresh timestamp
+    hist.push(s); if(hist.length>80) hist.shift();
+    redoS.length=0; histUI();
+  },350);
+}
+function histUI(){
+  $('undo').disabled=hist.length<2; $('redo').disabled=!redoS.length;
+  $('hstat').textContent=hist.length>1?`${hist.length-1} step${hist.length===2?'':'s'} to undo`:'';
+}
+async function apply(s){ busy=true; clearTimeout(histT);
+  try{ await loadProject(JSON.parse(s)) } finally{ busy=false } histUI(); }
+async function undo(){ if(hist.length<2)return;
+  redoS.push(hist.pop()); await apply(hist[hist.length-1]); }
+async function redo(){ if(!redoS.length)return;
+  const s=redoS.pop(); hist.push(s); await apply(s); }
+$('undo').onclick=undo; $('redo').onclick=redo;
+
+// ---- the library: named animations, kept in the browser ----
+const LIB='bunbun-attach-library'+(window.SBX?'--'+window.SBX:'');
+// what the character DOES - portable between rooms
+// Visible in the strip: these are directions, not moments. Authoring a "sit" by stepping
+// through them produces a turntable, which is exactly what happened.
+const CLIP_IS_ROTATIONS = c => !!(DATA && DATA.clips[c] && DATA.clips[c].rotations);
+function animCore(){
+  const p=projectCore();
+  // `stage` rides along so the size and depth you authored survive the trip to the assembler.
+  // applyAnim below still ignores it - re-applying here must not move your staged character.
+  // roomObjects rides along too - not to rebuild the room, but so the assembler can work out
+  // WHAT the stage was placed against and keep that relationship at a different chair.
+  return {clip:p.clip, fps:p.fps, character:p.character, order:p.order, layers:p.layers,
+          stage:p.stage, roomObjects:p.roomObjects};
+}
+// applied ON TOP of whatever room is already staged, never replacing it
+async function applyAnim(a){
+  const keep=projectCore();
+  await loadProject(Object.assign({}, keep, {
+    clip:a.clip, fps:a.fps, character:a.character, order:a.order, layers:a.layers}));
+}
+let animRule={mode:'anywhere'};              // the rule for the animation being edited
+// WHICH animations are live in THIS scene. The library is everything you have ever made;
+// this is the subset the room actually uses, so juggle can be switched on without deleting it.
+let libOn={};
+const isOn=n=>libOn[n]!==false;              // a new animation is on by default
+const ruleText=r=>r.mode==='anywhere'?'anywhere he can walk'
+  :('only where something affords "'+r.needs+'"');
+const libAll=()=>{ try{ return JSON.parse(localStorage.getItem(LIB)||'{}') }catch(e){ return {} } };
+function libDraw(){
+  const all=libAll(), names=Object.keys(all).sort();
+  const cur=$('libSel').value;
+  $('libSel').innerHTML=names.length
+    ? names.map(n=>`<option${n===cur?' selected':''}>${n}</option>`).join('')
+    : '<option value="">(nothing kept yet)</option>';
+  const open=($('libName').value||'').trim();
+  // one row per animation: on/off, its name, and where it may happen
+  $('libList').innerHTML = names.length ? names.map(n=>{
+    const rec=all[n], r=(rec&&rec.rule)||{mode:'anywhere'};
+    const on=isOn(n), editing=(n===open);
+    return `<div class="row" style="align-items:center;gap:5px;padding:3px 5px;border-radius:6px;
+        ${editing?'background:color-mix(in srgb,var(--accent) 16%,transparent)':''}">
+      <button class="mini" data-on="${n}" title="${on?'live in this scene':'switched off'}"
+        style="flex:0 0 auto;${on?'background:var(--accent);color:#fff;border-color:var(--accent)':'opacity:.5'}"
+        >${on?'on':'off'}</button>
+      <span data-edit="${n}" style="flex:1;cursor:pointer;font-size:12.5px;
+        ${on?'':'opacity:.5;text-decoration:line-through'}">${n}</span>
+      <span class="hint" style="flex:0 0 auto;font-size:11px">${
+        r.mode==='anywhere'?'anywhere':'needs '+r.needs}</span>
+    </div>`}).join('') : '';
+  $('libList').querySelectorAll('[data-on]').forEach(b=>b.onclick=()=>{
+    const n=b.dataset.on; libOn[n]=!isOn(n); libDraw(); render() });
+  $('libList').querySelectorAll('[data-edit]').forEach(e=>e.onclick=()=>{
+    $('libSel').value=e.dataset.edit; libLoadName(e.dataset.edit) });
+  $('arAny').classList.toggle('pri', animRule.mode==='anywhere');
+  if(animRule.mode==='needs') $('arNeeds').value=animRule.needs;
+  $('libInfo').textContent = names.length
+    ? (open && all[open]
+        ? `editing "${open}" — ${names.length} kept. Keep saves over it; a new name keeps a copy.`
+        : (open ? `"${open}" is new — press keep to add it to the ${names.length} kept`
+                : `${names.length} kept — pick one to open, or ◀ ▶ to cycle`))
+    : 'add the animations you exported, or name this one and press keep';
+}
+function libLoadName(n){
+  const all=libAll(), rec=all[n]; if(!rec) return;
+  // an entry saved before the split is a whole scene; a new one is just the animation
+  const isAnim = rec && rec.kind==='animation';
+  const p = isAnim ? applyAnim(rec.anim) : loadProject(rec);
+  Promise.resolve(p).then(()=>{
+    animRule = (isAnim && rec.rule) ? {...rec.rule} : {mode:'anywhere'};
+    $('libName').value=n; libDraw(); render();
+    flash(isAnim ? `opened "${n}" \u2014 ${ruleText(animRule)}; your room is untouched`
+                 : `opened "${n}" (an older whole-scene entry)`);
+  }).catch(e=>flash('could not open "'+n+'" \u2014 '+e.message,true));
+}
+$('libSave').onclick=()=>{
+  const n=($('libName').value||'').trim().slice(0,40);
+  if(!n) return flash('give it a name first',true);
+  const all=libAll(); all[n]={kind:'animation', anim:animCore(), rule:{...animRule}};
+  try{ localStorage.setItem(LIB,JSON.stringify(all)) }
+  catch(e){ return flash('no room left in the browser to keep another',true) }
+  if(libOn[n]===undefined) libOn[n]=true;
+  libDraw(); $('libSel').value=n; $('libName').value=n; libDraw();
+  flash('kept "'+n+'" — '+ruleText(animRule));
+};
+$('libDel').onclick=()=>{ const n=$('libSel').value; if(!n) return;
+  const all=libAll(); delete all[n];
+  try{ localStorage.setItem(LIB,JSON.stringify(all)) }catch(e){}
+  if($('libName').value===n) $('libName').value='';
+  libDraw(); flash('forgot "'+n+'"') };
+$('libSel').onchange=e=>{ $('libName').value=e.target.value; libLoadName(e.target.value) };
+$('libName').oninput=()=>libDraw();          // the label follows what you type
+const libStep=d=>{ const names=Object.keys(libAll()).sort(); if(!names.length) return;
+  const i=names.indexOf($('libSel').value);
+  const n=names[((i<0?0:i+d)+names.length)%names.length];
+  $('libSel').value=n; libLoadName(n) };
+function syncRuleToLibrary(){
+  const n=($('libName').value||'').trim(); if(!n) return;
+  const all=libAll(); if(!all[n]||all[n].kind!=='animation') return;
+  all[n].rule={...animRule};
+  try{ localStorage.setItem(LIB,JSON.stringify(all)) }catch(e){}
+}
+$('arAny').onclick=()=>{ animRule={mode:'anywhere'}; syncRuleToLibrary(); libDraw(); render() };
+$('arNeeds').onchange=e=>{ animRule={mode:'needs',needs:e.target.value};
+  syncRuleToLibrary(); libDraw(); render() };
+// Bring in an animation you exported earlier. A project file holds the whole authored state;
+// the library only wants the animation half, so the same file can be dropped into any room.
+$('libAdd').onclick=()=>$('libFile').click();
+$('libFile').onchange=async e=>{
+  const files=[...e.target.files]; e.target.value='';
+  if(!files.length) return;
+  const all=libAll(); let added=0, skipped=[];
+  for(const f of files){
+    let p;
+    try{ p=JSON.parse(await f.text()) }
+    catch(err){ skipped.push(f.name+' (not readable)'); continue }
+    if(p.format!=='bunbun-attach-project'){
+      skipped.push(f.name+(p.format==='bunbun-attach-baked'
+        ? ' — that is a baked export; use the *_project.json'
+        : ' — not an animation file'));
+      continue;
+    }
+    if(!DATA.clips[p.clip]){ skipped.push(f.name+' — its clip "'+p.clip+'" is not in this pack'); continue }
+    const name=f.name.replace(/\.json$/i,'').replace(/_project.*$/,'').replace(/_/g,' ').trim()
+               || p.clip;
+    all[name]={kind:'animation',
+      anim:{clip:p.clip, fps:p.fps, character:p.character, order:p.order, layers:p.layers},
+      rule:(p.animRule&&p.animRule.mode)?{...p.animRule}:RULE_DEFAULT(p.clip)};
+    if(libOn[name]===undefined) libOn[name]=true;
+    added++;
+  }
+  try{ localStorage.setItem(LIB,JSON.stringify(all)) }
+  catch(err){ return flash('no room left in the browser for another animation',true) }
+  libDraw(); render();
+  flash(added
+    ? `added ${added} animation${added===1?'':'s'}`+(skipped.length?`; skipped ${skipped.length}`:'')
+    : 'nothing added', !added);
+  if(skipped.length) console.warn('skipped:', skipped);
+};
+$('libPrev').onclick=()=>libStep(-1);
+$('libNext').onclick=()=>libStep(1);
+
+// autosave the working state so a reload does not lose placement work
+const KEY='bunbun-attach-autosave'+(window.SBX?'--'+window.SBX:'');
+// START FRESH - same two-click pattern as the Scene Assembler, no confirm() dialog
+let freshArm=null;
+document.getElementById('fresh').onclick=()=>{
+  const b=document.getElementById('fresh');
+  if(!freshArm){
+    b.textContent='erase? click again';
+    b.style.background='var(--warn)'; b.style.color='#fff';
+    freshArm=setTimeout(()=>{ freshArm=null;
+      b.innerHTML='✨ fresh'; b.style.background=''; b.style.color='' },4000);
+    return;
+  }
+  clearTimeout(freshArm); freshArm=null;
+  booting=true;                    // the autosave guard - nothing may resurrect the save
+  try{ localStorage.removeItem(KEY) }catch(e){}
+  location.reload();
+};
+let booting=true;
+function autosave(){ if(timer||booting) return;   // never let boot's own render clobber the save
+  try{ localStorage.setItem(KEY,JSON.stringify(project())) }catch(e){} }
+(async()=>{
+  // READ IT FIRST. boot() renders, render() autosaves, and that used to overwrite the saved
+  // scene with the defaults before this line ever got to look at it.
+  let raw=null, restoreFailed=false; try{ raw=localStorage.getItem(KEY) }catch(e){}
+  await boot();
+  if(raw){
+    try{
+      const p=JSON.parse(raw);
+      const r=await loadProject(p);
+      const bits=[p.clip];
+      if(p.room) bits.push(p.room);
+      if(r.loaded) bits.push(r.loaded+' object'+(r.loaded===1?'':'s'));
+      if((p.roomObjects||[]).length) bits.push((p.roomObjects||[]).length+' in the room');
+      flash('picked up where you left off — '+bits.join(', '));
+    }catch(e){ console.warn('autosave restore failed',e); restoreFailed=true;
+      flash('could not restore your last scene — it is still saved, nothing was lost',true) }
+  }
+  libDraw();
+  booting=false;
+  if(restoreFailed){ console.warn('keeping the saved scene rather than overwriting it'); }
+  else autosave();
+  hist=[JSON.stringify(projectCore())]; redoS=[]; histUI();   // seed: the opening state
+})();
+</script>

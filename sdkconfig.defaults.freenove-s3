@@ -1,0 +1,226 @@
+# Freenove ESP32-S3 CYD (FNK0104AB) — bunbun's board.
+#
+# Layered on top of sdkconfig.defaults.esp32s3, which already selects the generic S3 board with
+# the display disabled. Only the things that differ from that generic board are set here.
+#
+# Pin numbers are taken from the working Arduino firmware, not from a datasheet:
+#   g_audio.setPinout(5, 7, 8, I2S_PIN_NO_CHANGE, 4)  -> BCK=5, WS=7, DOUT=8, MCLK=4
+#   Wire.begin(16, 15)  with es8311_create(I2C_NUM_0) -> codec shares the touch/RTC I2C bus
+#   ampEnable(on) does digitalWrite(1, on ? LOW : HIGH) -> GPIO1, and LOW is ENABLED
+
+CONFIG_DAC_ES8311=y
+
+# I2S to the ES8311
+CONFIG_I2S_SCK_IO=4
+CONFIG_I2S_BCK_IO=5
+CONFIG_I2S_WS_IO=7
+CONFIG_I2S_DO_IO=8
+CONFIG_I2S_GND_IO=-1
+CONFIG_I2S_VCC_IO=-1
+
+# Codec control bus. On this board the ES8311, the FT6336U touch controller and the DS3231 all
+# share one I2C bus, which is why these are the same pins the touch panel uses.
+CONFIG_DAC_I2C_SDA=16
+CONFIG_DAC_I2C_SCL=15
+
+# Amplifier enable. The pin is ACTIVE LOW for enable, so the level that MUTES is HIGH — hence
+# level 1 here rather than the 0 that "active low amp enable" reads like at first glance.
+CONFIG_MUTE_GPIO=1
+CONFIG_MUTE_GPIO_LEVEL=1
+
+# Volume ceiling: the codec level the phone's FULL slider maps to. With the driver patched to a
+# 1:1 dB mapping, the bottom of the slider lands 30 dB below this.
+#
+# 0 dB is register 0xBF, the codec's unity point. Chosen to match the shape of bunbun's own
+# AirPlay volume, which maps 1:1 against a reference of 85% (about +13 dB) — this is the same
+# feel, 13 dB more conservative, because +13 into a small speaker is already very loud.
+#
+# Raised from 0 to +3 dB: a 20% amplitude bump is only ~1.6 dB, but 20% louder to the EAR is
+# about 3 dB, which is what was actually being asked for.
+#
+# THIS IS THE KNOB. Louder overall: raise toward +13 to match bunbun exactly (the Kconfig range
+# now allows up to the codec's real +32 ceiling). Quieter: lower it. The slider's FEEL does not
+# change either way, because the 1:1 slope is what governs that.
+# +3 more (2026-08-03 late): "about 25% on the top end" — 25% louder to the EAR is ~3 dB, same
+# conversion as the last request. Slider feel unchanged; only the ceiling moves.
+CONFIG_ES8311_MAX_VOLUME=8
+
+# Not present / not wired on this board
+CONFIG_LED_RGB_GPIO=-1
+CONFIG_LED_STATUS_GPIO=-1
+CONFIG_LED_ERROR_GPIO=-1
+CONFIG_SPDIF_DO_IO=-1
+CONFIG_JACK_GPIO=-1
+CONFIG_SPKFAULT_GPIO=-1
+
+# Battery sense is GPIO9 through a divide-by-2, which is ADC1 channel 8 on the S3. Left off for
+# this evaluation — it is not needed to answer "does AirPlay 2 work on this hardware".
+CONFIG_BAT_CHANNEL=-1
+
+# ---- Arduino core as an IDF component ----
+# bunbun is Arduino C++ throughout, so the core rides along as a component rather than the game
+# being rewritten against raw IDF. arduino-esp32 3.3.11 resolves cleanly against IDF 5.5.
+#
+# Arduino REQUIRES a 1000 Hz tick. This is a 10x change to the system tick and this app does
+# PTP-synchronised audio, so multi-room sync must be re-verified after it — finer granularity
+# should help rather than hurt, but that is a prediction, not a measurement.
+CONFIG_FREERTOS_HZ=1000
+
+# Do NOT let Arduino take app_main(). This project has its own entry point that brings up NVS,
+# WiFi and the AirPlay services; Arduino is a library here, not the host.
+CONFIG_AUTOSTART_ARDUINO=n
+
+# Only the Arduino libraries bunbun actually uses. This is not just size trimming — Arduino's
+# WiFi library ships a header called WiFi.h, and this project has its own main/network/wifi.h.
+# On a case-insensitive filesystem (Windows) `#include "wifi.h"` from main.c then resolved to
+# Arduino's C++ header and the C compiler choked on `class`. Excluding it is also the correct
+# architecture: the IDF app owns WiFi, provisioning and the web UI, so bunbun's net.h is dropped
+# in the merge and Arduino WiFi is never wanted.
+CONFIG_ARDUINO_SELECTIVE_COMPILATION=y
+CONFIG_ARDUINO_SELECTIVE_SPI=y          # TFT_eSPI
+CONFIG_ARDUINO_SELECTIVE_Wire=y         # FT6336U touch + DS3231 RTC
+CONFIG_ARDUINO_SELECTIVE_FS=y           # required by SD_MMC
+CONFIG_ARDUINO_SELECTIVE_SD_MMC=y       # music from the card
+CONFIG_ARDUINO_SELECTIVE_Preferences=y  # the pet's save
+
+# Selective compilation is OPT-OUT, not opt-in: most libraries are `default y`, so listing the
+# ones we want above added nothing and removed nothing. These are the explicit removals.
+#
+# Network cascades — WiFi, WiFiProv, WebServer and NetworkClientSecure all depend on it — and
+# taking Arduino's WiFi.h off the include path is what stops it shadowing main/network/wifi.h.
+CONFIG_ARDUINO_SELECTIVE_Network=n
+CONFIG_ARDUINO_SELECTIVE_WiFi=n
+CONFIG_ARDUINO_SELECTIVE_WiFiProv=n
+CONFIG_ARDUINO_SELECTIVE_WebServer=n
+CONFIG_ARDUINO_SELECTIVE_NetworkClientSecure=n
+CONFIG_ARDUINO_SELECTIVE_ESPmDNS=n
+CONFIG_ARDUINO_SELECTIVE_HTTPClient=n
+CONFIG_ARDUINO_SELECTIVE_HTTPUpdate=n
+CONFIG_ARDUINO_SELECTIVE_ArduinoOTA=n
+CONFIG_ARDUINO_SELECTIVE_AsyncUDP=n
+CONFIG_ARDUINO_SELECTIVE_DNSServer=n
+CONFIG_ARDUINO_SELECTIVE_NetBIOS=n
+CONFIG_ARDUINO_SELECTIVE_PPP=n
+CONFIG_ARDUINO_SELECTIVE_Ethernet=n
+
+# Large subsystems this device has no use for.
+CONFIG_ARDUINO_SELECTIVE_BLE=n
+CONFIG_ARDUINO_SELECTIVE_SimpleBLE=n
+CONFIG_ARDUINO_SELECTIVE_BluetoothSerial=n
+CONFIG_ARDUINO_SELECTIVE_Zigbee=n
+CONFIG_ARDUINO_SELECTIVE_Matter=n
+CONFIG_ARDUINO_SELECTIVE_ESP_SR=n
+CONFIG_ARDUINO_SELECTIVE_ESP_Video=n
+CONFIG_ARDUINO_SELECTIVE_ESP_NOW=n
+CONFIG_ARDUINO_SELECTIVE_RainMaker=n
+CONFIG_ARDUINO_SELECTIVE_Insights=n
+CONFIG_ARDUINO_SELECTIVE_OpenThread=n
+CONFIG_ARDUINO_SELECTIVE_USB=n
+CONFIG_ARDUINO_SELECTIVE_Update=n
+CONFIG_ARDUINO_SELECTIVE_ESP_I2S=n
+CONFIG_ARDUINO_SELECTIVE_LittleFS=n
+CONFIG_ARDUINO_SELECTIVE_SPIFFS=n
+CONFIG_ARDUINO_SELECTIVE_FFat=n
+CONFIG_ARDUINO_SELECTIVE_SD=n
+
+# ---- TFT_eSPI: ILI9341 240x320 on the Freenove CYD ----
+# Same panel configuration bunbun passes as -D flags in platformio.ini, expressed the way the
+# IDF build of TFT_eSPI actually reads it. The -D form compiles but trips TFT_config.h's own
+# "Invalid Chip Select pin" guards, because that header only looks at CONFIG_TFT_*.
+CONFIG_TFT_ILI9341_2_DRIVER=y
+CONFIG_TFT_WIDTH=240
+CONFIG_TFT_HEIGHT=320
+CONFIG_TFT_MISO=13
+CONFIG_TFT_MOSI=11
+CONFIG_TFT_SCLK=12
+CONFIG_TFT_CS=10
+CONFIG_TFT_DC=46
+CONFIG_TFT_RST=-1
+# BGR, not RGB. platformio.ini says `-DTFT_RGB_ORDER=0`, which LOOKS like "RGB order = 0" but is
+# actually TFT_eSPI's `#define TFT_BGR 0` — so the panel is BGR. In Kconfig this is a choice of
+# two bools rather than a number, so the numeric form silently selected RGB and swapped red and
+# blue on screen.
+CONFIG_TFT_BGR_ORDER=y
+CONFIG_TFT_INVERSION_ON=y
+CONFIG_TFT_HSPI_PORT=y
+# 80MHz experiment (was 40, the conservative bring-up value). Halves the 17ms it costs to push
+# the 86KB scene to the panel every frame. TFT_eSPI's own guidance for the ILI9341: 40 works OK,
+# 80 sometimes fails — the failure mode is visible garbage on the panel, in which case step back
+# to 55000000 and then 40000000.
+# 55MHz, stepped down from the 80MHz experiment. 80 was clean on one board's panel and showed
+# corruption on its sibling's — the ILI9341 speed tolerance is a per-panel lottery, and a fleet
+# runs ONE build, so the ceiling is set by the weakest panel that must work. 55 still buys a
+# ~30% faster push than the original 40.
+CONFIG_TFT_SPI_FREQUENCY=55000000
+
+# Backlight: bunbun drives GPIO45 itself through LEDC for the dimming curve, so TFT_eSPI must
+# NOT also claim it. Leaving ENABLE_BL off is what stops tft.init() grabbing the pin and pulling
+# it out of the LEDC matrix — the exact trap documented in bunbun's CLAUDE.md that left the
+# panel stuck at full brightness and invalidated every power measurement.
+# CONFIG_ENABLE_BL is not set
+
+CONFIG_TFT_LOAD_GLCD=y
+CONFIG_TFT_LOAD_FONT2=y
+CONFIG_TFT_LOAD_FONT4=y
+CONFIG_TFT_LOAD_FONT6=y
+CONFIG_TFT_LOAD_FONT7=y
+CONFIG_TFT_LOAD_GFXFF=y
+CONFIG_TFT_SMOOTH_FONT=y
+
+# TFT_eSPI's S3 processor header includes SPIFFS.h when smooth fonts are on, so this Arduino
+# library has to come back despite the app having its own SPIFFS storage component.
+CONFIG_ARDUINO_SELECTIVE_SPIFFS=y
+
+# 16MB layout with a dedicated `assets` partition for bunbun's art. The stock table is the 8MB
+# one, which has no room for it and wastes half this board's flash.
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="components/boards/partitions-bunbun-16m.csv"
+
+# 64KB data cache, up from the 32KB default. bunbun's scene sprite lives in PSRAM (86KB will not
+# fit internal alongside WiFi and the audio pipeline) and the host's 1.4MB jitter buffer churns
+# the same cache. At 32KB the audio working set evicted the sprite's lines continuously and
+# drawScene went from 15ms idle to 70-103ms under streaming — measured, not guessed. Costs 32KB
+# of internal SRAM, which is the cheapest 32KB on the chip for this workload.
+CONFIG_ESP32S3_DATA_CACHE_64KB=y
+CONFIG_ESP32S3_DATA_CACHE_LINE_64B=y
+
+# CONFIG_SPI_FLASH_AUTO_SUSPEND was tried here and REVERTED: this board's flash model does not
+# support suspend/resume and the driver boot-looped ("Suspend and resume may not supported for
+# this flash model"). The remaining rare event-saves just pay their stall; the per-minute
+# writer that actually caused visible hitches is gone from powerLogAdd().
+CONFIG_I2S_DI_IO=6
+CONFIG_LWIP_MAX_SOCKETS=16
+
+# W-018: long filenames on the music card. Default FATFS is 8.3-only, which
+# made every real-world MP3 name unopenable ("the card refused the bytes" -
+# the upload could not even CREATE the file). Heap mode: the LFN buffer is
+# allocated per operation, not resident.
+CONFIG_FATFS_LFN_HEAP=y
+CONFIG_FATFS_MAX_LFN=255
+
+# W-020: USB card-reader boot mode (esp_tinyusb MSC). RAM cost lives ONLY in
+# that boot mode - AirPlay never coexists with it.
+CONFIG_TINYUSB_MSC_ENABLED=y
+CONFIG_TINYUSB_MSC_BUFSIZE=8192
+
+# W-020 session 2: the hand-rolled MSC personality. UAC stands down its
+# descriptor injection; ours takes the slot.
+CONFIG_BUNBUN_USB_MSC=y
+CONFIG_USB_DEVICE_UAC_AS_PART=y
+
+# TLS buffers to PSRAM: the GitHub update-check handshake wants ~50 KB and
+# internal RAM runs a deliberate ~40 KB floor (fw_update "low memory" verdict,
+# field-diagnosed 2026-08-07). AirPlay does not use mbedTLS sessions.
+CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y
+
+# Allow tasks that touch no flash driver ops to run on PSRAM stacks --
+# the fw_update CHECK phase does, freeing its 16 KB from internal exactly
+# when the TLS handshake needs the room (crash-panic fix, 2026-08-07).
+CONFIG_SPIRAM_ALLOW_STACK_EXTERNAL_MEMORY=y
+
+# W-060 (Hoppington finding, council 10-0): a self-updating fleet must fail
+# safe by mechanism. New OTA images boot PENDING_VERIFY; the self-check in
+# main/network/fw_selfcheck.c marks them valid only after the validation
+# window closes healthy - a crash-loop reverts automatically at the
+# bootloader, no cable required.
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y

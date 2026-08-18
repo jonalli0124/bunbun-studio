@@ -1,0 +1,235 @@
+<!doctype html>
+<!-- The bunbun package importer - lives ON the device at /build (SPIFFS
+     /spiffs/www/builder.html). Served same-origin, so it may fetch and write the
+     unit's own pak with no CORS, no mixed-content, no PC in the loop.
+
+     Jon: "I want the tools to export something that i can import to update the
+     device via its web interface like I do to update the bins."
+
+     The Scene Assembler's "save a bunbun package" button writes a .bunbun file:
+       "BNDL" ver(1) pad(3) | u32 sceneLen | u32 fragLen | scene.json | fragment BUNP
+     The fragment holds ONLY new/replacing sprites. This page does what the Send
+     button does, from the device's own origin: fetch current pak, merge (fragment
+     wins on same name; whole canim/<slug>/ folders being replaced are dropped),
+     write pak (unit reboots itself), write scene, restart, and verify the pet
+     never moved. PakLib parse/build below are copied verbatim from the assembler.
+
+     Install (survives OTA, wiped only by a serial flash):
+       curl --data-binary @tools/device_import.html \
+         "http://DEVICE-IP/api/fs/upload?path=/spiffs/www/builder.html"
+-->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Give your bunbun a package</title>
+<style>
+  :root{--bg:#fdf6e9;--card:#fff;--ink:#4a3b2a;--soft:#8a7a64;--line:#e8d9bd;
+        --go:#3f9d5f;--bad:#c0392b;--accent:#e8964b}
+  body{font:16px/1.55 system-ui,sans-serif;background:var(--bg);color:var(--ink);
+       margin:0;padding:1.2em;display:flex;justify-content:center}
+  main{max-width:30em;width:100%}
+  h1{font-size:1.35em;margin:.2em 0 .1em}
+  .sub{color:var(--soft);margin:0 0 1em}
+  #drop{background:var(--card);border:3px dashed var(--line);border-radius:14px;
+        padding:2em 1em;text-align:center;cursor:pointer;transition:border-color .15s}
+  #drop.hot{border-color:var(--accent)}
+  #drop b{font-size:1.1em}
+  #drop .hint{color:var(--soft);font-size:.9em;margin-top:.4em}
+  #inside{background:var(--card);border:1px solid var(--line);border-radius:10px;
+          padding:.8em 1em;margin:.8em 0;display:none}
+  #go{display:none;width:100%;font:inherit;font-size:1.15em;font-weight:600;
+      background:var(--go);color:#fff;border:0;border-radius:10px;padding:.7em;
+      cursor:pointer;margin:.2em 0 .6em}
+  #go:disabled{opacity:.55;cursor:default}
+  #steps{list-style:none;padding:0;margin:.6em 0}
+  #steps li{padding:.28em 0 .28em 1.7em;position:relative;color:var(--soft)}
+  #steps li::before{content:"\25CB";position:absolute;left:.2em}
+  #steps li.doing{color:var(--ink)} #steps li.doing::before{content:"\27F3"}
+  #steps li.done{color:var(--go)} #steps li.done::before{content:"\2713"}
+  #steps li.bad{color:var(--bad)} #steps li.bad::before{content:"\2717"}
+  #msg{min-height:1.5em;font-weight:600}
+  #msg.bad{color:var(--bad)} #msg.ok{color:var(--go)}
+  .pet{color:var(--soft);font-size:.9em}
+</style>
+<main>
+  <h1>Give your bunbun a package &#x1F430;&#x1F4E6;</h1>
+  <p class="sub">Made a world in the Scene Assembler? Press <b>&#x1F4E6; save a bunbun
+  package</b> there, then bring the <b>.bunbun</b> file here.</p>
+  <div id="drop" tabindex="0"><b>Drop your .bunbun file here</b>
+    <div class="hint">or tap to choose it</div>
+    <input id="file" type="file" accept=".bunbun" hidden>
+  </div>
+  <div id="inside"></div>
+  <button id="go">Give it to bunbun!</button>
+  <ul id="steps"></ul>
+  <p id="msg"></p>
+  <p class="pet" id="pet"></p>
+</main>
+<script>
+'use strict';
+// ---- PakLib parse/build: copied VERBATIM from the Scene Assembler (byte-identical) ----
+const PakLib=(()=>{
+  function parse(buf){
+    const dv=new DataView(buf), u8=new Uint8Array(buf);
+    if(u8[0]!==0x42||u8[1]!==0x55||u8[2]!==0x4E||u8[3]!==0x50) throw new Error('not a BUNP pak');
+    const ver=dv.getUint16(4,true), count=dv.getUint16(6,true);
+    const entries=[];
+    for(let i=0;i<count;i++){
+      const at=8+i*56; let name='';
+      for(let j=0;j<32;j++){ const c=u8[at+j]; if(!c) break; name+=String.fromCharCode(c); }
+      entries.push({name, off:dv.getUint32(at+32,true), size:dv.getUint32(at+36,true),
+        origW:dv.getUint16(at+40,true), origH:dv.getUint16(at+42,true),
+        w:dv.getUint16(at+44,true), h:dv.getUint16(at+46,true),
+        offX:dv.getInt16(at+48,true), offY:dv.getInt16(at+50,true), fmt:u8[at+52],
+        data:u8.subarray(dv.getUint32(at+32,true), dv.getUint32(at+32,true)+dv.getUint32(at+36,true))});
+    }
+    return {ver, entries};
+  }
+  function build(entries){
+    const HEAD=8, E=56; let off=HEAD+entries.length*E;
+    let total=off; for(const e of entries) total+=e.data.length;
+    const buf=new Uint8Array(total), dv=new DataView(buf.buffer);
+    buf[0]=0x42;buf[1]=0x55;buf[2]=0x4E;buf[3]=0x50;
+    dv.setUint16(4,2,true); dv.setUint16(6,entries.length,true);
+    entries.forEach((e,i)=>{
+      const at=HEAD+i*E;
+      for(let j=0;j<Math.min(31,e.name.length);j++) buf[at+j]=e.name.charCodeAt(j);
+      dv.setUint32(at+32,off,true); dv.setUint32(at+36,e.data.length,true);
+      dv.setUint16(at+40,e.origW,true); dv.setUint16(at+42,e.origH,true);
+      dv.setUint16(at+44,e.w,true); dv.setUint16(at+46,e.h,true);
+      dv.setInt16(at+48,e.offX,true); dv.setInt16(at+50,e.offY,true);
+      buf[at+52]=e.fmt;
+      buf.set(e.data,off); off+=e.data.length;
+    });
+    return buf;
+  }
+  return {parse, build};
+})();
+
+const $=id=>document.getElementById(id);
+let bundle=null;   // {sceneText, sceneObj, frag: {ver,entries}, fragBytes}
+
+async function petInfo(timeoutMs){
+  const c=new AbortController(); const t=setTimeout(()=>c.abort(),timeoutMs||3000);
+  try{
+    const j=await (await fetch('/api/system/info',{signal:c.signal})).json();
+    clearTimeout(t);
+    const i=j.info||j;
+    return {age:i.pet_age_min, phase:i.pet_phase};
+  }finally{ clearTimeout(t); }
+}
+petInfo(4000).then(p=>{
+  $('pet').textContent=`This is your bunbun's own page. He is ${p.age} minutes old (phase ${p.phase}) and nothing here may change that.`;
+}).catch(()=>{ $('pet').textContent='(could not read the pet just now - it will be checked again before anything happens)'; });
+
+function readBundle(buf){
+  const u8=new Uint8Array(buf), dv=new DataView(buf);
+  if(buf.byteLength<16||u8[0]!==0x42||u8[1]!==0x4E||u8[2]!==0x44||u8[3]!==0x4C)
+    throw new Error('that is not a .bunbun package - use "save a bunbun package" in the Scene Assembler');
+  if(u8[4]!==1) throw new Error('this package is from a newer tool than this page understands');
+  const sLen=dv.getUint32(8,true), fLen=dv.getUint32(12,true);
+  if(16+sLen+fLen!==buf.byteLength) throw new Error('the package file looks cut short - save it again');
+  if(sLen>8192) throw new Error(`the scene inside is ${sLen} bytes; the device reads 8192`);
+  const sceneBytes=u8.subarray(16,16+sLen);
+  const sceneText=new TextDecoder().decode(sceneBytes);
+  const sceneObj=JSON.parse(sceneText);
+  const fragBytes=u8.slice(16+sLen);
+  const frag=PakLib.parse(fragBytes.buffer);
+  return {sceneText, sceneObj, frag, fragBytes};
+}
+
+function pickFile(f){
+  const rd=new FileReader();
+  rd.onload=()=>{
+    try{
+      bundle=readBundle(rd.result);
+      const s=bundle.sceneObj;
+      const nAnim=(s.anims||[]).length, nProp=(s.props||[]).length;
+      $('inside').style.display='block';
+      $('inside').innerHTML=`<b>${(s.name||'your scene')}</b> is inside: `+
+        `${s.room?('the '+s.room.replace('rooms/room-','')+' room, '):''}`+
+        `${nProp} thing${nProp===1?'':'s'}, ${nAnim} animation${nAnim===1?'':'s'}, `+
+        `${bundle.frag.entries.length} pieces of art.`;
+      $('go').style.display='block'; $('go').disabled=false;
+      $('msg').textContent=''; $('msg').className='';
+    }catch(err){
+      bundle=null; $('inside').style.display='none'; $('go').style.display='none';
+      $('msg').textContent=err.message; $('msg').className='bad';
+    }
+  };
+  rd.readAsArrayBuffer(f);
+}
+$('drop').onclick=()=>$('file').click();
+$('file').onchange=e=>{ if(e.target.files[0]) pickFile(e.target.files[0]); };
+$('drop').ondragover=e=>{ e.preventDefault(); $('drop').classList.add('hot'); };
+$('drop').ondragleave=()=>$('drop').classList.remove('hot');
+$('drop').ondrop=e=>{ e.preventDefault(); $('drop').classList.remove('hot');
+  if(e.dataTransfer.files[0]) pickFile(e.dataTransfer.files[0]); };
+
+const STEPS=['finding your bunbun','reading his art','mixing in yours',
+             'giving him the art (he restarts once)','giving him the room',
+             'one more restart','making sure he is still himself'];
+function drawSteps(){ $('steps').innerHTML=STEPS.map((s,i)=>`<li id="st${i}">${s}</li>`).join(''); }
+function mark(i,cls){ const el=$('st'+i); if(el) el.className=cls; }
+
+async function waitBack(){
+  await new Promise(r=>setTimeout(r,9000));
+  for(let i=0;i<20;i++){
+    try{ return await petInfo(3000); }
+    catch(e){ await new Promise(r=>setTimeout(r,2500)); }
+  }
+  throw new Error('the unit did not come back - give it a minute and refresh this page');
+}
+
+$('go').onclick=async()=>{
+  if(!bundle) return;
+  $('go').disabled=true; drawSteps();
+  try{
+    mark(0,'doing');
+    const pet0=await petInfo(4000);
+    mark(0,'done'); mark(1,'doing');
+    const pak=PakLib.parse(await (await fetch('/api/ota/assets')).arrayBuffer());
+    mark(1,'done'); mark(2,'doing');
+    // the merge, exactly as Send-to-bunbun does it: package art wins on same name, and a
+    // canim/<slug>/ folder being replaced is dropped WHOLE so stale frames never linger
+    const newNames=new Set(bundle.frag.entries.map(e=>e.name));
+    const replacing=new Set();
+    for(const e of bundle.frag.entries){
+      const m=e.name.match(/^(canim\/[^/]+\/)/); if(m) replacing.add(m[1]);
+    }
+    const kept=pak.entries.filter(e=>!newNames.has(e.name)
+      && ![...replacing].some(r=>e.name.startsWith(r)));
+    const merged=PakLib.build(kept.concat(bundle.frag.entries));
+    const room=bundle.sceneObj.room;
+    if(room && !kept.concat(bundle.frag.entries).some(e=>e.name===room))
+      $('msg').textContent=`heads up: this bunbun has no "${room}" art - the room will fall back`;
+    mark(2,'done'); mark(3,'doing');
+    const r1=await fetch('/api/ota/assets',{method:'POST',body:merged});
+    if(!r1.ok) throw new Error('art upload failed: '+r1.status);
+    await waitBack();
+    mark(3,'done'); mark(4,'doing');
+    const r2=await fetch('/api/fs/upload?path=/spiffs/scene.json',
+      {method:'POST',headers:{'Content-Type':'application/json'},body:bundle.sceneText});
+    if(!r2.ok) throw new Error('scene upload failed: '+r2.status);
+    mark(4,'done'); mark(5,'doing');
+    await fetch('/api/system/restart',{method:'POST'}).catch(()=>{});
+    const pet1=await waitBack();
+    mark(5,'done'); mark(6,'doing');
+    if(pet1.phase!==pet0.phase ||
+       (typeof pet1.age==='number'&&typeof pet0.age==='number'&&pet1.age<pet0.age-1)){
+      mark(6,'bad');
+      $('msg').textContent=`!!! THE PET MOVED (was ${pet0.age}/${pet0.phase}, now ${pet1.age}/${pet1.phase}) - tell a grown-up before anything else`;
+      $('msg').className='bad';
+    }else{
+      mark(6,'done');
+      $('msg').textContent=`All done! Your world is on his screen - and he is still your same bunbun (${pet1.age} minutes old).`;
+      $('msg').className='ok';
+      $('pet').textContent='';
+    }
+  }catch(err){
+    for(let i=0;i<STEPS.length;i++){ const el=$('st'+i); if(el&&el.className==='doing') el.className='bad'; }
+    $('msg').textContent=err.message; $('msg').className='bad';
+  }finally{
+    $('go').disabled=false;
+  }
+};
+</script>

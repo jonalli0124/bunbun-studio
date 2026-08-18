@@ -1,0 +1,252 @@
+{
+  "input": "C:\\Users\\Jon\\capybara-pilot\\shared\\raw",
+  "dist": 70,
+  "dark": 150,
+  "frames": [
+    {
+      "file": "marks\\angry.png",
+      "outline_px": 0,
+      "bbox": [
+        2,
+        6,
+        60,
+        53
+      ],
+      "canvas": [
+        64,
+        64
+      ],
+      "normalised": false
+    },
+    {
+      "file": "marks\\bored.png",
+      "outline_px": 0,
+      "bbox": [
+        6,
+        16,
+        29,
+        6
+      ],
+      "canvas": [
+        40,
+        40
+      ],
+      "normalised": false
+    },
+    {
+      "file": "marks\\bubbles.png",
+      "outline_px": 0,
+      "bbox": [
+        7,
+        3,
+        32,
+        32
+      ],
+      "canvas": [
+        40,
+        40
+      ],
+      "normalised": false
+    },
+    {
+      "file": "marks\\dirty.png",
+      "outline_px": 0,
+      "bbox": [
+        6,
+        4,
+        32,
+        30
+      ],
+      "canvas": [
+        40,
+        40
+      ],
+      "normalised": false
+    },
+    {
+      "file": "marks\\happy.png",
+      "outline_px": 0,
+      "bbox": [
+        5,
+        3,
+        29,
+        32
+      ],
+      "canvas": [
+        40,
+        40
+      ],
+      "normalised": false
+    },
+    {
+      "file": "marks\\hungry.png",
+      "outline_px": 0,
+      "bbox": [
+        5,
+        5,
+        26,
+        28
+      ],
+      "canvas": [
+        40,
+        40
+      ],
+      "normalised": false
+    },
+    {
+      "file": "marks\\love.png",
+      "outline_px": 0,
+      "bbox": [
+        5,
+        4,
+        29,
+        29
+      ],
+      "canvas": [
+        40,
+        40
+      ],
+      "normalised": false
+    },
+    {
+      "file": "marks\\sick.png",
+      "outline_px": 0,
+      "bbox": [
+        3,
+        9,
+        31,
+        19
+      ],
+      "canvas": [
+        40,
+        40
+      ],
+      "normalised": false
+    },
+    {
+      "file": "marks\\tired.png",
+      "outline_px": 0,
+      "bbox": [
+        13,
+        8,
+        17,
+        21
+      ],
+      "canvas": [
+        40,
+        40
+      ],
+      "normalised": false
+    },
+    {
+      "file": "props\\bubble_cloud.png",
+      "outline_px": 0,
+      "bbox": [
+        8,
+        6,
+        49,
+        53
+      ],
+      "canvas": [
+        64,
+        64
+      ],
+      "normalised": false
+    },
+    {
+      "file": "props\\duck.png",
+      "outline_px": 0,
+      "bbox": [
+        6,
+        8,
+        52,
+        48
+      ],
+      "canvas": [
+        64,
+        64
+      ],
+      "normalised": false
+    },
+    {
+      "file": "props\\soap.png",
+      "outline_px": 0,
+      "bbox": [
+        5,
+        8,
+        54,
+        46
+      ],
+      "canvas": [
+        64,
+        64
+      ],
+      "normalised": false
+    },
+    {
+      "file": "props\\tub.png",
+      "outline_px": 0,
+      "bbox": [
+        2,
+        10,
+        60,
+        45
+      ],
+      "canvas": [
+        64,
+        64
+      ],
+      "normalised": false
+    }
+  ],
+  "palette": [
+    {
+      "hex": "#030302",
+      "count": 3157
+    },
+    {
+      "hex": "#a5683f",
+      "count": 1780
+    },
+    {
+      "hex": "#fceba4",
+      "count": 1270
+    },
+    {
+      "hex": "#ffffff",
+      "count": 1267
+    },
+    {
+      "hex": "#facc1d",
+      "count": 1265
+    },
+    {
+      "hex": "#878d8a",
+      "count": 1141
+    },
+    {
+      "hex": "#4f953e",
+      "count": 843
+    },
+    {
+      "hex": "#6d3c25",
+      "count": 589
+    },
+    {
+      "hex": "#ecca63",
+      "count": 343
+    },
+    {
+      "hex": "#cfd5d5",
+      "count": 271
+    },
+    {
+      "hex": "#e8392d",
+      "count": 213
+    },
+    {
+      "hex": "#264921",
+      "count": 22
+    }
+  ]
+}

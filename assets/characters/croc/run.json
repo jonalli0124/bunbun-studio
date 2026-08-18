@@ -1,0 +1,252 @@
+{
+  "species": "croc",
+  "display": "Crocodile",
+  "started": "2026-08-16T11:18:27-05:00",
+  "checkpoint": "C (self-review complete)",
+  "status": "PACK COMPLETE 2026-08-17 \u2014 self-reviewed through Checkpoints A/B/C; AWAITING JON SIGN-OFF on the flagged items",
+  "spec": "CHARACTER-PACKS.md revision 5",
+  "generations_spent": 196,
+  "steps": [
+    {
+      "t": "2026-08-16T11:18:27-05:00",
+      "op": "create_image_pro",
+      "what": "shared body \u2014 generated once, ever (\u00a73.2)",
+      "job_id": "03ff3bcb-419f-41ef-afb7-eb7a8af443f0",
+      "size": "80x80",
+      "candidates": 16,
+      "cost_generations": 25,
+      "result": "ok \u2014 all 16 honoured 'headless', which was the run's main risk",
+      "chosen": "cand_05 -> bodies/body-neutral-south.png",
+      "reason_for_choice": "Real neck column rather than a nub, so a head can overlap it per \u00a72.2; arms clearly separated from the torso so limbs read at 1:1 and a 'behind' tail is not swallowed; the most characterless of the sixteen per \u00a77.1. cand_02 had marginally cleaner colour (0 near-neighbours on the white vs 5) but fused legs and body-hugging arms, which is worse for the Stage 3 walk cycles. Six stray pixels snap; a fused silhouette does not."
+    },
+    {
+      "t": "2026-08-16T11:31:00-05:00",
+      "op": "create_image_pro",
+      "what": "crocodile head",
+      "job_id": "15bbd69d-cf8c-4e2d-8b15-0dfbbe596de1",
+      "size": "40x40",
+      "candidates": 64,
+      "cost_generations": 25,
+      "style_reference": "bodies/body-neutral-south.png, style_copy=[outline,detail,shading]",
+      "note": "color_palette deliberately EXCLUDED from style_copy \u2014 copying it would have forced a green crocodile into the body's white and pink.",
+      "result": "FAIL \u2014 64/64 read as FROGS, not crocodiles",
+      "reason": "A crocodile seen head-on has no snout to show; front-facing, it is just a wide mouth. The model resolved that to the nearest wide-mouthed green animal every time. Two further drifts against the house style: the dot eyes came back as SQUARE blocks set WIDE APART at the very top of the skull rather than small round dots close together near the centre of the face, and most candidates have a smiling mouth line."
+    },
+    {
+      "t": "2026-08-16T11:31:20-05:00",
+      "op": "create_image_pro",
+      "what": "crocodile tail",
+      "job_id": "0eedce63-6134-4079-947c-1e74957cd592",
+      "size": "40x40",
+      "candidates": 64,
+      "cost_generations": 25,
+      "style_reference": "same as head",
+      "result": "PASS \u2014 tapering, curving, triangular scutes along the top edge",
+      "usable": [
+        "00",
+        "12",
+        "26",
+        "36",
+        "50",
+        "58"
+      ]
+    },
+    {
+      "t": "2026-08-17",
+      "op": "create_character",
+      "mode": "v3",
+      "what": "adult character v1 (capybara-pilot pipeline)",
+      "character_id": "d539a019-fdba-43b0-8632-d7fc57dc2f46",
+      "cost_generations": 3,
+      "cost_usd": 0.03,
+      "result": "FAIL on eyes only \u2014 all 8 rotations otherwise excellent (upright biped, near-profile toothed snout in every direction, eye bumps, scute tail, purple keying tunic). Eyes came back as white highlight slits: breach of never-white-sclera rule. Kept as fallback."
+    },
+    {
+      "t": "2026-08-17",
+      "op": "create_character",
+      "mode": "v3",
+      "what": "adult character v2 \u2014 v1 prompt verbatim + CRITICAL solid-black-dot-eye clause (one change)",
+      "character_id": "5d6aabaa-bf73-482e-86d4-044163423f3e",
+      "cost_generations": 3,
+      "cost_usd": 0.03,
+      "result": "FAIL \u2014 the CRITICAL eye clause backfired: eyes came back even bigger with white crescents, and 6 of 8 rotations have OPEN toothy smiling jaws (motif breach: never an open or smiling mouth). Kept in PixelLab as superseded; not used."
+    },
+    {
+      "t": "2026-08-17",
+      "op": "decision",
+      "what": "adult base = v1 (d539a019) + deterministic PC-side eye fix",
+      "detail": "v1 white pixels are 0-14/frame; eye highlights sit inside black with no pale-yellow neighbour, tooth glints touch the pale jaw. Rule: white(r,g,b>230) with no pale-yellow 8-neighbour -> painted black. Applied to every downloaded croc frame in the clean pipeline. Verified at 8x on all rotations: solid black dot eyes, teeth untouched.",
+      "checkpoint": "A PASS (self-reviewed per task instruction; needs Jon sign-off)"
+    },
+    {
+      "t": "2026-08-17",
+      "op": "create_character",
+      "mode": "v3",
+      "what": "baby onesie as v3 character (untested cheap route from PILOT \u00a73 \u2014 CONFIRMED WORKING for croc)",
+      "character_id": "a1071ff2-d938-4da6-9e73-f4edebb01d5a",
+      "cost_generations": 3,
+      "result": "PASS \u2014 same species identity, onesie garment, bigger-head read. Palette drifted (pinker onesie #c07fc3 vs adult #a456ab, yellower green #82b53f vs #659a3a) but all deltas < dist 70 so the single species clean pass unifies them. Saves ~22 gens vs the state route; answers the open experiment in feedback-states-dont-scale-proportions."
+    },
+    {
+      "t": "2026-08-17",
+      "op": "create_character_state",
+      "what": "Adult_Sit",
+      "character_id": "6738c832-63a1-48d8-b4c1-715e40777ac8",
+      "cost_generations": "25-26",
+      "result": "PASS \u2014 all 8 rotations distinct sitting poses, legs forward, tail wrapped. East/west ink touches the canvas edge (tail tip, ~1px shave) \u2014 noted, not blocking."
+    },
+    {
+      "t": "2026-08-17",
+      "op": "create_character_state",
+      "what": "Adult_Sleep at override 120x120",
+      "character_id": "4fa86089-47be-46fe-926f-36f1846f58dd",
+      "cost_generations": 40,
+      "result": "PARTIAL PASS \u2014 lying curl with closed-arc eyes is excellent in S/SE/E/W/SW; max ink width 83 so it fits the 96 canvas after feet-norm (the override killed the capybara clipping problem). DEFECT FOR JON: NE/N/NW came back as an upright slumped sit-sleep, not lying \u2014 pose inconsistency across rotations. Not re-rolled (known 80-gen trap chasing sleep poses)."
+    },
+    {
+      "t": "2026-08-17",
+      "op": "animate_character",
+      "what": "adult walk E/NE/SE, eat, bathe, pickup, 6 emotions (v3, canonical + composed prompts, see PROMPTS.md)",
+      "cost_generations": 12,
+      "result": "NE/SE walk PASS (real gait, tail drag). East FAIL: tail severed into a floating pale arrow-shaped blob in 4 frames + open red mouth. Pickup FAIL: mint-green motion-swoosh glyph baked under the jaw in frame 5. Both deleted and re-rolled with byte-identical prompts (delete-first re-roll escape). Eat PASS (big jaw chomp \u2014 introduces small red mouth-interior colour, flagged for palette). Bathe PASS. Emotions PASS x6 (angry slit-brow, sick droop, bored flat, tired yawn-arc, love clasp+smile, hungry belly-rub; love/hungry white sclera converted to wide black dots by the eye fix)."
+    },
+    {
+      "t": "2026-08-17",
+      "op": "create_character_state",
+      "what": "Baby_Sit / Baby_Sleep (override 120) / Baby_Crawl on the onesie",
+      "character_ids": [
+        "8ff9610a-bfa1-4031-9cdb-6980ef75015f",
+        "0ec8a672-85a0-498c-ae11-973d86fa8fa6",
+        "ea67389c-3a45-4ebe-82f8-629081b2f5dd"
+      ],
+      "cost_generations": "~90",
+      "result": "queued"
+    },
+    {
+      "t": "2026-08-17",
+      "op": "animate_character",
+      "what": "baby eat, bathe, 6 emotions (byte-identical prompts to adult)",
+      "cost_generations": 8,
+      "result": "queued"
+    },
+    {
+      "t": "2026-08-17",
+      "op": "review",
+      "what": "baby states + baby animations (Checkpoint B/C, self-reviewed)",
+      "result": "Baby_Sit PASS (8 distinct rotations). Baby_Sleep PASS (curled with head+tail readable in all 8 \u2014 better rotation consistency than the adult sleep; override 120 again prevented clipping, max ink 92). Baby_Crawl state PASS on pose; east/west rotations are 96px edge-to-edge (canvas-limited, same condition as the shipped capybara body_w \u2014 noted, not re-rolled). Baby eat/bathe PASS. All 6 baby emotions PASS (byte-identical prompts to adult)."
+    },
+    {
+      "t": "2026-08-17",
+      "op": "reroll",
+      "what": "walk east v2 + pickup v2 review",
+      "result": "Pickup v2 PASS (clean bend 80->68->76, no glyph). Walk east v2 PASS \u2014 connected-component check proves every adult animation frame is one component; the earlier \"floating arrow\" was the pale tail underside read against a dark preview background. Walk east v1 genuinely had a severed tail; v2 does not."
+    },
+    {
+      "t": "2026-08-17",
+      "op": "reroll",
+      "what": "Baby_Crawl_East: v1 full jaw gape (REJECT), v2 mild open jaw with pink tongue in 3/5 frames (kept as fallback), v3 queued with the \u00a74a snout-level closed-line stability cue added",
+      "cost_generations": 3,
+      "result": "v3 pending"
+    },
+    {
+      "t": "2026-08-17",
+      "op": "clean",
+      "what": "full clean pass: eye fix (1499 px over 227 frames) + clean_sprite.py --dist 70 --keep-outline --norm 96",
+      "result": "PASS \u2014 palette 1316->17; six real colours in three base+shade pairs: skin #659a3a/#33652b, tunic #a456ab/#6e3082, belly #d3db74/#b29f3f, fixed #000000 outline; base<->base distances 123-145 (bar 40). Accents: tooth-white #fcfefc 0.10%, mouth-pink #e66183/#8f0b46 (eat/angry open jaw). Strays under 150px total. Feet line y=90 uniform. Two frames needed pre-erasure of edge slivers (Adult_Angry/05 2px, Adult_Bathe/06 25px tail tip)."
+    },
+    {
+      "t": "2026-08-17",
+      "op": "reroll",
+      "what": "Baby_Crawl_East v3 with snout-level closed-line stability cue",
+      "result": "PASS \u2014 mouth a thin closed line in all 5 frames, level snout, alternating limbs. SHIPPED. v2 kept in scratch as fallback."
+    },
+    {
+      "t": "2026-08-17",
+      "op": "install",
+      "what": "final clean pass + install",
+      "result": "227 frames, 32 clip folders installed to assets/characters/croc (capybara layout, folder-per-clip). West clips are exact PC mirrors of east (verified byte-level flip). character.json written (inherit none, can_hold false per Rev 4 \u00a74 \u2014 but NOTE the art has visible hands, Jon may flip this). _clean_report.json alongside."
+    },
+    {
+      "t": "2026-08-17",
+      "op": "defect_fix",
+      "what": "DEFECT 1 (Jon): Adult_Idle N/NW painted the tail from the NECK down OVER the tunic, splitting the dress into two panels = two-tails read. NE borderline (ridge to shoulder height).",
+      "detail": "Roll 1: v1 prompt verbatim + tail-under-hem cue as plain v3 create_character (281a53a3) \u2014 FAIL, giant tail curled over the whole back + white eye crescent in NE; deleted. Roll 2: SAME prompt via v3 reference-image route seeded with the shipped clean Adult_Idle/south.png (character 'Croc tail-fix ref' fe1cee6b-a3c6-46ca-a51d-c1c996275163) \u2014 PASS. Replaced north, north-west, and (judged by eye per instruction) north-east; the other five rotations untouched. Verified at 6x per frame: ONE tail attached at the hips emerging from under the hem, tunic one uninterrupted panel, dot-eye motif (NE eye needed the post-snap eye fix, 2px), no white except the mouth tooth glint, 1 connected component, feet y=90, no canvas-edge contact.",
+      "cost_generations": "3 (failed roll) + 2-3 (ref roll)"
+    },
+    {
+      "t": "2026-08-17",
+      "op": "defect_fix",
+      "what": "DEFECT 2 (Jon): Baby_Crawl_East/West nose and tail clipped at the 96px canvas (body drawn 96+ wide, edge-to-edge).",
+      "detail": "Three delete-first rolls on the Baby_Crawl state (ea67389c), shipped crawl prompt verbatim + margin cue each time. v4: margin cue alone left the body 95-96 wide (FAIL for 96). v5: 93%-scaled guide frame had lost its snout-tip outline and the model reproduced the sheared snout in every frame (FAIL). v6 PASS: guide = v4 frame 2 (intact snout) at 95% with an outline-close pass, keep_first_frame=true -> 5 frames. Installed Baby_Crawl_East/00-04, Baby_Crawl_West as exact PC mirrors (flip-verified), and Baby_Crawl/east+west state rotations updated to new frame 00 (same clipped-tip defect, same pose). Verified per frame at 5-6x: whole body inside the canvas (margins >=2px, NO pixel on any edge), complete outlined snout tip and tail, closed mouth (enclosed 1px jaw slit on 02/03/04 filled black; frame 02's hind-leg daylight gap left transparent), dot eyes, 1 component, ink 91-92x58-59 vs 96(clipped)x57-63 before \u2014 body height -2%, well inside the 10% step budget vs Baby_Sit (h85).",
+      "cost_generations": 3
+    }
+  ],
+  "findings": [
+    {
+      "id": "A-1",
+      "ref": "\u00a74.2 \u2014 the question everything depends on",
+      "finding": "THE SHARED UPRIGHT BODY HOLDS \u2014 but only once the palette swap is applied. Composited with the body left white against a green head, it is unmistakably a person in a costume, exactly as \u00a74.2 feared. Recolouring the torso to the head's own green (#4E994E) makes it read as ONE creature. The costume effect was a COLOUR DISCONTINUITY, not a body-plan failure. Judging \u00a74.2 without \u00a72.4's own mechanic applied would have answered the wrong question and killed the shared-body model on a false negative.",
+      "caveat": "It reads as an upright frog-lizard person, not a crocodile. That is the head being wrong, not the body plan. The real \u00a74.2 verdict cannot be final until a head that actually reads as a crocodile is composited."
+    },
+    {
+      "id": "A-2",
+      "ref": "\u00a72.4 \u2014 flat colour is a build assertion",
+      "finding": "Confirmed live. After the swap, 5 pixels of #EDEDED survive and ring the leg seam \u2014 the halo the spec predicts, in the first sprite ever generated. The generator produces NEAR-flat art, not flat. A snap-to-key-colour pass is required before any palette swap ships.",
+      "measured": "cand_05 after correction: torso white had 1 near-neighbour (5px), paw pink 1 (1px). cand_02: torso 0, paw 1 (2px). cand_06: torso 0, paw 1 (7px)."
+    },
+    {
+      "id": "A-3",
+      "ref": "\u00a73.2 / canvas convention",
+      "finding": "The body was generated at the wrong scale for its canvas. Its trim is y10..69 in an 80px canvas, leaving 10px above the neck \u2014 a 40px head has nowhere to go and runs off the top. The body must occupy roughly the lower two thirds, and the canvas convention (the base pack uses 96x96 with the whole animal in ~68px) has to be decided BEFORE the body is regenerated, because everything attaches to it."
+    },
+    {
+      "id": "A-4",
+      "ref": "\u00a74.1 \u2014 the width term",
+      "finding": "Vindicated before any crocodile part was attached: the shared body's trim is 40px wide against the bunny's 27px calibration. body_w 40 insets the room by (40-27)/2 * 1.45 = 9.4 screen px each side at adult scale. Had the width term not shipped first, the shared body alone would have walked through the furniture."
+    },
+    {
+      "id": "A-5",
+      "ref": "house style vs \u00a71.1",
+      "finding": "Open question for the owner, not mine to settle. The bunny's motif is two dot eyes + a black X mouth + white fur, documented as never-varying. An X mouth on a snout reads as an error, so it was not requested here. \u00a71.1 says the crocodile DEFINES the new contract rather than inheriting the bunny's \u2014 so whether the X mouth is product identity or bunny identity is a decision that belongs at this checkpoint."
+    },
+    {
+      "id": "A-6",
+      "ref": "attach placement",
+      "finding": "The tail in these composites reads as lying on the floor beside him rather than emerging from the body. That is my placement, not the art \u2014 the attach offsets were computed geometrically, never authored. Real offsets come from the reviewer's attach editor once a head is accepted."
+    }
+  ],
+  "next": "SUPERSEDED 2026-08-17 \u2014 see checkpoint_A_decision below.",
+  "checkpoint_A_decision": {
+    "t": "2026-08-17",
+    "decided_by": "Claude (task instruction: no choice was recorded, so pick the strongest composite, record reasoning, proceed \u2014 do not block)",
+    "chosen": "_composite_41_12.png (head 41 + tail 12)",
+    "reasoning": "run.json's own failure analysis says the frog-read comes from a front-on face having no snout. Head 41 is the only candidate of the 64 that draws a genuinely PROTRUDING blunt snout, dipping slightly downward, visible even in the south view \u2014 it is the one head that answers option (b) from the previous 'next' field: accept a front-on crocodile and carry identity on the snout, tail and colour. Heads 33 and 49 are wide-mouthed and read frog. Tail 12 has the boldest, most regular triangular scutes of the six usable tails (00,12,26,36,50,58) and a clean ground-hugging curve. The dot eyes and mid-green (#4E994E) of head 41 satisfy the dot-eye motif.",
+    "pipeline_change": "The pack itself is generated with the CAPYBARA-PILOT.md template pipeline (v3 create_character, Dick Bruna style clause, purple keying tunic, low top-down, 96px) \u2014 NOT by compositing the Stage-0 parts. The Stage-0 head/tail exploration supplies the identity language for the prompt: protruding rounded snout, small eye bumps on top of the head, dot eyes, green skin, thick tapering tail with triangular scutes. This follows the proven capybara worked example whose layout the croc pack must match.",
+    "style_contract": "written to assets/style-contract.md"
+  },
+  "billing_note": "2026-08-17: subscription generations exhausted; credits auto-bill at $0.01/generation measured (3 gens = $0.03). $15.17 remaining after v1.",
+  "phase_structure_answer": "\u00a77.4 answered with pictures: the baby is its OWN v3 create_character (3 gens) seeded by prompt, not a state of the adult (25 gens) \u2014 identity holds (same species read, onesie, bigger head), palette drift stays under the dist-70 merge so one clean pass unifies both phases. Baby renders at ~70% at runtime per feedback-states-dont-scale-proportions.",
+  "cost_2026_08_17": {
+    "credits_spent_usd": 1.21,
+    "approx_generations": 121,
+    "rate": "$0.01/generation",
+    "credits_remaining_usd": 13.99
+  },
+  "needs_jon": [
+    "Checkpoint A: adopted v1 croc (near-profile snout in every rotation) + PC eye fix as the style contract \u2014 assets/style-contract.md written from it",
+    "Adult_Sleep NE/N/NW are an upright slumped sit-sleep while the other 5 rotations lie down \u2014 pose inconsistency across the rotation set",
+    "Baby_Sleep has OPEN dot eyes (vocabulary wants shut); Adult_Sleep has proper closed arcs \u2014 not chased per the 80-gen capybara sleep lesson",
+    "RESOLVED 2026-08-17: crawl E/W animation + E/W state rotations regenerated at 95% body, nothing touches the canvas; N/NE/NW/S etc. crawl rotations unchanged. body_w for Baby_Crawl is now 92 (was canvas-limited 96).",
+    "Adult_Sit east/west tail tip touches the canvas edge (~1-2px shave)",
+    "character.json says can_hold:false per CHARACTER-PACKS \u00a74, but this croc is an upright biped with clearly drawn hands \u2014 decide whether the floor-beside fallback is still the plan",
+    "Eat/Angry introduce a small pink-red mouth-interior colour pair (#e66183/#8f0b46) \u2014 new vs capybara palette, reads great, but note for the recolour table",
+    "body_w: widest states are Baby_Crawl at 96 (canvas-limited); true width unknown, same caveat as the capybara"
+  ],
+  "cost_2026_08_17_defect_fixes": {
+    "credits_before_usd": 13.99,
+    "credits_after_usd": 13.88,
+    "credits_spent_usd": 0.11,
+    "approx_generations": 11,
+    "note": "tool quoted 8 gens across the five jobs; metering billed 11 (expanded-canvas animation jobs charge above the 96px quote)"
+  }
+}

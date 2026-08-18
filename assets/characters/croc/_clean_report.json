@@ -1,0 +1,3483 @@
+{
+  "input": "raw_eyefix",
+  "dist": 70,
+  "dark": 150,
+  "frames": [
+    {
+      "file": "Adult_Angry\\00.png",
+      "outline_px": 0,
+      "bbox": [
+        11,
+        10,
+        78,
+        80
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Angry\\01.png",
+      "outline_px": 0,
+      "bbox": [
+        9,
+        10,
+        80,
+        80
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Angry\\02.png",
+      "outline_px": 0,
+      "bbox": [
+        7,
+        10,
+        85,
+        80
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Angry\\03.png",
+      "outline_px": 0,
+      "bbox": [
+        4,
+        16,
+        92,
+        74
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Angry\\04.png",
+      "outline_px": 0,
+      "bbox": [
+        2,
+        18,
+        90,
+        72
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Angry\\05.png",
+      "outline_px": 0,
+      "bbox": [
+        5,
+        17,
+        91,
+        73
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Angry\\06.png",
+      "outline_px": 0,
+      "bbox": [
+        10,
+        9,
+        79,
+        81
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Bathe\\00.png",
+      "outline_px": 0,
+      "bbox": [
+        11,
+        10,
+        78,
+        80
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Bathe\\01.png",
+      "outline_px": 0,
+      "bbox": [
+        12,
+        8,
+        78,
+        82
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Bathe\\02.png",
+      "outline_px": 0,
+      "bbox": [
+        8,
+        13,
+        86,
+        77
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Bathe\\03.png",
+      "outline_px": 0,
+      "bbox": [
+        5,
+        15,
+        91,
+        75
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Bathe\\04.png",
+      "outline_px": 0,
+      "bbox": [
+        3,
+        17,
+        81,
+        73
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Bathe\\05.png",
+      "outline_px": 0,
+      "bbox": [
+        5,
+        15,
+        85,
+        75
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Bathe\\06.png",
+      "outline_px": 0,
+      "bbox": [
+        8,
+        13,
+        88,
+        77
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Bored\\00.png",
+      "outline_px": 0,
+      "bbox": [
+        11,
+        10,
+        78,
+        80
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Bored\\01.png",
+      "outline_px": 0,
+      "bbox": [
+        11,
+        10,
+        79,
+        80
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Bored\\02.png",
+      "outline_px": 0,
+      "bbox": [
+        10,
+        11,
+        81,
+        79
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Bored\\03.png",
+      "outline_px": 0,
+      "bbox": [
+        7,
+        14,
+        84,
+        76
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Bored\\04.png",
+      "outline_px": 0,
+      "bbox": [
+        5,
+        16,
+        79,
+        74
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Bored\\05.png",
+      "outline_px": 0,
+      "bbox": [
+        6,
+        16,
+        87,
+        74
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Bored\\06.png",
+      "outline_px": 0,
+      "bbox": [
+        8,
+        14,
+        87,
+        76
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Eat\\00.png",
+      "outline_px": 0,
+      "bbox": [
+        11,
+        10,
+        78,
+        80
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Eat\\01.png",
+      "outline_px": 0,
+      "bbox": [
+        10,
+        10,
+        79,
+        80
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Eat\\02.png",
+      "outline_px": 0,
+      "bbox": [
+        9,
+        10,
+        80,
+        80
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Eat\\03.png",
+      "outline_px": 0,
+      "bbox": [
+        7,
+        11,
+        81,
+        79
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Eat\\04.png",
+      "outline_px": 0,
+      "bbox": [
+        6,
+        11,
+        83,
+        79
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Eat\\05.png",
+      "outline_px": 0,
+      "bbox": [
+        8,
+        10,
+        81,
+        80
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Eat\\06.png",
+      "outline_px": 0,
+      "bbox": [
+        10,
+        10,
+        79,
+        80
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Hungry\\00.png",
+      "outline_px": 0,
+      "bbox": [
+        11,
+        10,
+        78,
+        80
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Hungry\\01.png",
+      "outline_px": 0,
+      "bbox": [
+        12,
+        10,
+        77,
+        80
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Hungry\\02.png",
+      "outline_px": 0,
+      "bbox": [
+        12,
+        7,
+        77,
+        83
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Hungry\\03.png",
+      "outline_px": 0,
+      "bbox": [
+        12,
+        10,
+        82,
+        80
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Hungry\\04.png",
+      "outline_px": 0,
+      "bbox": [
+        14,
+        10,
+        78,
+        80
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Hungry\\05.png",
+      "outline_px": 0,
+      "bbox": [
+        12,
+        10,
+        77,
+        80
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Hungry\\06.png",
+      "outline_px": 0,
+      "bbox": [
+        11,
+        10,
+        78,
+        80
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Idle\\east.png",
+      "outline_px": 0,
+      "bbox": [
+        26,
+        11,
+        61,
+        79
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Idle\\north-east.png",
+      "outline_px": 0,
+      "bbox": [
+        10,
+        13,
+        79,
+        78
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Idle\\north-west.png",
+      "outline_px": 0,
+      "bbox": [
+        10,
+        9,
+        63,
+        82
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Idle\\north.png",
+      "outline_px": 0,
+      "bbox": [
+        7,
+        13,
+        68,
+        78
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Idle\\south-east.png",
+      "outline_px": 0,
+      "bbox": [
+        19,
+        12,
+        69,
+        78
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Idle\\south-west.png",
+      "outline_px": 0,
+      "bbox": [
+        5,
+        9,
+        81,
+        81
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Idle\\south.png",
+      "outline_px": 0,
+      "bbox": [
+        11,
+        10,
+        78,
+        80
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Idle\\west.png",
+      "outline_px": 0,
+      "bbox": [
+        7,
+        8,
+        71,
+        82
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": false
+    },
+    {
+      "file": "Adult_Love\\00.png",
+      "outline_px": 0,
+      "bbox": [
+        11,
+        10,
+        78,
+        80
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Love\\01.png",
+      "outline_px": 0,
+      "bbox": [
+        13,
+        10,
+        78,
+        80
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Love\\02.png",
+      "outline_px": 0,
+      "bbox": [
+        9,
+        13,
+        84,
+        77
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Love\\03.png",
+      "outline_px": 0,
+      "bbox": [
+        6,
+        13,
+        88,
+        77
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Love\\04.png",
+      "outline_px": 0,
+      "bbox": [
+        5,
+        13,
+        81,
+        77
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Love\\05.png",
+      "outline_px": 0,
+      "bbox": [
+        6,
+        13,
+        82,
+        77
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Love\\06.png",
+      "outline_px": 0,
+      "bbox": [
+        9,
+        13,
+        81,
+        77
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Pickup\\00.png",
+      "outline_px": 0,
+      "bbox": [
+        11,
+        10,
+        78,
+        80
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Pickup\\01.png",
+      "outline_px": 0,
+      "bbox": [
+        10,
+        12,
+        79,
+        78
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Pickup\\02.png",
+      "outline_px": 0,
+      "bbox": [
+        7,
+        14,
+        82,
+        76
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Pickup\\03.png",
+      "outline_px": 0,
+      "bbox": [
+        6,
+        19,
+        83,
+        71
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Pickup\\04.png",
+      "outline_px": 0,
+      "bbox": [
+        4,
+        22,
+        85,
+        68
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Pickup\\05.png",
+      "outline_px": 0,
+      "bbox": [
+        6,
+        20,
+        83,
+        70
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Pickup\\06.png",
+      "outline_px": 0,
+      "bbox": [
+        8,
+        14,
+        80,
+        76
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Sick\\00.png",
+      "outline_px": 0,
+      "bbox": [
+        11,
+        10,
+        78,
+        80
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Sick\\01.png",
+      "outline_px": 0,
+      "bbox": [
+        10,
+        11,
+        81,
+        79
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Sick\\02.png",
+      "outline_px": 0,
+      "bbox": [
+        7,
+        12,
+        84,
+        78
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Sick\\03.png",
+      "outline_px": 0,
+      "bbox": [
+        6,
+        12,
+        86,
+        78
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Sick\\04.png",
+      "outline_px": 0,
+      "bbox": [
+        4,
+        14,
+        88,
+        76
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Sick\\05.png",
+      "outline_px": 0,
+      "bbox": [
+        6,
+        14,
+        86,
+        76
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Sick\\06.png",
+      "outline_px": 0,
+      "bbox": [
+        8,
+        11,
+        83,
+        79
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Sit\\east.png",
+      "outline_px": 0,
+      "bbox": [
+        0,
+        11,
+        87,
+        79
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Sit\\north-east.png",
+      "outline_px": 0,
+      "bbox": [
+        3,
+        8,
+        81,
+        82
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": false
+    },
+    {
+      "file": "Adult_Sit\\north-west.png",
+      "outline_px": 0,
+      "bbox": [
+        13,
+        8,
+        81,
+        82
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": false
+    },
+    {
+      "file": "Adult_Sit\\north.png",
+      "outline_px": 0,
+      "bbox": [
+        19,
+        4,
+        65,
+        86
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Sit\\south-east.png",
+      "outline_px": 0,
+      "bbox": [
+        11,
+        8,
+        73,
+        82
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Sit\\south-west.png",
+      "outline_px": 0,
+      "bbox": [
+        13,
+        8,
+        80,
+        82
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Sit\\south.png",
+      "outline_px": 0,
+      "bbox": [
+        20,
+        8,
+        71,
+        82
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Sit\\west.png",
+      "outline_px": 0,
+      "bbox": [
+        10,
+        11,
+        86,
+        79
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Sleep\\east.png",
+      "outline_px": 0,
+      "bbox": [
+        14,
+        28,
+        75,
+        62
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Sleep\\north-east.png",
+      "outline_px": 0,
+      "bbox": [
+        10,
+        16,
+        75,
+        74
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Sleep\\north-west.png",
+      "outline_px": 0,
+      "bbox": [
+        14,
+        10,
+        58,
+        80
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Sleep\\north.png",
+      "outline_px": 0,
+      "bbox": [
+        11,
+        12,
+        65,
+        78
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Sleep\\south-east.png",
+      "outline_px": 0,
+      "bbox": [
+        14,
+        25,
+        73,
+        65
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Sleep\\south-west.png",
+      "outline_px": 0,
+      "bbox": [
+        6,
+        29,
+        77,
+        61
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Sleep\\south.png",
+      "outline_px": 0,
+      "bbox": [
+        9,
+        32,
+        83,
+        58
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Sleep\\west.png",
+      "outline_px": 0,
+      "bbox": [
+        5,
+        33,
+        80,
+        57
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Tired\\00.png",
+      "outline_px": 0,
+      "bbox": [
+        11,
+        10,
+        78,
+        80
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Tired\\01.png",
+      "outline_px": 0,
+      "bbox": [
+        12,
+        9,
+        78,
+        81
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Tired\\02.png",
+      "outline_px": 0,
+      "bbox": [
+        13,
+        10,
+        77,
+        80
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Tired\\03.png",
+      "outline_px": 0,
+      "bbox": [
+        12,
+        11,
+        78,
+        79
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Tired\\04.png",
+      "outline_px": 0,
+      "bbox": [
+        10,
+        12,
+        80,
+        78
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Tired\\05.png",
+      "outline_px": 0,
+      "bbox": [
+        9,
+        13,
+        80,
+        77
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Tired\\06.png",
+      "outline_px": 0,
+      "bbox": [
+        8,
+        12,
+        81,
+        78
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Walk_East\\00.png",
+      "outline_px": 0,
+      "bbox": [
+        26,
+        11,
+        61,
+        79
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Walk_East\\01.png",
+      "outline_px": 0,
+      "bbox": [
+        22,
+        12,
+        65,
+        78
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Walk_East\\02.png",
+      "outline_px": 0,
+      "bbox": [
+        16,
+        14,
+        71,
+        76
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Walk_East\\03.png",
+      "outline_px": 0,
+      "bbox": [
+        11,
+        14,
+        76,
+        76
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Walk_East\\04.png",
+      "outline_px": 0,
+      "bbox": [
+        7,
+        11,
+        80,
+        79
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Walk_East\\05.png",
+      "outline_px": 0,
+      "bbox": [
+        5,
+        15,
+        82,
+        75
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Walk_East\\06.png",
+      "outline_px": 0,
+      "bbox": [
+        4,
+        12,
+        83,
+        78
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Walk_NorthEast\\00.png",
+      "outline_px": 0,
+      "bbox": [
+        12,
+        11,
+        77,
+        79
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Walk_NorthEast\\01.png",
+      "outline_px": 0,
+      "bbox": [
+        11,
+        11,
+        78,
+        79
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Walk_NorthEast\\02.png",
+      "outline_px": 0,
+      "bbox": [
+        8,
+        13,
+        81,
+        77
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Walk_NorthEast\\03.png",
+      "outline_px": 0,
+      "bbox": [
+        6,
+        13,
+        83,
+        77
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Walk_NorthEast\\04.png",
+      "outline_px": 0,
+      "bbox": [
+        6,
+        10,
+        83,
+        80
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Walk_NorthEast\\05.png",
+      "outline_px": 0,
+      "bbox": [
+        6,
+        11,
+        83,
+        79
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Walk_NorthEast\\06.png",
+      "outline_px": 0,
+      "bbox": [
+        6,
+        12,
+        83,
+        78
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Walk_NorthWest\\00.png",
+      "outline_px": 0,
+      "bbox": [
+        7,
+        11,
+        77,
+        79
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Walk_NorthWest\\01.png",
+      "outline_px": 0,
+      "bbox": [
+        7,
+        11,
+        78,
+        79
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Walk_NorthWest\\02.png",
+      "outline_px": 0,
+      "bbox": [
+        7,
+        13,
+        81,
+        77
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Walk_NorthWest\\03.png",
+      "outline_px": 0,
+      "bbox": [
+        7,
+        13,
+        83,
+        77
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Walk_NorthWest\\04.png",
+      "outline_px": 0,
+      "bbox": [
+        7,
+        10,
+        83,
+        80
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Walk_NorthWest\\05.png",
+      "outline_px": 0,
+      "bbox": [
+        7,
+        11,
+        83,
+        79
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Walk_NorthWest\\06.png",
+      "outline_px": 0,
+      "bbox": [
+        7,
+        12,
+        83,
+        78
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Walk_SouthEast\\00.png",
+      "outline_px": 0,
+      "bbox": [
+        19,
+        12,
+        69,
+        78
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Walk_SouthEast\\01.png",
+      "outline_px": 0,
+      "bbox": [
+        20,
+        12,
+        68,
+        78
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Walk_SouthEast\\02.png",
+      "outline_px": 0,
+      "bbox": [
+        21,
+        12,
+        65,
+        78
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Walk_SouthEast\\03.png",
+      "outline_px": 0,
+      "bbox": [
+        23,
+        13,
+        63,
+        77
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Walk_SouthEast\\04.png",
+      "outline_px": 0,
+      "bbox": [
+        24,
+        13,
+        59,
+        77
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Walk_SouthEast\\05.png",
+      "outline_px": 0,
+      "bbox": [
+        25,
+        12,
+        55,
+        78
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Walk_SouthEast\\06.png",
+      "outline_px": 0,
+      "bbox": [
+        23,
+        12,
+        58,
+        78
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Walk_SouthWest\\00.png",
+      "outline_px": 0,
+      "bbox": [
+        8,
+        12,
+        69,
+        78
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Walk_SouthWest\\01.png",
+      "outline_px": 0,
+      "bbox": [
+        8,
+        12,
+        68,
+        78
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Walk_SouthWest\\02.png",
+      "outline_px": 0,
+      "bbox": [
+        10,
+        12,
+        65,
+        78
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Walk_SouthWest\\03.png",
+      "outline_px": 0,
+      "bbox": [
+        10,
+        13,
+        63,
+        77
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Walk_SouthWest\\04.png",
+      "outline_px": 0,
+      "bbox": [
+        13,
+        13,
+        59,
+        77
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Walk_SouthWest\\05.png",
+      "outline_px": 0,
+      "bbox": [
+        16,
+        12,
+        55,
+        78
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Walk_SouthWest\\06.png",
+      "outline_px": 0,
+      "bbox": [
+        15,
+        12,
+        58,
+        78
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Walk_West\\00.png",
+      "outline_px": 0,
+      "bbox": [
+        9,
+        11,
+        61,
+        79
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Walk_West\\01.png",
+      "outline_px": 0,
+      "bbox": [
+        9,
+        12,
+        65,
+        78
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Walk_West\\02.png",
+      "outline_px": 0,
+      "bbox": [
+        9,
+        14,
+        71,
+        76
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Walk_West\\03.png",
+      "outline_px": 0,
+      "bbox": [
+        9,
+        14,
+        76,
+        76
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Walk_West\\04.png",
+      "outline_px": 0,
+      "bbox": [
+        9,
+        11,
+        80,
+        79
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Walk_West\\05.png",
+      "outline_px": 0,
+      "bbox": [
+        9,
+        15,
+        82,
+        75
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Adult_Walk_West\\06.png",
+      "outline_px": 0,
+      "bbox": [
+        9,
+        12,
+        83,
+        78
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Angry\\00.png",
+      "outline_px": 0,
+      "bbox": [
+        5,
+        7,
+        86,
+        83
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Angry\\01.png",
+      "outline_px": 0,
+      "bbox": [
+        5,
+        8,
+        88,
+        82
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Angry\\02.png",
+      "outline_px": 0,
+      "bbox": [
+        5,
+        10,
+        89,
+        80
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Angry\\03.png",
+      "outline_px": 0,
+      "bbox": [
+        4,
+        12,
+        92,
+        78
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Angry\\04.png",
+      "outline_px": 0,
+      "bbox": [
+        3,
+        14,
+        92,
+        76
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Angry\\05.png",
+      "outline_px": 0,
+      "bbox": [
+        4,
+        12,
+        91,
+        78
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Angry\\06.png",
+      "outline_px": 0,
+      "bbox": [
+        5,
+        9,
+        89,
+        81
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Bathe\\00.png",
+      "outline_px": 0,
+      "bbox": [
+        5,
+        7,
+        86,
+        83
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Bathe\\01.png",
+      "outline_px": 0,
+      "bbox": [
+        5,
+        7,
+        88,
+        83
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Bathe\\02.png",
+      "outline_px": 0,
+      "bbox": [
+        6,
+        8,
+        89,
+        82
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Bathe\\03.png",
+      "outline_px": 0,
+      "bbox": [
+        5,
+        9,
+        91,
+        81
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Bathe\\04.png",
+      "outline_px": 0,
+      "bbox": [
+        3,
+        10,
+        93,
+        80
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Bathe\\05.png",
+      "outline_px": 0,
+      "bbox": [
+        5,
+        9,
+        91,
+        81
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Bathe\\06.png",
+      "outline_px": 0,
+      "bbox": [
+        6,
+        7,
+        90,
+        83
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Bored\\00.png",
+      "outline_px": 0,
+      "bbox": [
+        5,
+        7,
+        86,
+        83
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Bored\\01.png",
+      "outline_px": 0,
+      "bbox": [
+        5,
+        7,
+        87,
+        83
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Bored\\02.png",
+      "outline_px": 0,
+      "bbox": [
+        5,
+        9,
+        88,
+        81
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Bored\\03.png",
+      "outline_px": 0,
+      "bbox": [
+        5,
+        10,
+        89,
+        80
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Bored\\04.png",
+      "outline_px": 0,
+      "bbox": [
+        4,
+        11,
+        91,
+        79
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Bored\\05.png",
+      "outline_px": 0,
+      "bbox": [
+        5,
+        10,
+        90,
+        80
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Bored\\06.png",
+      "outline_px": 0,
+      "bbox": [
+        6,
+        9,
+        89,
+        81
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Crawl\\east.png",
+      "outline_px": 0,
+      "bbox": [
+        2,
+        32,
+        91,
+        59
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Crawl\\north-east.png",
+      "outline_px": 0,
+      "bbox": [
+        0,
+        7,
+        91,
+        83
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Crawl\\north-west.png",
+      "outline_px": 0,
+      "bbox": [
+        5,
+        7,
+        91,
+        83
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Crawl\\north.png",
+      "outline_px": 0,
+      "bbox": [
+        14,
+        6,
+        67,
+        84
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Crawl\\south-east.png",
+      "outline_px": 0,
+      "bbox": [
+        4,
+        13,
+        92,
+        77
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Crawl\\south-west.png",
+      "outline_px": 0,
+      "bbox": [
+        1,
+        13,
+        92,
+        77
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Crawl\\south.png",
+      "outline_px": 0,
+      "bbox": [
+        18,
+        10,
+        61,
+        80
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Crawl\\west.png",
+      "outline_px": 0,
+      "bbox": [
+        3,
+        32,
+        91,
+        59
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Crawl_East\\00.png",
+      "outline_px": 0,
+      "bbox": [
+        2,
+        32,
+        91,
+        59
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Crawl_East\\01.png",
+      "outline_px": 0,
+      "bbox": [
+        2,
+        32,
+        91,
+        59
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Crawl_East\\02.png",
+      "outline_px": 0,
+      "bbox": [
+        2,
+        33,
+        92,
+        58
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Crawl_East\\03.png",
+      "outline_px": 0,
+      "bbox": [
+        2,
+        32,
+        92,
+        59
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Crawl_East\\04.png",
+      "outline_px": 0,
+      "bbox": [
+        2,
+        32,
+        92,
+        59
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Crawl_West\\00.png",
+      "outline_px": 0,
+      "bbox": [
+        3,
+        32,
+        91,
+        59
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Crawl_West\\01.png",
+      "outline_px": 0,
+      "bbox": [
+        3,
+        32,
+        91,
+        59
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Crawl_West\\02.png",
+      "outline_px": 0,
+      "bbox": [
+        2,
+        33,
+        92,
+        58
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Crawl_West\\03.png",
+      "outline_px": 0,
+      "bbox": [
+        2,
+        32,
+        92,
+        59
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Crawl_West\\04.png",
+      "outline_px": 0,
+      "bbox": [
+        2,
+        32,
+        92,
+        59
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Eat\\00.png",
+      "outline_px": 0,
+      "bbox": [
+        5,
+        7,
+        86,
+        83
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Eat\\01.png",
+      "outline_px": 0,
+      "bbox": [
+        5,
+        7,
+        86,
+        83
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Eat\\02.png",
+      "outline_px": 0,
+      "bbox": [
+        5,
+        8,
+        87,
+        82
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Eat\\03.png",
+      "outline_px": 0,
+      "bbox": [
+        5,
+        8,
+        89,
+        82
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Eat\\04.png",
+      "outline_px": 0,
+      "bbox": [
+        4,
+        9,
+        91,
+        81
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Eat\\05.png",
+      "outline_px": 0,
+      "bbox": [
+        5,
+        7,
+        89,
+        83
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Eat\\06.png",
+      "outline_px": 0,
+      "bbox": [
+        5,
+        7,
+        86,
+        83
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Hungry\\00.png",
+      "outline_px": 0,
+      "bbox": [
+        5,
+        7,
+        86,
+        83
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Hungry\\01.png",
+      "outline_px": 0,
+      "bbox": [
+        4,
+        7,
+        87,
+        83
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Hungry\\02.png",
+      "outline_px": 0,
+      "bbox": [
+        4,
+        8,
+        85,
+        82
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Hungry\\03.png",
+      "outline_px": 0,
+      "bbox": [
+        6,
+        9,
+        81,
+        81
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Hungry\\04.png",
+      "outline_px": 0,
+      "bbox": [
+        5,
+        9,
+        82,
+        81
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Hungry\\05.png",
+      "outline_px": 0,
+      "bbox": [
+        4,
+        8,
+        84,
+        82
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Hungry\\06.png",
+      "outline_px": 0,
+      "bbox": [
+        4,
+        8,
+        86,
+        82
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Love\\00.png",
+      "outline_px": 0,
+      "bbox": [
+        5,
+        7,
+        86,
+        83
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Love\\01.png",
+      "outline_px": 0,
+      "bbox": [
+        5,
+        7,
+        87,
+        83
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Love\\02.png",
+      "outline_px": 0,
+      "bbox": [
+        6,
+        9,
+        87,
+        81
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Love\\03.png",
+      "outline_px": 0,
+      "bbox": [
+        7,
+        10,
+        88,
+        80
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Love\\04.png",
+      "outline_px": 0,
+      "bbox": [
+        5,
+        11,
+        89,
+        79
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Love\\05.png",
+      "outline_px": 0,
+      "bbox": [
+        7,
+        9,
+        86,
+        81
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Love\\06.png",
+      "outline_px": 0,
+      "bbox": [
+        6,
+        7,
+        87,
+        83
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Onesie\\east.png",
+      "outline_px": 0,
+      "bbox": [
+        16,
+        6,
+        75,
+        84
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Onesie\\north-east.png",
+      "outline_px": 0,
+      "bbox": [
+        4,
+        7,
+        84,
+        83
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": false
+    },
+    {
+      "file": "Baby_Onesie\\north-west.png",
+      "outline_px": 0,
+      "bbox": [
+        18,
+        8,
+        70,
+        82
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Onesie\\north.png",
+      "outline_px": 0,
+      "bbox": [
+        5,
+        10,
+        73,
+        80
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Onesie\\south-east.png",
+      "outline_px": 0,
+      "bbox": [
+        4,
+        7,
+        74,
+        83
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Onesie\\south-west.png",
+      "outline_px": 0,
+      "bbox": [
+        5,
+        7,
+        87,
+        83
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Onesie\\south.png",
+      "outline_px": 0,
+      "bbox": [
+        5,
+        7,
+        86,
+        83
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Onesie\\west.png",
+      "outline_px": 0,
+      "bbox": [
+        5,
+        7,
+        79,
+        83
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": false
+    },
+    {
+      "file": "Baby_Sick\\00.png",
+      "outline_px": 0,
+      "bbox": [
+        5,
+        7,
+        86,
+        83
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Sick\\01.png",
+      "outline_px": 0,
+      "bbox": [
+        5,
+        6,
+        88,
+        84
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Sick\\02.png",
+      "outline_px": 0,
+      "bbox": [
+        5,
+        7,
+        90,
+        83
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Sick\\03.png",
+      "outline_px": 0,
+      "bbox": [
+        4,
+        8,
+        92,
+        82
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Sick\\04.png",
+      "outline_px": 0,
+      "bbox": [
+        3,
+        9,
+        92,
+        81
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Sick\\05.png",
+      "outline_px": 0,
+      "bbox": [
+        4,
+        9,
+        91,
+        81
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Sick\\06.png",
+      "outline_px": 0,
+      "bbox": [
+        4,
+        8,
+        90,
+        82
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Sit\\east.png",
+      "outline_px": 0,
+      "bbox": [
+        5,
+        5,
+        86,
+        85
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Sit\\north-east.png",
+      "outline_px": 0,
+      "bbox": [
+        7,
+        9,
+        77,
+        81
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Sit\\north-west.png",
+      "outline_px": 0,
+      "bbox": [
+        11,
+        9,
+        80,
+        81
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Sit\\north.png",
+      "outline_px": 0,
+      "bbox": [
+        8,
+        10,
+        68,
+        80
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Sit\\south-east.png",
+      "outline_px": 0,
+      "bbox": [
+        7,
+        6,
+        76,
+        84
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Sit\\south-west.png",
+      "outline_px": 0,
+      "bbox": [
+        13,
+        6,
+        79,
+        84
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Sit\\south.png",
+      "outline_px": 0,
+      "bbox": [
+        22,
+        7,
+        69,
+        83
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Sit\\west.png",
+      "outline_px": 0,
+      "bbox": [
+        5,
+        5,
+        86,
+        85
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Sleep\\east.png",
+      "outline_px": 0,
+      "bbox": [
+        4,
+        29,
+        89,
+        61
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Sleep\\north-east.png",
+      "outline_px": 0,
+      "bbox": [
+        9,
+        13,
+        80,
+        77
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Sleep\\north-west.png",
+      "outline_px": 0,
+      "bbox": [
+        8,
+        13,
+        80,
+        77
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Sleep\\north.png",
+      "outline_px": 0,
+      "bbox": [
+        14,
+        11,
+        75,
+        79
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Sleep\\south-east.png",
+      "outline_px": 0,
+      "bbox": [
+        3,
+        27,
+        92,
+        63
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Sleep\\south-west.png",
+      "outline_px": 0,
+      "bbox": [
+        1,
+        26,
+        91,
+        64
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Sleep\\south.png",
+      "outline_px": 0,
+      "bbox": [
+        6,
+        21,
+        86,
+        69
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Sleep\\west.png",
+      "outline_px": 0,
+      "bbox": [
+        4,
+        33,
+        88,
+        57
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Tired\\00.png",
+      "outline_px": 0,
+      "bbox": [
+        5,
+        7,
+        86,
+        83
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Tired\\01.png",
+      "outline_px": 0,
+      "bbox": [
+        4,
+        6,
+        86,
+        84
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Tired\\02.png",
+      "outline_px": 0,
+      "bbox": [
+        4,
+        4,
+        86,
+        86
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Tired\\03.png",
+      "outline_px": 0,
+      "bbox": [
+        6,
+        5,
+        80,
+        85
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Tired\\04.png",
+      "outline_px": 0,
+      "bbox": [
+        9,
+        8,
+        76,
+        82
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Tired\\05.png",
+      "outline_px": 0,
+      "bbox": [
+        7,
+        9,
+        81,
+        81
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    },
+    {
+      "file": "Baby_Tired\\06.png",
+      "outline_px": 0,
+      "bbox": [
+        6,
+        9,
+        84,
+        81
+      ],
+      "canvas": [
+        96,
+        96
+      ],
+      "normalised": true
+    }
+  ],
+  "palette": [
+    {
+      "hex": "#659a3a",
+      "count": 286560
+    },
+    {
+      "hex": "#a456ab",
+      "count": 205900
+    },
+    {
+      "hex": "#000000",
+      "count": 176000
+    },
+    {
+      "hex": "#33652b",
+      "count": 73308
+    },
+    {
+      "hex": "#d3db74",
+      "count": 48961
+    },
+    {
+      "hex": "#6e3082",
+      "count": 16010
+    },
+    {
+      "hex": "#b29f3f",
+      "count": 3213
+    },
+    {
+      "hex": "#321e2e",
+      "count": 921
+    },
+    {
+      "hex": "#fcfefc",
+      "count": 805
+    },
+    {
+      "hex": "#b43a49",
+      "count": 128
+    },
+    {
+      "hex": "#e9666a",
+      "count": 62
+    },
+    {
+      "hex": "#bdc0d3",
+      "count": 58
+    },
+    {
+      "hex": "#766114",
+      "count": 33
+    },
+    {
+      "hex": "#95a98d",
+      "count": 21
+    },
+    {
+      "hex": "#f895a2",
+      "count": 19
+    },
+    {
+      "hex": "#f5ca2a",
+      "count": 1
+    }
+  ],
+  "norm": {
+    "size": 96,
+    "feet_line": 90
+  },
+  "defect_fix_2026_08_17": "Adult_Idle N/NW/NE regenerated (two-tails-on-back defect) from character fe1cee6b (v3 reference-image route seeded by the shipped south rotation); Baby_Crawl_East 00-04 regenerated at 95% body (nose/tail canvas clipping), west re-mirrored, Baby_Crawl east/west rotations updated to new frame 00. All replaced frames: eye fix pre+post palette snap to the shipped 8-colour core, feet-norm 96/y90 (crawl frames centred horizontally, raw ink was off-centre on the 124 canvas), mouth slit on crawl 02/03/04 closed with black (enclosed 1px transparent row), 1 component each, no canvas-edge contact."
+}
