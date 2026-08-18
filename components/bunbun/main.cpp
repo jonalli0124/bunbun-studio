@@ -2082,6 +2082,7 @@ static const char *moodAnim() {
 // location and does the sleep animation. same concept for the bath"): find the mark whose
 // animation carries this act, walk to its doorstep, settle onto the authored spot, perform.
 // False = the scene has no such place; the caller keeps its old in-place behaviour.
+static void catDismissIfAway();
 // THE DOOR IS THE SIDE OF THE SCREEN. An act whose room exists somewhere else sends him
 // to the edge, the room swaps, he walks in from the mirror edge and does the thing.
 // After the act (or a work session) he comes home the same way. If a room is not
@@ -2101,9 +2102,13 @@ static bool sceneDoorTo(uint8_t tgt, const char *act) {
   g_performBehind = false; g_settleUntil = 0; g_watching = false;
   // kitchen is left of the main room; bathroom and work are right. Leaving a side room
   // always heads back toward the main room's side.
+  // Jon: "kitchen and bathroom are off the left of the main room screen, work is off
+  // to the right"
   bool exitLeft;
-  if (g_scCurRole == SCENE_ROLE_MAIN) exitLeft = (tgt == SCENE_ROLE_KITCHEN);
-  else exitLeft = (g_scCurRole != SCENE_ROLE_KITCHEN);
+  if (g_scCurRole == SCENE_ROLE_MAIN)
+    exitLeft = (tgt == SCENE_ROLE_KITCHEN || tgt == SCENE_ROLE_BATH);
+  else
+    exitLeft = (g_scCurRole == SCENE_ROLE_WORK);   // side rooms exit toward the main room
   int ex = exitLeft ? 6 : SCENE_W - 6;
   int ey = (int)g_fy;
   clampErrandToFloor(&ex, &ey);
@@ -2935,6 +2940,7 @@ static void think(float dt) {
       g_doorTrip = 0; g_tx = g_ty = -1; g_visit = -1;
       bool exitedLeft = (g_fx < SCENE_W / 2);
       if (!sceneLoadRole(g_doorRole)) { g_wanderT = 1.0f; return; }
+      catDismissIfAway();                  // the cat is a main-room guest, always
       g_cloudSceneDone = false;              // the new room's sky rules apply fresh
       int ex2 = exitedLeft ? SCENE_W - 8 : 8;
       int ey2 = (int)g_fy;
@@ -5891,6 +5897,12 @@ static void catSetClip(uint8_t c) {
 }
 static uint32_t g_nextCatAt = 0;
 static inline bool catHere() { return g_catPhase != 0; }
+// Jon: "if we have a bathroom / kitchen / work scene the cat should never show up."
+static void catDismissIfAway() {
+  if (g_scCurRole == SCENE_ROLE_MAIN) return;
+  if (g_catPhase) { g_catPhase = 0; g_catPetted = false; }
+  g_birdPhase = 0; g_birdReacted = false; g_birdLeaveAt = 0;   // "nor the bird"
+}
 // Mid-visit and still working on the room: walking in, waiting, being fussed over, crossing to
 // her spot, or swiping. Phase 5 (asleep) onward she has settled and he may tidy around her.
 static bool catStillBusy() { return g_catPhase != 0 && g_catPhase < 5; }
@@ -6104,6 +6116,7 @@ static bool startCat() {
   if (catHere() || !alive() || !S.lights || bunAway() || g_action || g_workStage ||
       discoDown() || S.sick)
     return false;
+  if (g_scCurRole != SCENE_ROLE_MAIN) return 0;   // she visits the main room only
   g_catPhase = 1; g_catT = 0; g_catPetted = false;
   // EITHER DOOR, 50/50 — placer.html: `const fromLeft = rnd()<0.5; c.x = fromLeft ? -16 : 336`.
   // The device always came in from the right and always stopped at 214, so with her visiting
@@ -6590,6 +6603,7 @@ extern "C" int bunbun_call_cat(void) {
 
 static bool startBird() {
   if (!g_haveSky || g_birdPhase) return false;
+  if (g_scCurRole != SCENE_ROLE_MAIN) return false;   // visitors keep to the main room
   g_birdPhase = 1; g_birdT = 0; g_birdReacted = false;
   g_birdNotice = 1.2f + (esp_random() % 260) / 100.0f;
   return true;
