@@ -1,7 +1,7 @@
 # Multi-room worlds — the spec (owner's notes, 2026-08-17 night)
 
 > "Have the creature walk to the side of the room to go to a bathroom / work / kitchen —
-> each room is updated via the scene / animation builder." — the owner
+> each room is updated via the scene / animation builder." — Jon
 
 ## The idea
 
@@ -55,7 +55,7 @@ is" — SCENE_OFFSTAGE's original reason for existing).
 
 > "Objects that the pet can interact with but also the creature. For example, you go to
 > work by walking to the side wall, lift up a hat and put it on its head and then go to the
-> factory room wearing the same hat." — the owner
+> factory room wearing the same hat." — Jon
 
 - **An interacted object is a prop with a HOME and an ATTACH point.** At home it draws as a
   normal scene prop (the hat on its wall hook). Picked up, it leaves the scene layer and

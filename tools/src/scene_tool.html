@@ -259,6 +259,8 @@
           style="--zc:rgba(240,130,30,.9)">+ keep out</button>
         <button class="mini zbtn" id="zSpot" style="--zc:hsla(265,72%,52%,.9)"
           title="a patch of floor an animation can be tied to">+ activity area</button>
+        <button class="mini zbtn" id="zSky" style="--zc:rgba(90,160,235,.9)"
+          title="draw a box in the sky - clouds and rain happen only in there">+ sky box</button>
         <button class="mini" id="zClose">finish</button>
         <button class="mini" id="zShowAll" title="show or hide every drawn shape at once">show/hide all</button>
         <button class="mini" id="zDel">remove</button>
@@ -586,8 +588,29 @@ function rebuildClouds(){
                  h:Math.max(1,Math.round(b.h*cloudSize)),sp:b.sp})}}
 rebuildClouds();
 
+// the drawn sky box (Jon: "you draw a box where they occur") - bbox of the first live
+// 'sky' zone; weather is confined to it. If the room's art has recognisable sky INSIDE
+// the box, the art keeps occluding (window frames win - "can they occur behind the
+// scene?"); if not (a sunset the classifier cannot see) the box wins raw.
+function authoredSky(){
+  const z=(scene.zones||[]).find(z2=>z2.kind==='sky'&&z2.on!==false&&z2.pts&&z2.pts.length>2);
+  if(!z) return null;
+  const xs=z.pts.map(p2=>p2[0]), ys=z.pts.map(p2=>p2[1]);
+  return {x0:Math.max(0,Math.round(Math.min(...xs))), y0:Math.max(0,Math.round(Math.min(...ys))),
+          x1:Math.min(GAME.w-1,Math.round(Math.max(...xs))), y1:Math.min(GAME.h-1,Math.round(Math.max(...ys))),
+          poly:z.pts};
+}
 function weatherInit(name){
-  skyBox=skyBounds(name); if(!skyBox)return;
+  const ab=authoredSky();
+  if(ab){
+    const sb=skyBounds(name);
+    let masked=false;
+    if(sb&&sb.m) for(let yy=ab.y0;yy<=ab.y1&&!masked;yy++)
+      for(let xx=ab.x0;xx<=ab.x1;xx++)
+        if(sb.m[yy*GAME.w+xx]===1&&inPoly(xx,yy,ab.poly)){masked=true;break}
+    skyBox={...ab, m:masked?sb.m:null, _auth:true, poly:ab.poly};
+  } else skyBox=skyBounds(name);
+  if(!skyBox)return;
   skyBox._n=name;                 // tag it here, or the next step re-seeds everything
   const {x0,y0,x1,y1}=skyBox;
   DROPS.length=0;
@@ -596,7 +619,9 @@ function weatherInit(name){
   for(const c of CLOUDS){c.x=x0+Math.random()*(x1-x0);c.y=y0+2+Math.random()*Math.max(1,(y1-y0)/2)}}
 
 function weatherStep(dt,name){
-  if(!skyBox||skyBox._n!==name){weatherInit(name);if(skyBox)skyBox._n=name}
+  const ab=authoredSky();
+  const wkey=name+(ab?'|'+ab.x0+','+ab.y0+','+ab.x1+','+ab.y1:'');
+  if(!skyBox||skyBox._n!==wkey){weatherInit(name);if(skyBox)skyBox._n=wkey}
   if(!skyBox)return; const {x0,y0,x1,y1}=skyBox;
   if(raining)for(const d of DROPS){
     d.y+=d.sp*dt; d.x+=d.sp*0.22*dt;
@@ -614,13 +639,17 @@ function drawWeather(g,name,Zg){
     for(let yy=0;yy<c.h;yy++)for(let xx=0;xx<c.w;xx++){
       const px=Math.round(c.x+xx),py=Math.round(c.y+yy);
       if(px<0||px>=GAME.w||py<0||py>=GAME.h)continue;
-      if(m[py*W+px]!==1)continue;                 // clipped to the sky, i.e. to the window
+      if(px<skyBox.x0||px>skyBox.x1||py<skyBox.y0||py>skyBox.y1)continue;
+      if(skyBox.poly&&!inPoly(px,py,skyBox.poly))continue;
+      if(m&&m[py*W+px]!==1)continue;              // the art occludes wherever it can
       const taper=(xx<2||xx>c.w-3)&&(yy===0||yy===c.h-1);
       if(!taper)g.fillRect(px*Zg,py*Zg,Zg,Zg)}}
   if(raining)for(const d of DROPS){
     const px=Math.round(d.x),py=Math.round(d.y);
     if(px<0||px>=GAME.w||py<0||py>=GAME.h)continue;
-    if(m[py*W+px]!==1)continue;                   // rain does not fall through the room
+    if(px<skyBox.x0||px>skyBox.x1||py<skyBox.y0||py>skyBox.y1)continue;
+    if(skyBox.poly&&!inPoly(px,py,skyBox.poly))continue;
+    if(m&&m[py*W+px]!==1)continue;                // rain does not fall through the room
     g.fillStyle='rgba(150,190,240,0.85)';g.fillRect(px*Zg,py*Zg,Zg,Zg*2)}}
 
 let wLoop=false,wLast=0;
@@ -1712,12 +1741,17 @@ $('olamp').onclick=()=>{ const o=scene.objects[osel]; if(o){o.lamp=!o.lamp;
   litCache.key=''; syncObj(); draw()} };
 $('zFloor').onclick=()=>{ zdraft=null; zmode=zmode==='floor'?'':'floor';
   $('zFloor').classList.toggle('pri',zmode==='floor'); $('zKeep').classList.remove('pri');
-  $('zSpot').classList.remove('pri'); draw() };
+  $('zSpot').classList.remove('pri'); $('zSky').classList.remove('pri'); draw() };
 $('zSpot').onclick=()=>{ zdraft=null; zmode=zmode==='spot'?'':'spot';
   $('zSpot').classList.toggle('pri',zmode==='spot');
-  $('zFloor').classList.remove('pri'); $('zKeep').classList.remove('pri'); draw() };
+  $('zFloor').classList.remove('pri'); $('zKeep').classList.remove('pri');
+  $('zSky').classList.remove('pri'); draw() };
 $('zKeep').onclick=()=>{ zdraft=null; zmode=zmode==='keepout'?'':'keepout';
-  $('zKeep').classList.toggle('pri',zmode==='keepout'); $('zFloor').classList.remove('pri'); draw() };
+  $('zKeep').classList.toggle('pri',zmode==='keepout'); $('zFloor').classList.remove('pri');
+  $('zSpot').classList.remove('pri'); $('zSky').classList.remove('pri'); draw() };
+$('zSky').onclick=()=>{ zdraft=null; zmode=zmode==='sky'?'':'sky';
+  $('zSky').classList.toggle('pri',zmode==='sky'); $('zFloor').classList.remove('pri');
+  $('zKeep').classList.remove('pri'); $('zSpot').classList.remove('pri'); draw() };
 // One sweep for the DRAWINGS: if anything is visible, hide them all; else show them all.
 // The zones keep working either way - this is the eye, applied to everything at once.
 $('zShowAll').onclick=()=>{
@@ -1743,17 +1777,20 @@ function draw(){
     ctx.beginPath();
     z.pts.forEach((p,i)=>i?ctx.lineTo(p[0]*Z,p[1]*Z):ctx.moveTo(p[0]*Z,p[1]*Z));
     ctx.closePath();
-    const walk=z.kind==='floor', spot=z.kind==='spot';
-    ctx.fillStyle=walk?'rgba(60,180,90,0.15)':spot?areaColor(z,0.16):'rgba(240,130,30,0.20)';
+    const walk=z.kind==='floor', spot=z.kind==='spot', sky=z.kind==='sky';
+    ctx.fillStyle=walk?'rgba(60,180,90,0.15)':spot?areaColor(z,0.16)
+                 :sky?'rgba(90,160,235,0.10)':'rgba(240,130,30,0.20)';
     ctx.fill();
-    ctx.strokeStyle=walk?'rgba(60,180,90,0.9)':spot?areaColor(z,0.9):'rgba(240,130,30,0.9)';
+    ctx.strokeStyle=walk?'rgba(60,180,90,0.9)':spot?areaColor(z,0.9)
+                   :sky?'rgba(90,160,235,0.9)':'rgba(240,130,30,0.9)';
     ctx.lineWidth=2; ctx.setLineDash([6,4]); ctx.stroke(); ctx.setLineDash([]);
     if(!simOn && showGhosts){
       const cx=z.pts.reduce((t,p)=>t+p[0],0)/z.pts.length,
             cy=z.pts.reduce((t,p)=>t+p[1],0)/z.pts.length;
-      ctx.fillStyle=walk?'rgba(60,180,90,1)':spot?areaColor(z,1):'rgba(240,130,30,1)';
+      ctx.fillStyle=walk?'rgba(60,180,90,1)':spot?areaColor(z,1)
+                   :sky?'rgba(120,175,240,1)':'rgba(240,130,30,1)';
       ctx.font='700 '+(3.6*Z)+'px ui-sans-serif,system-ui'; ctx.textAlign='center';
-      ctx.fillText(z.name?z.name:(spot?areaLabel(z):walk?'walkable':'keep out'), cx*Z, cy*Z);
+      ctx.fillText(z.name?z.name:(spot?areaLabel(z):walk?'walkable':sky?'sky box':'keep out'), cx*Z, cy*Z);
       ctx.textAlign='left';
       if(z.on===false){ ctx.fillStyle='rgba(0,0,0,0.5)';
         ctx.fillText('(off)', cx*Z, (cy+5)*Z) }
@@ -1909,7 +1946,8 @@ function draw(){
   { const zs=scene.zones;
     const zHtml = zs.length
       ? zs.map((z,i)=>{ const nm=z.name?z.name+(z.kind==='spot'?' (Z'+z.spotId+')':'')
-          :z.kind==='floor'?'walkable':z.kind==='spot'?('Z'+z.spotId+' area'):'keep out';
+          :z.kind==='floor'?'walkable':z.kind==='spot'?('Z'+z.spotId+' area')
+          :z.kind==='sky'?'sky box':'keep out';
         return `<div class="anim ${i===zsel?'sel':''} ${z.on===false?'off':''}">
           <button class="mini" data-zon="${i}" style="${z.on!==false?
             'background:var(--accent);color:#fff;border-color:var(--accent)':'opacity:.55'}"
@@ -1920,7 +1958,7 @@ function draw(){
           <span style="width:11px;height:11px;border-radius:3px;flex:0 0 auto;
             background:${z.kind==='floor'?'rgba(60,180,90,.9)':z.kind==='spot'
               ?areaColor(z,.9):'rgba(240,130,30,.9)'}"
-            title="${z.kind==='floor'?'walkable floor':z.kind==='spot'?'activity area':'keep out'}"></span>
+            title="${z.kind==='floor'?'walkable floor':z.kind==='spot'?'activity area':z.kind==='sky'?'sky box - weather lives here':'keep out'}"></span>
           <span class="nm" data-z="${i}">${nm}</span>
           <button class="mini" data-zviz="${i}" style="padding:0 4px" title="${z.viz===false?'hidden - click to show':'hide the drawing - it still works, it is just not painted'}">${z.viz===false?'\u{1F648}':'\u{1F441}'}</button>
           <button class="mini" data-zren="${i}" title="name this shape">&#9998;</button>
@@ -2535,6 +2573,7 @@ $('fScene').onchange=async e=>{
   scene.zones=(s.zones||[]).map(z=>({kind:z.kind,pts:z.pts,spotId:z.spotId,
       name:z.name||undefined, on:z.on}))
     .concat((s.walkable||[]).map(w=>({kind:'floor',pts:w.pts})))
+    .concat((s.sky||[]).map(w=>({kind:'sky',pts:w.pts})))
     .concat((s.keepOut||[]).map(w=>({kind:'keepout',pts:w.pts})));
   if(s.character) scene.character={...s.character};
   $('room').value=room;
@@ -2646,6 +2685,7 @@ function forDevice(){
       oid:o.oid, hidden:!!o.hidden||undefined, locked:!!o.locked||undefined,
       walkOver:!!o.walkOver||undefined})),
     walkable: scene.zones.filter(z=>z.kind==='floor'&&z.on!==false).map(z=>({pts:z.pts})),
+    sky:      scene.zones.filter(z=>z.kind==='sky'&&z.on!==false).map(z=>({pts:z.pts})),
     zones: scene.zones.filter(z=>z.kind==='spot').map(z=>({kind:'spot',spotId:z.spotId,
       name:z.name||null, pts:z.pts, on:z.on!==false})),
     light:  {timeOfDay:hhmm(todMin), lamps:lampMode, lightScale:+lightScale.toFixed(2),
@@ -2854,7 +2894,47 @@ const PakLib=(()=>{
     });
     return buf;
   }
-  return {parse, encodeSprite, build};
+  // a ROOM: the device's palettised format (fmt=1) - convert_assets.ps1's ConvertRoom,
+  // ported. 320x240 comes down to 240x180 by CENTRE POINT-SAMPLE, never averaging:
+  // averaging invents a new colour at every edge and blows the 256-colour palette.
+  function encodeRoom(img){
+    const SW=320,SH=240,DW=240,DH=180;
+    const c=document.createElement('canvas'); c.width=SW; c.height=SH;
+    const g=c.getContext('2d',{willReadFrequently:true}); g.imageSmoothingEnabled=false;
+    g.drawImage(img,0,0,SW,SH);
+    const px=g.getImageData(0,0,SW,SH).data;
+    const pal=[], map=new Map(), idx=new Uint8Array(DW*DH);
+    for(let dy=0;dy<DH;dy++){
+      const sy0=Math.floor(dy*SH/DH); let sy1=Math.floor((dy+1)*SH/DH); if(sy1<=sy0)sy1=sy0+1;
+      const cy=Math.min(SH-1,(sy0+sy1)>>1);
+      for(let dx=0;dx<DW;dx++){
+        const sx0=Math.floor(dx*SW/DW); let sx1=Math.floor((dx+1)*SW/DW); if(sx1<=sx0)sx1=sx0+1;
+        const cx=Math.min(SW-1,(sx0+sx1)>>1);
+        const o=(cy*SW+cx)*4, v=to565(px[o],px[o+1],px[o+2]);
+        let i=map.get(v);
+        if(i===undefined){
+          if(pal.length<256){ i=pal.length; pal.push(v); map.set(v,i); }
+          else{
+            // palette overflow: nearest existing entry, the converter's own fallback
+            const r1=(v>>11)&31,g1=(v>>5)&63,b1=v&31; let best=0,bd=1e9;
+            for(let j=0;j<pal.length;j++){
+              const p2=pal[j],r2=(p2>>11)&31,g2=(p2>>5)&63,b2=p2&31;
+              const d=(r1-r2)*(r1-r2)*4+(g1-g2)*(g1-g2)+(b1-b2)*(b1-b2)*4;
+              if(d<bd){bd=d;best=j}
+            }
+            i=best;
+          }
+        }
+        idx[dy*DW+dx]=i;
+      }
+    }
+    const data=new Uint8Array(2+pal.length*2+idx.length);
+    data[0]=pal.length&255; data[1]=(pal.length>>8)&255;
+    for(let j=0;j<pal.length;j++){ data[2+j*2]=pal[j]&255; data[3+j*2]=(pal[j]>>8)&255; }
+    data.set(idx,2+pal.length*2);
+    return {origW:DW,origH:DH,w:DW,h:DH,offX:0,offY:0,fmt:1,data};
+  }
+  return {parse, encodeSprite, encodeRoom, build};
 })();
 
 // slug + key, the same rules the PC port uses: canim/<slug> fits the pak's 31, c_<slug>
@@ -2949,6 +3029,12 @@ function deviceScene(animPlan){
   else env.cn=0;
   env.rw=raining?1:0;
   if(Math.round(lightScale*100)!==100) env.ls=Math.round(lightScale*100);
+  {const ab=authoredSky();
+   if(ab){
+     const pts=ab.poly.length<=12?ab.poly
+       :ab.poly.filter((_,i)=>i%Math.ceil(ab.poly.length/12)===0).slice(0,12);
+     env.sp=[]; for(const q of pts){env.sp.push(Math.round(q[0]),Math.round(q[1]))}
+   }}
   out.env=env;
   if(travelScale>0) out.ts=+travelScale.toFixed(3);   // the master dial, for the device's walker
   return out;
@@ -3040,6 +3126,15 @@ async function buildPortPayload(setB){
       if(!d||newEntries.some(e=>e.name===nm)) continue;
       const im=imgs['prop|'+o.object]; if(!im) continue;
       const e=PakLib.encodeSprite(imageDataOf(im, d.w, d.h)); e.name=nm; newEntries.push(e);
+    }
+    // the ROOM travels too (Jon: "custom rooms don't carry - they need to"). Every port
+    // carries the scene's room in the device's own palettised format, so a room the unit
+    // has never seen - a fresh generation, a public repo addition, a painted one - just
+    // works. Same-name replacement makes this a no-op when the art is already there.
+    if(scene.room && SD.rooms[scene.room]){
+      if(!imgs['room|'+scene.room]) await load(SD.rooms[scene.room],'room|'+scene.room);
+      const rim=imgs['room|'+scene.room];
+      if(rim){ const e=PakLib.encodeRoom(rim); e.name='rooms/room-'+scene.room; newEntries.push(e); }
     }
     const dev=deviceScene(plan);
     const body=JSON.stringify(dev);

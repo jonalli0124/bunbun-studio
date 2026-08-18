@@ -23,7 +23,7 @@ existing art is refused rather than silently merged (the Rug lesson).
 import io, pathlib, re, subprocess, sys
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
-WEB = REPO / "pak-factory" / "assets"
+WEB = pathlib.Path("C:/Users/Jon/Downloads/bunbun_web_test/assets")
 
 
 def clean(name):

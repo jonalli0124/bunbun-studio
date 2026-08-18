@@ -223,13 +223,20 @@ struct SceneEnv {
   int16_t cloudT;    // style index, 0 = the shipped table
   int16_t rainW;     // 0 never, 1 shipped cadence, 2 often, 3 very often;  -1 = said nothing
   int16_t lightS;    // light throw, percent  30..220
+  // The authored weather box (Jon 8/18: "you draw a box where they occur").  Device px,
+  // 240x180 space; skyW <= 0 = not authored, keep the window-detection heuristics.
+  int16_t skyX, skyY, skyW, skyH;
 };
 // the scene's travel-size dial: the species pak is baked at a fixed 0.5 of the source art
 // (quality base), and walking is scaled by (ts / 0.5) at draw time - so the assembler's
 // master dial reaches the device without rebaking a single frame
 static float g_scTravel = 0;         // 0 = the scene said nothing
-static const SceneEnv SCENE_ENV_DEFAULT = { -1, 100, 100, 60, 0, -1, 100 };
+static const SceneEnv SCENE_ENV_DEFAULT = { -1, 100, 100, 60, 0, -1, 100, 0, 0, 0, 0 };
 static SceneEnv g_scEnv     = SCENE_ENV_DEFAULT;
+// the sky POLYGON ("they need to be polygons"): weather clips to the drawn shape;
+// the bbox in g_scEnv.sky* only bounds cloud drift and the row gate
+static int16_t g_scSkyPts[12][2];
+static uint8_t g_scSkyN = 0;
 static bool     g_scHasEnv  = false;
 
 static bool sceneLoad();
@@ -277,6 +284,7 @@ static bool sceneLoad() {
   bcMark(17);        // BC_SCENELOAD — the malloc + cJSON parse, which runs in the render path
   g_scOK = false; g_scPropN = 0; g_scBlockN = 0; g_scHasBounds = false; g_scName[0] = 0;
   g_scEnv = SCENE_ENV_DEFAULT; g_scHasEnv = false; g_scCatN = 0; g_scFloorN = 0;
+  g_scSkyN = 0;
   g_scRoom[0] = 0;      // the one field this used to forget, leaving a stale room across retries
   g_scLooseN = 0; g_scPerchN = 0; g_scBunN = 0; g_scLampN = 0; g_scAnimN = 0; g_scNoGoN = 0;
   g_scTravel = 0;
@@ -575,6 +583,42 @@ static bool sceneLoad() {
     g_scEnv.cloudT = sceneEnvInt(ev, "ct",  0, SCENE_CLOUD_STYLES - 1,  0);
     g_scEnv.rainW  = sceneEnvInt(ev, "rw",  0, 3,                      -1);
     g_scEnv.lightS = sceneEnvInt(ev, "ls", 30, 220,                   100);
+    const cJSON *sp = cJSON_GetObjectItem(ev, "sp");   // the drawn sky POLYGON, flat x,y pairs
+    if (cJSON_IsArray(sp)) {
+      int np = cJSON_GetArraySize(sp) / 2;
+      if (np > 12) np = 12;
+      int minx = 240, miny = 180, maxx = 0, maxy = 0;
+      g_scSkyN = 0;
+      for (int i = 0; i < np; i++) {
+        int px = (int)cJSON_GetNumberValue(cJSON_GetArrayItem(sp, i * 2));
+        int py = (int)cJSON_GetNumberValue(cJSON_GetArrayItem(sp, i * 2 + 1));
+        if (px < 0) px = 0; if (px > 239) px = 239;
+        if (py < 0) py = 0; if (py > 179) py = 179;
+        g_scSkyPts[g_scSkyN][0] = (int16_t)px; g_scSkyPts[g_scSkyN][1] = (int16_t)py;
+        g_scSkyN++;
+        if (px < minx) minx = px; if (px > maxx) maxx = px;
+        if (py < miny) miny = py; if (py > maxy) maxy = py;
+      }
+      if (g_scSkyN >= 3 && maxx - minx >= 8 && maxy - miny >= 8) {
+        g_scEnv.skyX = (int16_t)minx; g_scEnv.skyY = (int16_t)miny;
+        g_scEnv.skyW = (int16_t)(maxx - minx + 1); g_scEnv.skyH = (int16_t)(maxy - miny + 1);
+      } else g_scSkyN = 0;
+    }
+    const cJSON *sb = cJSON_GetObjectItem(ev, "sb");   // [x, y, w, h] - the drawn sky box
+    if (cJSON_IsArray(sb) && cJSON_GetArraySize(sb) == 4) {
+      int bx = (int)cJSON_GetNumberValue(cJSON_GetArrayItem(sb, 0));
+      int by = (int)cJSON_GetNumberValue(cJSON_GetArrayItem(sb, 1));
+      int bw = (int)cJSON_GetNumberValue(cJSON_GetArrayItem(sb, 2));
+      int bh = (int)cJSON_GetNumberValue(cJSON_GetArrayItem(sb, 3));
+      if (bx < 0) bx = 0; if (by < 0) by = 0;
+      if (bx > 239) bx = 239; if (by > 179) by = 179;
+      if (bx + bw > 240) bw = 240 - bx;
+      if (by + bh > 180) bh = 180 - by;
+      if (bw >= 8 && bh >= 8) {
+        g_scEnv.skyX = (int16_t)bx; g_scEnv.skyY = (int16_t)by;
+        g_scEnv.skyW = (int16_t)bw; g_scEnv.skyH = (int16_t)bh;
+      }
+    }
     g_scHasEnv = true;
   }
 

@@ -160,7 +160,7 @@ skin #659a3a + #33652b, tunic/onesie #a456ab + #6e3082, belly/jaw #d3db74 + #b29
 swaps as a PAIR; fixed #000000 outline. Accents: tooth-white #fcfefc (0.10%), mouth-pink
 #e66183/#8f0b46 (eat/angry open jaw). Base<->base distances 123-145.
 
-## Defect fixes 2026-08-17 (the owner's report: two tails on idle back views; crawl E/W nose+tail clipped)
+## Defect fixes 2026-08-17 (Jon's report: two tails on idle back views; crawl E/W nose+tail clipped)
 
 ### Adult idle back views — roll 1: v1 prompt verbatim + tail cue, plain v3 create_character — [FAIL]
 

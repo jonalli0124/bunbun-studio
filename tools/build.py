@@ -94,7 +94,7 @@ if "--serve" in sys.argv:
                     self.send_error(400, "no ip")
                     return
                 data = urllib.request.urlopen(f"http://{ip}/api/ota/assets", timeout=60).read()
-                vault = pathlib.Path(__file__).resolve().parent.parent / "pak-archive"
+                vault = pathlib.Path(r"C:/Users/Jon/bunbun-dr/pak-archive")
                 vault.mkdir(parents=True, exist_ok=True)
                 stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
                 out = vault / f"bunbun-{ip.replace('.', '-')}-{stamp}.pak"

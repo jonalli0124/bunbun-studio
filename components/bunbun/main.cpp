@@ -383,6 +383,11 @@ static bool g_isOutside[256];      // sky + clouds + the hills seen through the 
 static int  g_dimApplied = -1;     // cache key for the dimmed palette; -1 forces a rebuild
 static int  g_skyX0, g_skyX1, g_skyY0, g_skyY1;
 static bool g_haveSky = false;
+// The authored weather box overrides the detected window: clouds and rain live exactly
+// where the kid drew the box, palette be damned (sunset skies are not blue, and outdoor
+// rooms have no window for the heuristics to find).
+static bool g_skyAuthored = false;
+static void applySceneSkyBox();
 static int  g_skyR = 12, g_skyG = 40, g_skyB = 28;   // average daytime glass colour, RGB565 components
 static int  g_perchX = 0, g_perchY = 0;              // centre of the bottom-right pane
 // Per-pixel "this is glass" mask. The HTML draws its visitor into a sky buffer and masks the
@@ -489,6 +494,7 @@ static bool roomLoad(const char *n) {
     }
   }
   g_haveSky = (g_skyX1 > g_skyX0 && g_skyY1 > g_skyY0);
+  applySceneSkyBox();   // an authored box outranks whatever the detection just decided
 
   // GROW the glass vertically with a much looser test, row by row from known glass.
   //
@@ -717,9 +723,46 @@ static bool  g_cloudSceneDone = false;
 // The scene's sky, applied once it turns up. Deliberately lazy rather than done at boot: SPIFFS is
 // mounted by the host component and sceneEnsure() keeps retrying for as long as it takes (see the
 // 6D1C note in scene.h), so the scene can arrive minutes after the first frame.
+static bool g_skyBoxMasked = false;   // room art occludes inside the box (window frames)
+// even-odd point-in-polygon against the scene's sky shape; with no polygon (bbox-only
+// scenes) everything inside the bbox counts
+static bool skyPolyHit(int x, int y) {
+  if (g_scSkyN < 3) return true;
+  bool in = false;
+  for (int i = 0, j = g_scSkyN - 1; i < g_scSkyN; j = i++) {
+    int yi = g_scSkyPts[i][1], yj = g_scSkyPts[j][1];
+    if ((yi > y) == (yj > y)) continue;
+    float xx = g_scSkyPts[i][0] +
+               (float)(g_scSkyPts[j][0] - g_scSkyPts[i][0]) * (y - yi) / (float)(yj - yi);
+    if (x < xx) in = !in;
+  }
+  return in;
+}
+static void applySceneSkyBox() {
+  const SceneEnv *e = sceneEnv();
+  if (!e || e->skyW <= 0) { g_skyAuthored = false; return; }
+  g_skyX0 = e->skyX; g_skyX1 = e->skyX + e->skyW - 1;
+  g_skyY0 = e->skyY; g_skyY1 = e->skyY + e->skyH - 1;
+  g_haveSky = true; g_skyAuthored = true;
+  // Jon 8/18: "can they occur behind the scene? like in case there is a window frame?"
+  // If ANY pixel inside the box classifies as sky, the room's own art keeps occluding
+  // (frames, curtains, trees win). If none does - a sunset the classifier cannot see -
+  // the box wins raw. Decided once per room+box, not per frame.
+  g_skyBoxMasked = false;
+  if (g_roomPix && g_roomW) {
+    static uint8_t row[240];
+    for (int y = g_skyY0; y <= g_skyY1 && !g_skyBoxMasked; y++) {
+      pakRead(g_roomPix + (uint32_t)y * g_roomW, row, g_roomW);
+      for (int x = g_skyX0; x <= g_skyX1; x++)
+        if (g_isSky[row[x]] && skyPolyHit(x, y)) { g_skyBoxMasked = true; break; }
+    }
+  }
+}
+
 static void cloudsApplyScene() {
   const SceneEnv *e = sceneEnv();
   if (!e) return;
+  applySceneSkyBox();
   const Cloud *base = CLOUD_STYLE_TAB[constrain((int)e->cloudT, 0, SCENE_CLOUD_STYLES - 1)];
   int n = (e->cloudN >= 0) ? e->cloudN : 3;
   if (n > SCENE_MAX_CLOUDS) n = SCENE_MAX_CLOUDS;
@@ -5291,7 +5334,11 @@ static void drawRain(const uint8_t *rowIdx, uint16_t *d, int ay) {
     if ((int)g_drops[i].y != ay) continue;
     int x = (int)g_drops[i].x;
     if (x < 0 || x >= UI_W) continue;
-    if (!g_isSky[rowIdx[x]]) continue;
+    if (g_skyAuthored) {
+      if (x < g_skyX0 || x > g_skyX1) continue;
+      if (!skyPolyHit(x, ay)) continue;
+      if (g_skyBoxMasked && !g_isSky[rowIdx[x]]) continue;      // frames occlude
+    } else if (!g_isSky[rowIdx[x]]) continue;
     uint16_t v = d[x];
     int r = ((v >> 11) & 0x1F), g = ((v >> 5) & 0x3F), b = (v & 0x1F);
     r += (24 - r) / 2; g += (48 - g) / 2; b += (31 - b) / 2;
@@ -6249,14 +6296,12 @@ static void updateBird(float dt) {
     // with no idea the other existed, so a visit and a visitor at the same moment sent him off
     // to a third place and neither arrival test ever fired. Jon: "if pet and watch the
     // bird/firefly happen at the same time ... walking into the back wall and in random places".
-    if (!g_birdReacted && g_birdT >= g_birdNotice && !g_action && alive() && S.lights && !S.sick
-        && !(catHere() && g_catPetted)) {
-      g_birdReacted = true;
-      windowWatchSpot(&g_tx, &g_ty); g_visit = -1;
-      clampErrandToFloor(&g_tx, &g_ty);
-      g_tripLen = sqrtf((g_tx - g_fx) * (g_tx - g_fx) + (g_ty - g_fy) * (g_ty - g_fy));
-      g_crawling = !babyCanStand(); g_crawlFrac = babyCanStand() ? 2 : 0;
-    }
+    // RETIRED (Jon 8/18: "let's get rid of the turn and look at the bird or firefly").
+    // The visitor still lands in the glass as ambience; the pet no longer breaks off
+    // whatever he is doing to walk over and stare. In authored scenes the sim owns his
+    // time, and outdoor rooms have no window for the watch-spot heuristics to find —
+    // the walk-to-the-window beat only made sense in the original indoor rooms.
+    (void)g_birdNotice; (void)g_birdReacted; (void)windowWatchSpot;
     if ((g_birdLeaveAt && millis() >= g_birdLeaveAt) || g_birdT > 20) {
       g_birdPhase = 3; g_birdT = 0;
     }
@@ -6705,7 +6750,11 @@ static void composeRoom(int fx, int fy, float sc, int lampOn, bool cloudLit, flo
           int half = (int)(cl.w * sqrtf(max(0.0f, 1.0f - dy2 * dy2)));
           for (int x = (int)cl.x - half; x <= (int)cl.x + half; x++) {
             if (x < 0 || x >= UI_W) continue;
-            if (!g_isSky[s[x]]) continue;
+            if (g_skyAuthored) {
+              if (x < g_skyX0 || x > g_skyX1) continue;
+              if (!skyPolyHit(x, ay)) continue;
+              if (g_skyBoxMasked && !g_isSky[s[x]]) continue;   // frames occlude
+            } else if (!g_isSky[s[x]]) continue;
             uint16_t v = d[x];
             int r = ((v >> 11) & 0x1F), g = ((v >> 5) & 0x3F), b = (v & 0x1F);
             // white by day (storm-grey in rain), dark grey after dark — brightening toward
