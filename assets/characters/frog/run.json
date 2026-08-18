@@ -1,0 +1,51 @@
+{
+ "species": "frog",
+ "display": "Frog",
+ "started": "2026-08-18",
+ "status": "PACK COMPLETE (adult-only) \u2014 self-reviewed; owner-approved base",
+ "base_character": "f0329005-4477-4d5c-ac13-8de844e4dda5 (Frog overalls v2 \u2014 owner keeper)",
+ "states": {
+  "Adult_Sit": "f163aacd-e833-42bb-b55a-7dbfdcd9d8d0",
+  "Adult_Sleep": "24366aab-73eb-4198-9dff-cfa21001162a (override 120)"
+ },
+ "install": {
+  "feet_line": 89,
+  "anchor_pair_swap": {
+   "garment_base": "-> #9151d3",
+   "garment_shade": "-> #5d229d"
+  },
+  "palette_top": {
+   "#7cb64a": 143411,
+   "#000000": 90052,
+   "#9151d3": 63843,
+   "#3f7f2f": 2779,
+   "#5d229d": 1259,
+   "#a09ba8": 574,
+   "#2a2241": 295,
+   "#ffffff": 248
+  },
+  "west_mirror": "Adult_Walk_West = horizontal flip of cleaned Adult_Walk_East"
+ },
+ "needs_jon": [
+  "Sleep reads as a reclined doze (leaning back, legs out) rather than a side-curl \u2014 a frog cannot curl like a mammal; not chased",
+  "Eye glints (small white dots in the eye bumps) are part of the kept base",
+  "Emotion clips move less than other species (frog body is a single mass); faces carry the mood"
+ ],
+ "clips": {
+  "Adult_Angry": 7,
+  "Adult_Bathe": 7,
+  "Adult_Bored": 7,
+  "Adult_Eat": 7,
+  "Adult_Happy": 7,
+  "Adult_Hungry": 7,
+  "Adult_Idle": 8,
+  "Adult_Love": 7,
+  "Adult_Pickup": 7,
+  "Adult_Sick": 7,
+  "Adult_Sit": 8,
+  "Adult_Sleep": 8,
+  "Adult_Tired": 7,
+  "Adult_Walk_East": 7,
+  "Adult_Walk_West": 7
+ }
+}

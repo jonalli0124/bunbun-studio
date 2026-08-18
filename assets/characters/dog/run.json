@@ -1,0 +1,54 @@
+{
+ "species": "dog",
+ "display": "Dog",
+ "started": "2026-08-18",
+ "status": "PACK COMPLETE (adult-only) \u2014 self-reviewed; owner-approved base",
+ "base_character": "3df87269-0d8f-4a92-a104-2d2e66d9921c (Dog overalls roll 1 \u2014 owner keeper)",
+ "state_source": "21244f11-9d54-4e4c-a128-6d26888f8982 (Dog state source \u2014 v3 reference re-roll of the keeper's south; built because the keeper's stored rotations 404 server-side; KEEP for future dog states)",
+ "states": {
+  "Adult_Sit": "2dec732d (roll 3; rolls 1-2 infra-failed on rotation 404s)",
+  "Adult_Sleep": "fc80a340 (roll 3, override 120)"
+ },
+ "install": {
+  "feet_line": 91,
+  "pc_side_repairs": [
+   "96px raw frames shifted down so idle feet land at 90-91 (raw at 87-89)",
+   "Adult_Sit: grey drop-shadow ellipses scrubbed deterministically (dog has no grey regions, so grey = shadow)",
+   "Adult_Pickup frame 06: 81px detached tail fragment removed (connected-component rule)"
+  ],
+  "anchor_pair_swap": {
+   "garment_base": "-> #9151d3",
+   "garment_shade": "-> #5d229d"
+  },
+  "palette": {
+   "fur": "#ca9656 + #a26733 (pair)",
+   "garment": "#9151d3 + #5d229d (anchor pair; shade only ~5% of garment px \u2014 flat overalls, pair still swaps)",
+   "outline": "#000000",
+   "accents": "#632d18 ear/nose dark, #f3c67b highlight"
+  },
+  "west_mirror": "Adult_Walk_West = horizontal flip of cleaned Adult_Walk_East"
+ },
+ "hands_check": "TAILED SPECIES check done on every clip: Pickup roll 1 FAILED (tail in hand, owner catch) \u2014 re-rolled clean; Love roll 1 FAILED (tail cradled in arms) \u2014 re-rolled clean; Bored passes with the tail sweeping in front of the legs but never held; all others clean.",
+ "needs_jon": [
+  "Sleep NE/N-ish views lean sit-asleep (same as the croc's shipped flag; 5/8 properly lying)",
+  "Sit/Sleep derive from the state-source re-roll, not the keeper directly (identity matched by eye; forced by the keeper's server-side rotation 404s)",
+  "Bored tail sweep in frames 4-6 flagged for taste"
+ ],
+ "clips": {
+  "Adult_Angry": 7,
+  "Adult_Bathe": 7,
+  "Adult_Bored": 7,
+  "Adult_Eat": 7,
+  "Adult_Happy": 7,
+  "Adult_Hungry": 7,
+  "Adult_Idle": 8,
+  "Adult_Love": 7,
+  "Adult_Pickup": 7,
+  "Adult_Sick": 7,
+  "Adult_Sit": 8,
+  "Adult_Sleep": 8,
+  "Adult_Tired": 7,
+  "Adult_Walk_East": 7,
+  "Adult_Walk_West": 7
+ }
+}

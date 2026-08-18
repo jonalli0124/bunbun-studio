@@ -35,3 +35,19 @@ pockets), eye dots carry white glints. Mouth improved vs tunic roll but still wi
 
 ### Overalls roll 2 — strict garment clause — character f0329005-4477-4d5c-ac13-8de844e4dda5 ("Frog overalls v2"), 3 gens — [PENDING]
 After: Wearing plain bright purple overalls with a square bib and two shoulder straps, no pockets, no buttons, no shirt underneath, bare arms and shoulders.
+
+## OWNER SIGN-OFF 2026-08-18 (curated in PixelLab): KEEPER = f0329005 "Frog overalls v2"
+(the strict-clause roll; its bib pocket and eye glints are ratified by the keep)
+
+## Phase 2 on the keeper — croc/canonical prompts, species word "frog"
+
+- Adult_Sit state f163aacd (96px) · Adult_Sleep state 24366aab (override 120x120)
+- Adult_Walk east group bb878aa9 (west mirrored at install)
+- Adult_Eat fe27d92e · Adult_Bathe 8c992842 · Adult_Pickup 1af713ea
+- Adult_Angry c2ef1f0d · Adult_Sick 748c2431 · Adult_Bored fc98c8f5 · Adult_Tired c7f91051
+- Adult_Love f2b45e2b · Adult_Hungry 67e10182 · Adult_Happy 1710ddc1
+
+## PACK COMPLETE 2026-08-18 — installed to assets/characters/frog in the croc layout
+(clean --dist 70 --keep-outline --norm 96; garment pair-swapped to #9151d3/#5d229d at
+install; Adult_Walk_West mirrored from the cleaned east). Verified by rendering and
+looking; details and flags in run.json.

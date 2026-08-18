@@ -1,0 +1,9 @@
+{
+  "id": "frog",
+  "display": "Frog",
+  "inherit": "none",
+  "can_hold": true,
+  "space": "untrimmed",
+  "anchor_mode": "object-topleft",
+  "attach": {}
+}

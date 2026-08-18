@@ -184,3 +184,8 @@ below on the keeper.
 ## Install-time normalization (owner order): the garment base+shade pair is remapped to
 ## EXACTLY #9151d3 / #5d229d at install (pair-swap, never flattened). No anchor purples
 ## exist in any keeper's raw output — this is the deterministic fix, not a prompt job.
+
+## PACK COMPLETE 2026-08-18 — installed to assets/characters/bunny in the croc layout
+(clean --dist 70 --keep-outline --norm 96; garment pair-swapped to #9151d3/#5d229d at
+install; Adult_Walk_West mirrored from the cleaned east). Verified by rendering and
+looking; details and flags in run.json.

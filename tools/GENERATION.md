@@ -128,3 +128,10 @@ durations and ticker lines make it a shift. The device plays it like anything el
   pixel audit found ZERO anchor purples in any kept base. At install, the garment's
   base+shade pair is remapped to exactly #9151d3/#5d229d (pairs, never flattened; fur and
   everything else untouched). Prompts only need to land NEAR purple.
+
+- **TAILED SPECIES get a hands-check on EVERY animation before install** (owner, after the
+  dog's pickup came back with its tail in its hand — the second tail-in-hand strike after
+  the bunny base; it is a pattern, not a fluke). At 4x, look specifically at BOTH hands in
+  every frame for tail intrusions. Applies to dog, cat, and any future tailed species
+  (fox, etc.); penguin and frog are exempt. The cure order: re-roll the same verbatim
+  prompt (never naming the tail) -> inpaint the tail out -> reference-frame regeneration.

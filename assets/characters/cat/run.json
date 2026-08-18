@@ -1,0 +1,54 @@
+{
+ "species": "cat",
+ "display": "Cat",
+ "started": "2026-08-18",
+ "status": "PACK COMPLETE (adult-only) \u2014 self-reviewed; owner-approved base",
+ "order": "2026-08-18 adult-only five-pack run; the cat also skins the visiting cat",
+ "base_character": "8b8523bf-d5d1-43cd-bd5d-8c3c42f3cd4c (Cat overalls roll 1 \u2014 owner keeper; stripes/whiskers/smile/bib pocket ratified)",
+ "states": {
+  "Adult_Sit": "71a72048-24f1-4e57-bebd-1159121b1c40",
+  "Adult_Sleep": "ffe79ecd-32d7-4d21-8558-bb0394a4aeef (override 120)"
+ },
+ "install": {
+  "clean": "py tools/clean_sprite.py keeper clean --dist 70 --keep-outline --norm 96 --report",
+  "feet_line": 90,
+  "pc_side_repairs": [
+   "all 96px raw frames shifted down 5px pre-clean so the species feet line lands at 90 (raw came back at 85; croc=90/capy=89/bunny=92 \u2014 a 5px float on species switch was visible)"
+  ],
+  "anchor_pair_swap": {
+   "garment_base": "#6d4e95-family -> #9151d3",
+   "garment_shade": "-> #5d229d"
+  },
+  "palette": {
+   "fur": "#ee7809 + #b94508 (pair, stripes ride the shade)",
+   "garment": "#9151d3 + #5d229d (anchor pair)",
+   "outline": "#000000",
+   "accents": "#661401 stripe-dark/nose, #fcfdfc eye glint + whiskers, #e21134 tongue (33px)"
+  },
+  "west_mirror": "Adult_Walk_West = horizontal flip of cleaned Adult_Walk_East"
+ },
+ "needs_jon": [
+  "Adult_Play stored 6 frames (all other clips 7) \u2014 full batting cycle, plays fine",
+  "Hungry gives the eyes white rims (wide-open look) \u2014 expressive-face vocabulary, flag only",
+  "Idle/Sit north views drape the tail over one shoulder \u2014 kept from the approved base",
+  "Sleep keeps open dot eyes (same flag as croc/bunny)"
+ ],
+ "clips": {
+  "Adult_Angry": 7,
+  "Adult_Bathe": 7,
+  "Adult_Bored": 7,
+  "Adult_Eat": 7,
+  "Adult_Happy": 7,
+  "Adult_Hungry": 7,
+  "Adult_Idle": 8,
+  "Adult_Love": 7,
+  "Adult_Pickup": 7,
+  "Adult_Play": 6,
+  "Adult_Sick": 7,
+  "Adult_Sit": 8,
+  "Adult_Sleep": 8,
+  "Adult_Tired": 7,
+  "Adult_Walk_East": 7,
+  "Adult_Walk_West": 7
+ }
+}

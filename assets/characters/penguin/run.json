@@ -1,0 +1,51 @@
+{
+ "species": "penguin",
+ "display": "Penguin",
+ "started": "2026-08-18",
+ "status": "PACK COMPLETE (adult-only) \u2014 self-reviewed; owner-approved base",
+ "base_character": "e78bfb0e-2b45-4fad-89c5-f9a1239d8b15 (Penguin overalls v2 \u2014 owner keeper; pocket, seat puff, cream belly + orange chest band, gloss shading all ratified)",
+ "states": {
+  "Adult_Sit": "f653d9dd (roll 3 \u2014 roll 1 infra-failed HTTP 500, roll 2 undressed the penguin; garment stability clause added)",
+  "Adult_Sleep": "895749ea (override 120)"
+ },
+ "install": {
+  "feet_line": 91,
+  "pc_side_repairs": [
+   "96px raw frames shifted down so idle feet land at 90-91 (raw came back at 87-88)"
+  ],
+  "anchor_pair_swap": {
+   "garment_base": "mauve -> #9151d3",
+   "garment_shade": "-> #5d229d"
+  },
+  "palette": {
+   "feathers": "#2b2d50 (+ #a6aab0 flipper-edge grey)",
+   "belly": "#f3f1dd",
+   "chest band + feet": "#e4ba65",
+   "garment": "#9151d3 + #5d229d (anchor pair)",
+   "outline": "#000000"
+  },
+  "west_mirror": "Adult_Walk_West = horizontal flip of cleaned Adult_Walk_East"
+ },
+ "needs_jon": [
+  "can_hold set FALSE (flippers cannot grip) \u2014 held objects will use the floor-beside fallback",
+  "Sleep is a hunched head-tucked ball (a real penguin sleep) rather than a side-curl; eyes open dots as with all packs",
+  "roll-2 bare-penguin sit kept in PixelLab as 07fb6782 (fallback, natural colours)"
+ ],
+ "clips": {
+  "Adult_Angry": 7,
+  "Adult_Bathe": 7,
+  "Adult_Bored": 7,
+  "Adult_Eat": 7,
+  "Adult_Happy": 7,
+  "Adult_Hungry": 7,
+  "Adult_Idle": 8,
+  "Adult_Love": 7,
+  "Adult_Pickup": 7,
+  "Adult_Sick": 7,
+  "Adult_Sit": 8,
+  "Adult_Sleep": 8,
+  "Adult_Tired": 7,
+  "Adult_Walk_East": 7,
+  "Adult_Walk_West": 7
+ }
+}

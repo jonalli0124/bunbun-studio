@@ -57,3 +57,8 @@ it gets the extra Adult_Play batting clip.
 The cat crouches down slightly with its rear swaying, wiggles briefly, then springs back up and playfully bats at the air in front of it with one front paw, swiping quickly downward several times while its tail swishes from side to side behind it, then settles back into its resting posture. Keep the face exactly identical to the source. Its purple outfit remains fixed in place. Empty hands, no props.
 ```
 (Per the naming-summons doctrine the prompt names no toy, ball or yarn.)
+
+## PACK COMPLETE 2026-08-18 — installed to assets/characters/cat in the croc layout
+(clean --dist 70 --keep-outline --norm 96; garment pair-swapped to #9151d3/#5d229d at
+install; Adult_Walk_West mirrored from the cleaned east). Verified by rendering and
+looking; details and flags in run.json.
