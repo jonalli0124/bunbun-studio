@@ -1,0 +1,58 @@
+{
+ "species": "bunny",
+ "display": "Bunny",
+ "started": "2026-08-18",
+ "status": "PACK COMPLETE (adult-only) \u2014 self-reviewed; owner-approved base",
+ "order": "2026-08-18 adult-only five-pack run (bunny, cat, dog, frog, penguin)",
+ "base_character": "bd380030-1a07-4d5e-8ed8-02faf3f27000 (Bunny fix ref \u2014 owner keeper, tunic mascot homage)",
+ "states": {
+  "Adult_Sit": "efc31306-0572-4053-bfd6-aa1d028dc29e",
+  "Adult_Sleep": "cae2a444-e97b-48c0-bb1e-edbcfb2e9236 (override 120)"
+ },
+ "generations_spent_estimate": {
+  "rejected_v1_lineage": 86,
+  "keeper_lineage": 73,
+  "note": "v1 lineage = tunic v1 char+2 states+14 anim dirs + overalls rolls; keeper = fix-ref char 2 + sit ~25 + sleep ~40 + 13 anim dirs; exact split read off balance deltas in the session report"
+ },
+ "install": {
+  "clean": "py tools/clean_sprite.py keeper clean --dist 70 --keep-outline --norm 96 --report",
+  "feet_line": 92,
+  "anchor_pair_swap": {
+   "garment_base": "#a765ce -> #9151d3",
+   "garment_shade": "#713da5 -> #5d229d"
+  },
+  "palette": {
+   "fur": "#dfe5e9 + #a5adb2 (pair)",
+   "garment": "#9151d3 + #5d229d (anchor pair)",
+   "outline": "#000000",
+   "accents": "#f37384 yawn-mouth pink (85px), grey strays ~1k px"
+  },
+  "west_mirror": "Adult_Walk_West = horizontal flip of cleaned Adult_Walk_East"
+ },
+ "pc_side_repairs": [
+  "Adult_Sit south-east/south-west: 94-row ink cannot sit on the feet-92 line in 96px; removed ONE interior leg row (outline preserved) per frame",
+  "Adult_Sleep south/east/west/south-west/south-east: trailing-ear curl up to 103px ink; removed 1-8 spaced interior columns through the flat tunic mass and recentred; all sleeps now \u226495px, no clipping, ears intact"
+ ],
+ "needs_jon": [
+  "Sleep keeps open dot eyes (same as the shipped croc adult sleep; not chased per the capybara 80-gen sleep trap)",
+  "Idle north view: tail puff sits ON the dress back (kept from the approved base)",
+  "clean palette carries ~1k px of grey strays (#676f71/#38393b) from state shading \u2014 visually invisible at 1:1"
+ ],
+ "clips": {
+  "Adult_Angry": 7,
+  "Adult_Bathe": 7,
+  "Adult_Bored": 7,
+  "Adult_Eat": 7,
+  "Adult_Happy": 7,
+  "Adult_Hungry": 7,
+  "Adult_Idle": 8,
+  "Adult_Love": 7,
+  "Adult_Pickup": 7,
+  "Adult_Sick": 7,
+  "Adult_Sit": 8,
+  "Adult_Sleep": 8,
+  "Adult_Tired": 7,
+  "Adult_Walk_East": 7,
+  "Adult_Walk_West": 7
+ }
+}

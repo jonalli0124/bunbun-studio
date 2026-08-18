@@ -1,0 +1,9 @@
+{
+  "id": "bunny",
+  "display": "Bunny",
+  "inherit": "none",
+  "can_hold": true,
+  "space": "untrimmed",
+  "anchor_mode": "object-topleft",
+  "attach": {}
+}
