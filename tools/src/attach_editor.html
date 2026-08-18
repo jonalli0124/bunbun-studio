@@ -1455,8 +1455,20 @@ function spec(){
                 x:p?+p[0].toFixed(1):null,y:p?+p[1].toFixed(1):null,
                 rotation:+spin(L,s).toFixed(1)}})})).filter(Boolean)};
 }
-const play=()=>{stopT();timer=setInterval(()=>{pos++;render()},1000/fps)};
-const stopT=()=>{if(timer){clearInterval(timer);timer=null}};
+// rAF-paced playback, not setInterval (Jon on his phone: "each time I tried to stop or
+// pause it didn't work"). A busy phone queues interval callbacks and then renders them
+// in a burst, so every tap waits behind the pile. rAF self-paces: a slow frame simply
+// skips ahead, the main thread breathes, and taps land.
+const play=()=>{stopT();
+  let last=performance.now(), acc=0;
+  const step=t=>{ if(!timer) return;
+    acc+=t-last; last=t;
+    const frame=1000/Math.max(1,fps);
+    if(acc>=frame){ pos+=Math.max(1,Math.floor(acc/frame)); acc%=frame; render(); }
+    timer.raf=requestAnimationFrame(step); };
+  timer={raf:requestAnimationFrame(step)};
+};
+const stopT=()=>{if(timer){if(timer.raf)cancelAnimationFrame(timer.raf);timer=null}};
 // everything a move applies to: the whole group when one exists, else the selected layer
 function moveSet(){
   if(multi.size) return [...multi].map(i=>stack[i]).filter(L=>L&&!L.char);
@@ -1725,10 +1737,14 @@ $('breathe').oninput=e=>{CH.breathe=+e.target.value;render()};
 $('pivot').onchange=e=>{CH.pivot=e.target.value;render()};
 $('period').oninput=e=>{CH.period=+e.target.value;render()};
 $('hold').oninput=e=>{CH.hold=+e.target.value;pos=0;render()};
-$('play').onclick=play; $('pause').onclick=stopT;
-$('stop').onclick=()=>{stopT();pos=0;render()};
-$('prev').onclick=()=>{stopT();const n=seqList().length;pos=(pos-1+n)%n;render()};
-$('next').onclick=()=>{stopT();pos++;render()};
+// the transport answers on POINTERDOWN - the first event a finger produces - so pause
+// lands even when the page is busy drawing; preventDefault suppresses the compat click.
+const tap=(id,fn)=>{ const el=$(id); el.onclick=fn;
+  el.addEventListener('pointerdown',e=>{ e.preventDefault(); fn() }, {passive:false}); };
+tap('play',play); tap('pause',stopT);
+tap('stop',()=>{stopT();pos=0;render()});
+tap('prev',()=>{stopT();const n=seqList().length;pos=(pos-1+n)%n;render()});
+tap('next',()=>{stopT();pos++;render()});
 $('ord_reset').onclick=()=>{resetOrder();render()};
 $('ord_rev').onclick=()=>{order.reverse();render()};
 $('ord_ping').onclick=()=>{const b=order.filter(o=>!o.skip);
