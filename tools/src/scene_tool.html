@@ -1650,7 +1650,13 @@ cv.addEventListener('pointerdown',e=>{
     if(pick.kind==='ghost'){
       asel=pick.i; osel=-1; zsel=-1; syncObj(); syncRule();
       if(pick.a.locked){ say(`"${pick.a.name}" is locked — the padlock in the list frees it`,true); }
-      else if(!pick.noDrag){
+      else if(pick.noDrag){
+        // an anywhere ghost refused the drag SILENTLY - the second kid in a row read that
+        // as broken ("so why cant i move the ghosts?"). Say what is true instead.
+        say(`"${pick.a.name}" happens anywhere he walks, so there is no spot to drag — `+
+            `change its tag on the right (only on things · pinned · in an area) to give it a place`,true);
+      }
+      else {
         pick.a.place=pick.a.place||{dx:0,dy:0};
         drag={anim:pick.a, dx:pick.a.place.dx-q.x, dy:pick.a.place.dy-q.y};
       }
