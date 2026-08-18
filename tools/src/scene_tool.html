@@ -1375,6 +1375,11 @@ function stepOnce(dt){
     const done = sim.a.dur>0 ? (sim.t>=sim.a.dur) : (loops>=2);
     if(done){
       sim.didSomething=true;
+      // An AUTHORED duration replaces the whole default - on the device the settle drops
+      // to his mood the moment the seconds run out ("its going longer than 5"), so the
+      // preview must not keep showing the clip through the 18-42s rest. Without a dur,
+      // the default stands: the animation stays up through its rest, both sides alike.
+      if(sim.a.dur>0) sim.perform=false;
       // He has finished using the thing. He may not LOITER where he is - sitting in the chair
       // put him inside its keep-out, and idling there is the one thing the zone forbids. So he
       // steps back out to somewhere he is allowed to linger, and idles there.
