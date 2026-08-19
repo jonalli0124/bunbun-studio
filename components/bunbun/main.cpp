@@ -3104,6 +3104,18 @@ static void think(float dt) {
     g_wanderT = 10.0f + (esp_random() % 1000) / 100.0f;   // settle for a good while after a visit
   }
 
+  // A SIDE ROOM IS FOR THE ERRAND, HOME IS FOR LIVING (Jon: "he is in the bathroom
+  // with no way home other than sleep"): free in a side room, nothing owed, minimum
+  // stay served - he walks home. The action-end and settle-end paths already do
+  // this, but a stay that ends in a wander had NO exit; this tick is the guarantee
+  // that no state whatsoever can strand him in a side room.
+  if (g_scCurRole != SCENE_ROLE_MAIN && !g_doorTrip && g_visit < 0 && g_tx < 0 &&
+      !g_action && !g_workUntil && g_workReps <= 0 && !g_sleepPending &&
+      g_pottySeq == 0 && millis() >= g_roomMinStay) {
+    sceneDoorTo(SCENE_ROLE_MAIN, "");
+    return;
+  }
+
   // a walk-to-bed that died (backstop, interruption) is re-issued the moment he is
   // free - g_sleepPending must never dangle with the lights still on
   if (g_sleepPending && g_tx < 0 && g_visit < 0 && !g_doorTrip && !g_action && S.lights) {
