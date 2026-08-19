@@ -1281,6 +1281,8 @@ typedef struct {
   const char  *display;   // ticker/menu name
   InheritClass inherit;
   bool         can_hold;  // false -> a held object goes on the floor beside him, never dropped
+  int8_t       carryDX;   // where a carried thing rides, relative to the classic
+  int8_t       carryDY;   // in-front-of-him point (0,0 = hands; the penguin's is his BEAK)
 } CharacterDef;
 
 // Index 0 MUST be the base pack with an EMPTY id: that is what makes the override a no-op for
@@ -1288,20 +1290,21 @@ typedef struct {
 // there is a pak to point it at — an id with no frames behind it would miss on every sprite
 // and cost a wasted pak scan per draw.
 static const CharacterDef CHARACTERS[] = {
-  { "", "Bunny", INHERIT_UPRIGHT, true },
+  { "", "Bunny", INHERIT_UPRIGHT, true, 0, 0 },
   // The first real species (2026-08-17, "i still see the rabbit on the device"). The frames
   // come from the assembler-era capybara pack, mapped onto ANIMS[] folders by
   // tools/mkspecies.py: full adult set; baby rides its crawl art for the walk keys; teen and
   // the work/school sequences deliberately fall back to the base pack until clips exist.
-  { "capybara", "Capybara", INHERIT_UPRIGHT, true },
+  { "capybara", "Capybara", INHERIT_UPRIGHT, true, 0, 0 },
   // The five-pack cast (2026-08-18, adult-only, owner-curated bases). Work/school/teen
   // keys fall back to the base pack until such clips exist, exactly as the capybara does.
-  { "bunny",   "Bunny",   INHERIT_UPRIGHT, true  },
-  { "cat",     "Cat",     INHERIT_UPRIGHT, true  },
-  { "dog",     "Dog",     INHERIT_UPRIGHT, true  },
-  { "frog",    "Frog",    INHERIT_UPRIGHT, true  },
-  // flippers: a held object goes on the floor beside him, never dropped (needs_jon flag)
-  { "penguin", "Penguin", INHERIT_UPRIGHT, false },
+  { "bunny",   "Bunny",   INHERIT_UPRIGHT, true, 0, 0 },
+  { "cat",     "Cat",     INHERIT_UPRIGHT, true, 0, 0 },
+  { "dog",     "Dog",     INHERIT_UPRIGHT, true, 0, 0 },
+  { "frog",    "Frog",    INHERIT_UPRIGHT, true, 0, 0 },
+  // THE BEAK CARRY (Jon: "I'm fine with the beak"): flippers cannot hug a jar, so a
+  // carried thing rides at his beak - higher and a touch further forward than hands.
+  { "penguin", "Penguin", INHERIT_UPRIGHT, true, 2, -12 },
 };
 static const int CHARACTERS_N = (int)(sizeof(CHARACTERS) / sizeof(CHARACTERS[0]));
 
@@ -2600,8 +2603,13 @@ static bool tidyStep(float dt) {
   }
   if (g_tidyStage == 2) {                      // carrying it home
     const float dx = home->x - g_fx;
-    o->x = g_fx + 11.0f;                       // it travels in front of him
-    o->y = (float)(FLOOR_Y - 26);
+    // species carry point: hands by default, the penguin's beak (Jon's ruling) - the
+    // same tidy walk, the jar just rides where this animal actually carries things
+    {
+      const int ci = (S.species_idx < CHARACTERS_N) ? S.species_idx : 0;
+      o->x = g_fx + 11.0f + CHARACTERS[ci].carryDX;
+      o->y = (float)(FLOOR_Y - 26 + CHARACTERS[ci].carryDY);
+    }
     if (fabsf(dx) > 6.0f) {
       g_fx += (dx > 0 ? 42.0f : -42.0f) * dt;
       S.x = (int)g_fx;
