@@ -2717,6 +2717,14 @@ $('fAnim').onchange=async e=>{
       if(c&&c.img&&!SD.props[k]){ SD.props[k]={img:c.img, w:c.w||24, h:c.h||24,
         kind:'prop', custom:true}; }
     }
+    // an animation made on another ANIMAL brings its own clip art - register it under
+    // a namespaced key so the ghost, the preview and the device bake all draw the
+    // penguin the kid animated, never the animal that happens to live in this pack
+    if(p.animal && p.clipData && p.clip){
+      const nk=p.animal+':'+p.clip;
+      if(!SD.clips[nk]) SD.clips[nk]=p.clipData;
+      p.clip=nk;
+    }
     const clip=p.clip||(p.scene&&p.scene.animation&&p.scene.animation.clip);
     if(!clip||!SD.clips[clip]){ skipped.push(f.name+' (clip not in this pack)'); continue }
     // THE NAME COMES FROM THE FILE. That is the whole point of importing one - you know what
@@ -3821,6 +3829,9 @@ function session(){
     weather:{raining, clouding, cloudN, cloudStyle, starsOn, starN},
     // the children's drawn props (imported with animations) - without these a refresh
     // strands every layer that wears one
+    customClips:(()=>{ const cc={};
+      for(const k of Object.keys(SD.clips)) if(k.includes(':')) cc[k]=SD.clips[k];
+      return Object.keys(cc).length?cc:undefined; })(),
     customProps:(()=>{ const cp={};
       for(const k of Object.keys(SD.props)) if(SD.props[k].custom)
         cp[k]={img:SD.props[k].img, w:SD.props[k].w, h:SD.props[k].h};
@@ -3868,6 +3879,9 @@ function autosave(){ if(booting||saveTimer) return;
 async function restore(raw){
   const p=JSON.parse(raw);
   if(p.slots) worldSlots={...p.slots};
+  if(p.customClips) for(const k of Object.keys(p.customClips)){
+    if(!SD.clips[k]) SD.clips[k]=p.customClips[k];
+  }
   if(p.customProps) for(const k of Object.keys(p.customProps)){
     const c=p.customProps[k];
     if(c&&c.img&&!SD.props[k]) SD.props[k]={img:c.img, w:c.w||24, h:c.h||24,

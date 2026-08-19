@@ -1951,6 +1951,10 @@ const project=()=>Object.assign({format:'bunbun-attach-project',v:1,
   {name:(($('animName')&&$('animName').value)||'').trim()||undefined,
    clip,fps,character:{...CH},
    animal:(($('charSel')&&$('charSel').value)||undefined),
+   // the whole clip (frames, anchors, rotations) rides along when this was made on a
+   // different animal - otherwise "export with the penguin ... it is the capybara":
+   // the assembler only owns the ACTIVE species' art, so the file must bring its own
+   clipData:(($('charSel')&&$('charSel').value)?DATA.clips[clip]:undefined),
    room:gRoom||undefined,                    // the backdrop it was judged against, nothing more
    animRule:{...animRule},
    stage:{x:gX,y:gY,z:gZ,scale:(gScale==null?null:Math.round(gScale/GAMESCALE[guessPhase()]))},
@@ -2519,8 +2523,19 @@ document.getElementById('fresh').onclick=()=>{
   location.reload();
 };
 let booting=true;
-function autosave(){ if(timer||booting) return;   // never let boot's own render clobber the save
+// THROTTLE while playing, never SKIP: the old gate dropped every save made with play
+// running, and kids leave play on constantly - so a refresh lost everything since play
+// started ("refresh doesn't keep the things"). Boot is still guarded, and closing or
+// hiding the tab flushes a final save.
+let lastSave=0;
+function autosave(){ if(booting) return;
+  const now=Date.now();
+  if(timer && now-lastSave<1500) return;
+  lastSave=now;
   try{ localStorage.setItem(KEY,JSON.stringify(project())) }catch(e){} }
+const flushSave=()=>{ if(!booting){ try{ localStorage.setItem(KEY,JSON.stringify(project())) }catch(e){} } };
+window.addEventListener('beforeunload',flushSave);
+document.addEventListener('visibilitychange',()=>{ if(document.hidden) flushSave(); });
 (async()=>{
   // READ IT FIRST. boot() renders, render() autosaves, and that used to overwrite the saved
   // scene with the defaults before this line ever got to look at it.
