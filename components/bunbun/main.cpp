@@ -3158,7 +3158,12 @@ static void think(float dt) {
       }
       return;
     }
-    if (d < 4 && g_visit >= 0) {
+    // d<4 could be unreachable by inches when a mark hugs the floor's edge - Jon's
+    // sleep rug at y=238 clamped to the boundary and he "walks in place and then
+    // eventually falls asleep" (the 9s backstop, not an arrival). Being NEAR the
+    // doorstep is enough: the settle below snaps him onto the authored spot anyway,
+    // exactly as it always has.
+    if (d < 9 && g_visit >= 0) {
       // arrived at the furniture: settle in
       g_tx = g_ty = -1;
       g_settleUntil = millis() + 4000 + esp_random() % 6000;
