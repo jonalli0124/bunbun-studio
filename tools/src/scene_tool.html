@@ -3322,6 +3322,45 @@ async function buildPortPayload(setB){
         plan.marks.push({x:Math.round(sx), y:Math.round(sy), a:key});
       }
     }
+    // 2b. THE TRAVEL KIT RIDES IN THE PACKAGE (Jon: "can the bunbun package not also
+    // provide the walk animation and default to idle if something is missing?"): when
+    // this room's animations arrived on another animal, its Adult_Walk_East/West (which
+    // travelled with the animation files) bake in under the reserved acts walk_e /
+    // walk_w. The firmware prefers them while moving and falls back to the room's idle
+    // - so the world walks as its own animal even before that species is installed.
+    {
+      const ns=(on.map(a=>a.clip).find(c=>c&&c.includes(':'))||'').split(':')[0];
+      const shipped=new Set(plan.anims.map(x=>x.act));
+      const sized=on.find(x=>x.stage&&x.stage.authored&&x.stage.scale);
+      const kitScale=(sized&&sized.stage.scale)||100;
+      const kitFps=7;
+      for(const [dir,act] of [['East','walk_e'],['West','walk_w']]){
+        if(!ns) break;
+        if(shipped.has(act)) continue;      // the kid authored their own walk: it wins
+        const ck=ns+':Adult_Walk_'+dir;
+        const cd=SD.clips[ck]; if(!cd||!cd.frames||!cd.frames.length) continue;
+        if(plan.anims.length>=10){ say(`no room left for the ${act} travel clip - the species art walks instead`,true); continue; }
+        const ka={clip:ck, order:cd.frames.map((_,i)=>({i})), layers:[],
+                  character:{hold:1}, stage:{scale:kitScale, authored:true}};
+        setB(`baking the ${dir.toLowerCase()} walk…`);
+        await loadArtFor(ka);
+        const slug=animSlug(ns+'-walk-'+dir[0].toLowerCase(), taken), key='c_'+slug;
+        let n=0;
+        for(let s2=0;s2<ka.order.length;s2++){
+          const cvB=await bakeStep(ka, s2, {K:1, canvas:true});
+          if(!cvB) continue;
+          const r=Math.min(1, Math.max(0.15, kitScale/100));
+          const w=Math.max(1,Math.round(96*r)), h=Math.max(1,Math.round(136*r));
+          const hv=document.createElement('canvas'); hv.width=96; hv.height=136;
+          const hg=hv.getContext('2d',{willReadFrequently:true});
+          hg.imageSmoothingEnabled=false;
+          hg.drawImage(cvB, Math.round((96-w)/2), Math.round(130-130*r), w, h);
+          const e=PakLib.encodeSprite(hg.getImageData(0,0,96,136));
+          e.name=`canim/${slug}/${n}`; newEntries.push(e); n++;
+        }
+        if(n) plan.anims.push({k:key, f:'canim/'+slug, n:n, act, fps:kitFps, m:0});
+      }
+    }
     // 3. object art: the SCENE's art is canon for the scene's names - a redrawn item
     // replaces the pak entry of the same name, so updates actually reach the shelf
     for(const o of scene.objects.filter(x=>!x.hidden)){

@@ -1396,7 +1396,20 @@ static const char *charSpriteKey(const char *key, char *buf, size_t bufLen) {
   const char *id = CHARACTERS[S.species_idx].id;
   if (!id || !*id) return key;
   snprintf(buf, bufLen, "%s/%s", id, key);
-  return pakFind(buf) ? buf : key;
+  if (pakFind(buf)) return buf;
+  // DEFAULT TO IDLE, NEVER TO ANOTHER ANIMAL (Jon: "he became a bunny and was walking
+  // north for a bit"): a clip this species pack lacks used to fall through to the base
+  // pack's BUNNY frames mid-move. The species' own idle is the honest stand-in - same
+  // frame number when it exists so the beat still reads, else its first frame.
+  const char *slash = strrchr(key, '/');
+  int fr = slash ? atoi(slash + 1) : 0;
+  const char *idleFolder = (S.phase == PH_BABY) ? "baby-idle"
+                         : (S.phase == PH_TEEN) ? "teen-idle" : "idle-anim";
+  snprintf(buf, bufLen, "%s/%s/%d", id, idleFolder, fr);
+  if (pakFind(buf)) return buf;
+  snprintf(buf, bufLen, "%s/%s/0", id, idleFolder);
+  if (pakFind(buf)) return buf;
+  return key;   // this species has no idle either: the base pack carries on
 }
 
 // The pet's single still frame for a phase, species-resolved and ready for spriteLoad().
@@ -2102,6 +2115,7 @@ static void catDismissIfAway();
 // defined: eat and bath simply happen here (the main-room fallback), work does not
 // happen at all - both by the owner's rule.
 static uint8_t  g_doorTrip = 0;      // 1 = walking to the exit edge
+static uint32_t g_visitHomeAt = 0;   // a fruitless side-room visit walks home at this time
 static uint8_t  g_doorRole = 0;
 static char     g_doorAct[8] = "";
 static uint32_t g_workUntil = 0;     // the scene work session deadline; 0 = no session
@@ -2127,7 +2141,7 @@ static bool sceneDoorTo(uint8_t tgt, const char *act) {
   clampErrandToFloor(&ex, &ey);
   g_tx = ex; g_ty = ey;
   g_visit = 4;
-  g_doorTrip = 1; g_doorRole = tgt;
+  g_doorTrip = 1; g_doorRole = tgt; g_visitHomeAt = 0;
   strncpy(g_doorAct, act ? act : "", sizeof(g_doorAct) - 1);
   g_doorAct[sizeof(g_doorAct) - 1] = 0;
   g_tripLen = sqrtf((g_tx - g_fx) * (g_tx - g_fx) + (g_ty - g_fy) * (g_ty - g_fy));
@@ -2160,6 +2174,20 @@ static char g_dbgAct[8] = "";
 extern "C" void bunbun_debug_act(const char *a) {
   strncpy(g_dbgAct, a ? a : "", sizeof(g_dbgAct) - 1);
   g_dbgAct[sizeof(g_dbgAct) - 1] = 0;
+}
+// THE WORLD'S OWN TRAVEL KIT (Jon: "can the bunbun package not also provide the walk
+// animation and default to idle if something is missing?"): a package can ship walk
+// clips under the reserved acts walk_e / walk_w (act[8] caps at 7 chars). Moving prefers them, falls back
+// to the scene's idle clip, and only then to the installed species art - so a penguin
+// world walks like a penguin even before the penguin species is installed.
+static const char *sceneTravelAnim(float dx, bool horiz) {
+  // no kit shipped at all = the species pack's real walks beat an idle glide; the
+  // idle fallback is only for a kit with a piece missing (and for vertical travel,
+  // which a side-on walk clip cannot face)
+  if (!sceneActAnim("walk_e") && !sceneActAnim("walk_w")) return nullptr;
+  const char *k = horiz ? sceneActAnim(dx > 0 ? "walk_e" : "walk_w") : nullptr;
+  if (!k) k = sceneActAnim("idle");
+  return k;
 }
 static bool sceneWorkAvail() {
   return g_scRoleAvail[SCENE_ROLE_WORK] || sceneActMark("work") >= 0 ||
@@ -2605,7 +2633,8 @@ static bool tidyStep(float dt) {
     if (fabsf(dx) > 8.0f) {
       g_fx += (dx > 0 ? 42.0f : -42.0f) * dt;
       S.x = (int)g_fx;
-      setAnim(pa(dx > 0 ? "walk_right" : "walk_left"));
+      { const char *tk = sceneTravelAnim(dx, true);
+        setAnim(tk ? tk : pa(dx > 0 ? "walk_right" : "walk_left")); }
       return true;
     }
     g_tidyStage = 1; g_tidyUntil = millis() + 800;   // the builder's 0.8s lift
@@ -2629,7 +2658,8 @@ static bool tidyStep(float dt) {
     if (fabsf(dx) > 6.0f) {
       g_fx += (dx > 0 ? 42.0f : -42.0f) * dt;
       S.x = (int)g_fx;
-      setAnim(pa(dx > 0 ? "walk_right" : "walk_left"));
+      { const char *tk = sceneTravelAnim(dx, true);
+        setAnim(tk ? tk : pa(dx > 0 ? "walk_right" : "walk_left")); }
       return true;
     }
     g_tidyStage = 3; g_tidyUntil = millis() + 500;
@@ -2934,6 +2964,12 @@ static void think(float dt) {
     g_wanderT = 10.0f + (esp_random() % 1000) / 100.0f;   // settle for a good while after a visit
   }
 
+  // the fruitless-visit linger is over: head home (cleared by any new door trip)
+  if (g_visitHomeAt && millis() >= g_visitHomeAt) {
+    g_visitHomeAt = 0;
+    if (g_scCurRole != SCENE_ROLE_MAIN && !g_doorTrip) { sceneDoorTo(SCENE_ROLE_MAIN, ""); return; }
+  }
+
   if (g_tx >= 0) {
     // Backstop: give up on a target he cannot reach. Even with every destination pushed clear
     // of the scenery, one bad coordinate should degrade to "wanders off again" rather than
@@ -3005,7 +3041,15 @@ static void think(float dt) {
         if (!ok && !strcmp(g_doorAct, "bath")) ok = sceneErrandTo("wash");
         if (!ok && !strcmp(g_doorAct, "wash")) ok = sceneErrandTo("bath");
         g_pottyLock = false;
-        if (!ok) { g_pottySeq = 0; sceneDoorTo(SCENE_ROLE_MAIN, ""); }
+        if (!ok) {
+          // NO INSTANT BOUNCE (Jon: "it flashed for a second to work scene then almost
+          // instantly went back"): the room he was sent to has nothing for this act, but
+          // he still WENT there - so he looks around for a while like anyone would, and
+          // the linger deadline below walks him home.
+          g_pottySeq = 0;
+          g_visitHomeAt = millis() + 20000 + esp_random() % 15000;
+          g_wanderT = 3.0f;
+        }
       } else {
         g_wanderT = 6.0f;                    // home again, back to his own rhythm
       }
@@ -3139,8 +3183,10 @@ static void think(float dt) {
         else       a = walk ? (dy > 0 ? "baby_walk_down" : "baby_walk_up")
                             : (dy > 0 ? "baby_crawl_down" : "baby_crawl_up");
       } else {
-        if (horiz) a = pa(dx > 0 ? "walk_right" : "walk_left");
-        else       a = pa(dy > 0 ? "walk_down" : "walk_up");
+        const char *tk = sceneTravelAnim(dx, horiz);
+        if (tk)         a = tk;
+        else if (horiz) a = pa(dx > 0 ? "walk_right" : "walk_left");
+        else            a = pa(dy > 0 ? "walk_down" : "walk_up");
       }
       setAnim(a);
     }

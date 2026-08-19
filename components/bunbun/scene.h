@@ -189,7 +189,9 @@ static int     g_scBunN = 0;
 // Same safety story as everything else in this file: a missing pak folder degrades to the
 // idle frame (spriteLoad's own fallback), a malformed entry is skipped, and no entry here
 // can touch the pet's saved state.
-#define SCENE_MAX_ANIMS 8
+// 8 -> 10 when the travel kit arrived: a room keeps its 8 authored animations and the
+// package's walk_e/walk_w clips ride in the two extra slots without evicting anything.
+#define SCENE_MAX_ANIMS 10
 struct SceneAnim {
   char    key[16];       // the mark key, e.g. "c_bathing" — fits BunMark::anim exactly
   char    folder[32];    // the pak folder, e.g. "canim/bathing" — frames at <folder>/<i>
