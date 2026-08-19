@@ -3186,6 +3186,15 @@ static void think(float dt) {
           S.lights = 0; g_sleepAtMs = millis();
           if (g_sleepPending == 2) { g_nightSleep = true; saveSleepState(3); }
           g_sleepPending = 0;
+          // ASLEEP THIS TICK, not after a settle of moonwalking ("he still walking in
+          // place before sleeping"): the arrival above armed a 4-10s settle, which
+          // blocked the asleep branch while the WALK clip kept playing on the rug.
+          // Nothing here needs waiting out - drop the settle, clear the visit, and put
+          // the sleep clip up ourselves.
+          g_settleUntil = 0;
+          g_visit = -1;
+          { const char *cs = sceneActAnim("sleep");
+            setAnim(cs ? cs : pa("sleep")); }
           saveState();
           return;                    // the asleep branch owns him from the next tick
         }
