@@ -33,6 +33,10 @@
 // A world is nothing but role-tagged scene files; a device with only scene.json behaves
 // exactly as before. Kitchen lives to the LEFT of the main room, bathroom and work to
 // the RIGHT - that is all the geometry there is.
+// 6144 -> 8192 when custom animations arrived: eight anims add ~600 bytes to a file that was
+// already brushing 5KB on a full room, and a scene refused for SIZE fails with the same silence
+// as a malformed one.
+#define SCENE_MAX_BYTES 8192
 #define SCENE_ROLE_MAIN     0
 #define SCENE_ROLE_KITCHEN  1
 #define SCENE_ROLE_BATH     2
@@ -96,10 +100,6 @@ static void sceneRolesScan() {
 }
 #define SCENE_MAX_PROPS   24
 #define SCENE_MAX_BLOCKS   8
-// 6144 -> 8192 when custom animations arrived: eight anims add ~600 bytes to a file that was
-// already brushing 5KB on a full room, and a scene refused for SIZE fails with the same silence
-// as a malformed one.
-#define SCENE_MAX_BYTES 8192
 #define SCENE_MAX_CLOUDS   8
 #define SCENE_CLOUD_STYLES 5
 #define SCENE_MAX_CATSPOTS 6
