@@ -866,6 +866,104 @@ function drawChar(a, step, x, y, alpha, mark, clipOver){
 // one candidate with no place; one that needs "sit" is one candidate PER object affording sit,
 // so two chairs really are two destinations and two sit animations really are two things to do
 // when he gets to one.
+
+// ---- INTER-ROOM ACTION, exactly as the device does it ----------------------------
+// kitchen and bathroom are LEFT of the main room, work is RIGHT; a side room always
+// exits toward home, and a side-to-side trip goes THROUGH home. Same law as main.cpp.
+const ROLE_SIDE={kitchen:-1, bathroom:-1, work:+1};
+const actOfAnim=a=>{
+  if(a.actAs) return a.actAs;
+  if(a.isWork) return 'work';
+  const base=(a.clip||'').replace(/^[a-z0-9]+:/,'').replace(/^(Adult|Baby)_/,'').toLowerCase().split('_')[0];
+  return ({bathe:'bath'})[base]||base;
+};
+// which rooms offer which acts - the assembler's own copy of sceneRolesScan
+function worldActs(){
+  const map={};
+  const add=(role,list)=>{ const set=map[role]||(map[role]=new Set());
+    for(const a of list) if(a&&a.on!==false) set.add(actOfAnim(a)); };
+  add(roleKey(), anims);
+  for(const rk of Object.keys(worldSlots)){
+    if(rk===roleKey()) continue;
+    try{ add(rk, (JSON.parse(worldSlots[rk]).anims)||[]) }catch(e){}
+  }
+  return map;
+}
+// where should this act happen? here if here offers it, else its home room, else
+// any room that has it - the device's availability routing, unchanged
+function roomFor(act){
+  const map=worldActs(), here=roleKey();
+  if((map[here]||new Set()).has(act)) return here;
+  const home = act==='eat' ? 'kitchen'
+             : act==='work' ? 'work'
+             : (act==='bath'||act==='wash'||act==='toilet') ? 'bathroom' : '';
+  const order=[home,'','kitchen','bathroom','work'];
+  for(const r of order) if(map[r] && map[r].has(act)) return r;
+  return null;
+}
+let crossing=false;
+// walk him off the edge, change the room, walk him in from the other side and on to
+// the middle, then do what he came for
+async function crossTo(role, act){
+  if(crossing || role===roleKey()) return false;
+  crossing=true;
+  try{
+    const from=roleKey();
+    // a side room heads home first; home heads toward the room it wants
+    const dir = from ? -(ROLE_SIDE[from]||1) : (ROLE_SIDE[role]||1);
+    const edgeX = dir<0 ? 8 : GAME.w-8;
+    if(sim){ sim.phase='walk'; sim.spot=null; sim.settle=null; sim.perform=false;
+      sim.t=0; sim.path=[]; sim.goal={x:edgeX,y:sim.y}; sim.tx=edgeX; sim.ty=sim.y;
+      sim.face=dir; sim.walkClip=walkClipFor(sim.a,dir);
+      sim.says=`walking to the ${role||'main room'}`;
+      // let the walk actually read as a walk before the room changes
+      const t0=Date.now();
+      while(sim && Math.abs(sim.x-edgeX)>10 && Date.now()-t0<4000)
+        await new Promise(r=>setTimeout(r,60));
+    }
+    // through the door: the target room comes up, he enters at the mirror edge
+    worldSlots[from]=slotSnap();
+    const keep={...worldSlots};
+    await restore(keep[role] || JSON.stringify(freshSlot(role)));
+    worldSlots=keep;
+    scene.role=role||undefined;
+    syncRoleUI(); syncObj(); syncRule(); draw();
+    const inX = dir<0 ? GAME.w-8 : 8;
+    if(sim){ const mid=nearestStop(GAME.w/2, sim.y)||{x:GAME.w/2,y:sim.y};
+      sim.x=inX; sim.y=sim.y;
+      sim.phase='walk'; sim.t=0; sim.path=[]; sim.spot=null; sim.settle=null;
+      sim.perform=false;
+      sim.goal={x:mid.x,y:mid.y}; sim.tx=mid.x; sim.ty=mid.y;
+      sim.face=(mid.x<inX?-1:1); sim.walkClip=walkClipFor(sim.a,sim.face);
+      sim.says=`in the ${role||'main room'} now`;
+      const t1=Date.now();
+      while(sim && Math.hypot(sim.x-mid.x,sim.y-mid.y)>12 && Date.now()-t1<5000)
+        await new Promise(r=>setTimeout(r,60));
+    }
+    // and now the thing he came for
+    if(act){
+      const want=anims.find(a=>a.on && actOfAnim(a)===act);
+      if(want){ const pl=placesFor(want);
+        forcePick={a:want, spot:(pl.spots&&pl.spots[0])||null}; }
+    }
+    say(`he walked to the ${role||'main room'}`);
+    return true;
+  } finally { crossing=false; }
+}
+// the errand a child would recognise: press a room's act and watch him go there
+async function sendHimTo(act){
+  const r=roomFor(act);
+  if(r===null){ say(`nothing in this world does "${act}" yet`,true); return }
+  if(!simOn) await $('preview').onclick();
+  if(r!==roleKey()) await crossTo(r, act);
+  else { const want=anims.find(a=>a.on && actOfAnim(a)===act);
+    if(want){ const pl=placesFor(want);
+      forcePick={a:want, spot:(pl.spots&&pl.spots[0])||null};
+      if(sim){ sim.phase='rest'; sim.t=1e9; sim.waitFor=0 } } }
+}
+// he comes home on his own when a side room has nothing left to do
+async function comeHome(){ if(roleKey()) await crossTo('', ''); }
+
 function candidates(){
   const out=[];
   for(const a of anims){ if(!a.on) continue;
@@ -1141,7 +1239,17 @@ function someWalkablePoint(awayFrom){
 }
 // What he travels in, facing the way he is going. The art ships east and west as separate clips
 // (generated east, mirrored west), so facing is a clip choice, not a canvas flip.
+// AN AUTHORED WALK WINS (Jon: "how can I update the walking animations?"). Mark any
+// animation "counts as: how he walks" and it becomes the travelling clip everywhere -
+// the preview here and, through the same reserved acts, the device. Only east and west
+// exist: the pet always travels side-on, and vertical movement reuses them.
+function authoredWalk(dir){
+  const want = dir<0 ? 'walk_w' : 'walk_e';
+  const a = anims.find(x=>x.on && x.actAs===want);
+  return a ? a.clip : null;
+}
 function walkClipFor(a, dir){
+  { const w=authoredWalk(dir); if(w && SD.clips[w]) return w; }
   const baby = phaseOf(a.clip)==='baby';
   const west = dir<0;
   // an animation that arrived on another animal walks AS that animal - its travel kit
@@ -2180,7 +2288,18 @@ function drawAnims(){
       defEmotes.map(c=>`<button class="mini" data-forcedef="${c}" style="opacity:.72">${
         c.replace(/^Adult_/,'')}</button>`).join('')
     : '';
-  if(setIf('forceRow', forceHtml+defHtml))
+  // ERRANDS ACROSS ROOMS - the same commands the device's own menu has, so a child can
+  // watch the whole journey in the preview (Jon: "inter room action just like the game").
+  // Only offered once the world has more than one room.
+  const errHtml = Object.keys(worldSlots).length
+    ? '<span class="hint" style="flex:0 0 auto;align-self:center;margin-left:8px" '+
+      'title="the device\u2019s own buttons - he walks to whichever room does it">'+
+      'send him to:</span>'+
+      [['eat','\u{1F37D} eat'],['bath','\u{1F6C1} bath'],['toilet','\u{1F6BD} potty'],
+       ['work','\u{1F528} work'],['','\u{1F3E0} home']]
+      .map(function(e){ return '<button class="mini" data-errand="'+e[0]+'">'+e[1]+'</button>' }).join('')
+    : '';
+  if(setIf('forceRow', forceHtml+defHtml+errHtml))
   $('forceRow').querySelectorAll('[data-force]').forEach(b=>b.onclick=async()=>{
     const a=anims[+b.dataset.force];
     const p=placesFor(a);
@@ -2198,6 +2317,11 @@ function drawAnims(){
   });
   // and the defaults: a stand-in animation built from the stock clip, on the spot. It lives
   // only in the sim - never in anims[], so saves, exports and the device never see it.
+  $('forceRow').querySelectorAll('[data-errand]').forEach(b=>b.onclick=async()=>{
+    const act=b.dataset.errand;
+    if(!act){ if(!simOn) await $('preview').onclick(); await comeHome(); return }
+    await sendHimTo(act);
+  });
   $('forceRow').querySelectorAll('[data-forcedef]').forEach(b=>b.onclick=async()=>{
     const a=defaultAnim(b.dataset.forcedef);
     if(!a) return;
@@ -2257,6 +2381,8 @@ function drawAnims(){
         <option value="eat" ${a.actAs==='eat'?'selected':''}>eating</option>
         <option value="bath" ${a.actAs==='bath'?'selected':''}>bathing</option>
         <option value="sleep" ${a.actAs==='sleep'?'selected':''}>sleeping</option>
+        <option value="walk_e" ${a.actAs==='walk_e'?'selected':''}>how he walks (this way &rarr;)</option>
+        <option value="walk_w" ${a.actAs==='walk_w'?'selected':''}>how he walks (&larr; that way)</option>
       </select>
       <span class="hint" style="flex:0 0 auto">s &middot; he says</span>
       <input data-txt="${i}" value="${(a.says||'').replace(/"/g,'&quot;')}"
