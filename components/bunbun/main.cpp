@@ -2992,6 +2992,9 @@ static void think(float dt) {
     // against a 9s giveup, which is no margin at all on a panel that has been seen at
     // 10fps with 70ms draw spikes. The homecoming has its own 45s deadline below.
     if (g_homeStage != 1 && millis() - targetAt > 9000) {
+      // a side-room visit whose walk died still goes home eventually
+      if (g_scCurRole != SCENE_ROLE_MAIN && !g_visitHomeAt)
+        g_visitHomeAt = millis() + 12000;
       g_tx = g_ty = -1; g_visit = -1; g_wanderT = 1.0f;
       g_performBehind = false;
       g_doorTrip = 0; g_workUntil = 0; g_pottySeq = 0;
@@ -3042,6 +3045,24 @@ static void think(float dt) {
       // there for at least 10 seconds"): even a 3-second meal keeps him in the room a
       // human-visible while before the walk home.
       g_roomMinStay = (g_scCurRole != SCENE_ROLE_MAIN) ? millis() + 10000 + esp_random() % 4000 : 0;
+      // THROUGH THE MIDDLE (Jon: "when he transitions from room to room he needs to
+      // go to the middle of each room and then do the action. the same for coming
+      // back"): entering at the edge, he first walks to the room's middle - the act
+      // he came for waits in g_doorAct and runs from there, so every crossing reads
+      // as a real entrance instead of a teleport-and-shuffle along the wall.
+      { int mx = SCENE_W / 2, my = (int)g_fy;
+        clampErrandToFloor(&mx, &my);
+        clearOfBlocks(&mx, &my);
+        g_tx = mx; g_ty = my;
+        g_visit = 5;                         // 5 = the entrance walk to the middle
+      }
+      return;
+    }
+    if (d < 6 && g_visit == 5) {
+      // MADE IT TO THE MIDDLE: now the act he crossed for (or, coming home with no
+      // act, his own rhythm). This is the exact consumption the door arrival used to
+      // run at the edge - only the starting point moved.
+      g_tx = g_ty = -1; g_visit = -1;
       if (g_doorAct[0]) {
         if (!strcmp(g_doorAct, "work") && !g_workUntil)
           g_workUntil = millis() + (uint32_t)sceneWorkMin() * 60000UL;
