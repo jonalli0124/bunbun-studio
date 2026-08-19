@@ -32,6 +32,30 @@ using fs::File;
 // worth being able to rule in or out. Defined with the rest of the breadcrumb, further down.
 static void bcMark(int where);
 #include "scene.h"   // a room read from /spiffs/scene.json, if one is there
+
+// EVERY EMOTION ANNOUNCES ITSELF on the ticker (Jon: "if he is doing an emote the
+// scroll text should say so regardless of what it is" / "scroll text not notating
+// all emotions"). Stock keys map to stock lines; a CUSTOM clip standing in for an
+// emotion resolves through the scene table - the child's own ticker line wins,
+// else its act joins the stock lines. Called from setAnim on every clip change.
+static const char *emoteLineFor(const char *key) {
+  const char *b2 = key;
+  if (!strncmp(b2, "baby_", 5) || !strncmp(b2, "teen_", 5)) b2 += 5;
+  if (b2[0] == 'c' && b2[1] == '_') {
+    for (int i = 0; i < g_scAnimN; i++)
+      if (!strcmp(g_scAnim[i].key, b2)) {
+        if (g_scAnim[i].txt[0]) return g_scAnim[i].txt;
+        b2 = g_scAnim[i].act;            // announce by what it counts as
+        break;
+      }
+  }
+  return !strcmp(b2, "angry")  ? "bunbun is grumpy about that"  :
+         !strcmp(b2, "love")   ? "bunbun is feeling the love"   :
+         !strcmp(b2, "bored")  ? "bunbun is a little bored"     :
+         !strcmp(b2, "hungry") ? "bunbun's tummy is rumbling"   :
+         !strcmp(b2, "sick")   ? "bunbun is not feeling well"   :
+         !strcmp(b2, "tired")  ? "bunbun is getting sleepy"     : nullptr;
+}
 #include "ui.h"
 #include "music.h"
 #include "beat.h"
@@ -1214,6 +1238,7 @@ static uint32_t g_departAt = 0;
 static float g_lingerT = 0;
 
 static void say(const char *t);
+static const char *emoteLineFor(const char *key);   // defined after scene.h - it reads the scene table
 static void setAnim(const char *k) {
   const AnimDef *a = findAnim(k);
   // Changing clip ALWAYS releases the freeze. g_holdUntil stops the global animation clock, so
@@ -1227,15 +1252,7 @@ static void setAnim(const char *k) {
     // EVERY EMOTE ANNOUNCES ITSELF (Jon: "if he is doing an emote the scroll text
     // should say so regardless of what it is") - the moment one of the feeling clips
     // goes up, the ticker says which, whatever put it there.
-    const char *b2 = a->key;
-    if (!strncmp(b2, "baby_", 5) || !strncmp(b2, "teen_", 5)) b2 += 5;
-    const char *ln =
-        !strcmp(b2, "angry")  ? "bunbun is grumpy about that"  :
-        !strcmp(b2, "love")   ? "bunbun is feeling the love"   :
-        !strcmp(b2, "bored")  ? "bunbun is a little bored"     :
-        !strcmp(b2, "hungry") ? "bunbun's tummy is rumbling"   :
-        !strcmp(b2, "sick")   ? "bunbun is not feeling well"   :
-        !strcmp(b2, "tired")  ? "bunbun is getting sleepy"     : nullptr;
+    const char *ln = emoteLineFor(a->key);
     if (ln) say(ln);
   }
 }
@@ -1616,16 +1633,10 @@ static const char *pa(const char *base) {
 }
 
 static Phase phaseOf() {
-#ifdef TEST_ADULT
+  // ADULT-ONLY (Jon 8/18: "he stays an adult since we got rid of the aging") - a
+  // fresh egg, a restored save, a clock hiccup: none of them may show a baby again.
+  // ageMin() keeps counting; it is the OTA pet-preservation signal, not a life stage.
   return PH_ADULT;
-#elif defined(TEST_TEEN)
-  return PH_TEEN;
-#else
-  long a = ageMin();
-  if (a < BABY_END) return PH_BABY;
-  if (a < TEEN_END) return PH_TEEN;
-  return PH_ADULT;
-#endif
 }
 static bool babyCanStand() { return ageMin() >= TODDLER_AT; }
 static bool babyWalksOnly() { return ageMin() >= WALKER_AT; }
@@ -2868,8 +2879,12 @@ static void think(float dt) {
   // has quietly put it right — which would read as him not having noticed.
   if (g_huffT > 0.0f) {
     g_huffT -= dt;
-    setAnim(pa("angry"));
-    return;
+    if (g_visit >= 0 || g_doorTrip || g_tx >= 0) {
+      // mid-errand: the huff waits its turn instead of freezing the walk to sulk
+    } else {
+      setAnim(pa("angry"));
+      return;
+    }
   }
   if (g_huffAt >= 0) {
     const int who = g_huffAt;
@@ -3533,6 +3548,7 @@ static void simulate(float dt) {
     // instead of leaving a mess where he stands. Kitchen and work never move on their
     // own - buttons only.
     if (g_scRoleAvail[SCENE_ROLE_BATH] && !g_action && !g_doorTrip && !g_sleepPending &&
+        g_visit < 0 && g_tx < 0 &&   // DEFERRED while any trip runs - a redirect finishes first
         g_scCurRole == SCENE_ROLE_MAIN) {
       g_poopDue = 0;
       Serial.println("nature calls: off to the bathroom");
