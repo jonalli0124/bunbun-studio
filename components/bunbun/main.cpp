@@ -2140,6 +2140,20 @@ static bool sceneDoorTo(uint8_t tgt, const char *act) {
                 (int)tgt, g_doorAct);
   return true;
 }
+// The brain's live state, for debugging worlds over HTTP instead of squinting at
+// screenshots: which room, which rooms exist, whether the lights are on, and what
+// he is currently trying to do ("he is just staying still doing the idle pose").
+extern "C" void bunbun_brain_snapshot(char *buf, int len) {
+  snprintf(buf, len,
+    "{\"role\":%d,\"avail\":%d,\"lights\":%d,\"tx\":%d,\"ty\":%d,"
+    "\"visit\":%d,\"door\":%d,\"action\":%d,\"settle_ms\":%ld,"
+    "\"x\":%d,\"y\":%d,\"anim\":\"%s\",\"potty\":%d,\"work\":%d}",
+    (int)g_scCurRole,
+    (g_scRoleAvail[0]?1:0)|(g_scRoleAvail[1]?2:0)|(g_scRoleAvail[2]?4:0)|(g_scRoleAvail[3]?8:0),
+    S.lights?1:0, g_tx, g_ty, (int)g_visit, (int)g_doorTrip, g_action?1:0,
+    (long)(millis()<g_settleUntil ? (g_settleUntil-millis()) : 0),
+    (int)S.x, (int)S.y, g_anim?g_anim->key:"?", (int)g_pottySeq, g_workUntil?1:0);
+}
 // /api/debug/act - the remote lever the door-walk tests (and future layers) need.
 // Set from the web task, consumed on the game task the next tick.
 static char g_dbgAct[8] = "";
@@ -2961,7 +2975,11 @@ static void think(float dt) {
       setAnim(S.phase == PH_BABY ? "baby_sit_n" : "idle_n");
       return;
     }
-    if (d < 4 && g_visit == 4 && g_doorTrip) {
+    // The door target is CLAMPED into the floor polygon, and on the farmhouse the
+    // clamp can land a stride inside the wall - at night he stood at x~25 against a
+    // target the d<4 test missed by inches until the 9s backstop shot the trip. A
+    // door is an edge, not a mark: being NEAR it is being through it.
+    if (d < 12 && g_visit == 4 && g_doorTrip) {
       // AT THE DOOR: swap the room, walk in from the mirror edge, then do the errand
       g_doorTrip = 0; g_tx = g_ty = -1; g_visit = -1;
       bool exitedLeft = (g_fx < SCENE_W / 2);
@@ -2981,6 +2999,11 @@ static void think(float dt) {
         bool ok = sceneErrandTo(g_doorAct);
         // a scene without a "the toilet" animation still has its plain sit
         if (!ok && !strcmp(g_doorAct, "toilet")) ok = sceneErrandTo("sit");
+        // BATHE accepts the sink and washing accepts the tub - Jon's washroom tub
+        // counts-as "wash", and without this the bath errand crossed the whole
+        // world just to shrug and walk home
+        if (!ok && !strcmp(g_doorAct, "bath")) ok = sceneErrandTo("wash");
+        if (!ok && !strcmp(g_doorAct, "wash")) ok = sceneErrandTo("bath");
         g_pottyLock = false;
         if (!ok) { g_pottySeq = 0; sceneDoorTo(SCENE_ROLE_MAIN, ""); }
       } else {

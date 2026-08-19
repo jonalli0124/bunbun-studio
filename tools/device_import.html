@@ -239,15 +239,13 @@ $('go').onclick=async()=>{
       $('go').disabled=false;
       return;
     }
-    // the merge, exactly as Send-to-bunbun does it: package art wins on same name, and a
-    // canim/<slug>/ folder being replaced is dropped WHOLE so stale frames never linger
+    // THE PACKAGE IS THE WHOLE STORY for animations (Jon: "all animations should be
+    // replaced when you upload the new bunbun package"): every canim/ entry already on
+    // the device goes, and only the package's own come in - a package with no animations
+    // still clears the shelf. Rooms and species art merge by name as before.
     const newNames=new Set(bundle.frag.entries.map(e=>e.name));
-    const replacing=new Set();
-    for(const e of bundle.frag.entries){
-      const m=e.name.match(/^(canim\/[^/]+\/)/); if(m) replacing.add(m[1]);
-    }
     const kept=pak.entries.filter(e=>!newNames.has(e.name)
-      && ![...replacing].some(r=>e.name.startsWith(r)));
+      && !e.name.startsWith('canim/'));
     const merged=PakLib.build(kept.concat(bundle.frag.entries));
     const room=bundle.sceneObj.room;
     if(room && !kept.concat(bundle.frag.entries).some(e=>e.name===room))

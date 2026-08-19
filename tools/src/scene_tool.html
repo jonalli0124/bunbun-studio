@@ -112,12 +112,11 @@
     </div>
     <div class="row" style="margin-top:10px">
       <button class="pri" id="play">&#10074;&#10074; running</button>
-      <button id="saveScene" class="pri">&#128190; Save scene</button>
+      <button id="saveScene" class="pri" title="every room in this world, one file">&#128190; Save scene</button>
+      <button id="saveRoom" title="just the room on screen, for moving one room between scenes">&#128193; save room</button>
       <button id="impScene">&#128194; Open scene</button>
       <button id="freshScene" title="empty room, nothing placed - save first if you want this one back">&#10024; start fresh</button>
-      <button id="sendDev" class="pri" title="the whole port: art into the unit's pak, the scene onto its filesystem, the pet checked before and after">&#128007; Send to bunbun</button>
-      <button id="exportPkg" title="saves one .bunbun file - open your bunbun's own page (http://its-ip/build) and give it this file. Works from anywhere, no network tricks">&#128230; save a bunbun package</button>
-      <input id="devIp" placeholder="device IP" style="flex:0 0 110px;padding:6px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);font:inherit;font-size:12px">
+      <button id="exportPkg" class="pri" title="saves one .bunbun file with every room and animation - open your bunbun's own page (http://its-ip/build) and give it this file. Works from anywhere, no network tricks">&#128230; save a bunbun package</button>
       <button id="preview">Act it out</button>
       <button id="ghosts">Ghosts: on</button>
       <button id="marksBtn" title="the red spot under the ghost and the purple ring under things that afford an action">Circles: on</button>
@@ -2615,7 +2614,26 @@ async function loadTravelArt(){
   return [...want];
 }
 // (the From Animation Creation bridge lived here - removed with its button, because assigning a handler to a missing element killed the whole script below it)
+// SAVE SCENE = THE WHOLE WORLD (Jon: "save scene should save all rooms") - session()
+// already carries every other room in .slots, so this only needed saying out loud.
+// SAVE ROOM strips the other rooms out, for carrying one room into another scene;
+// opening a room-file leaves the world around it alone (restore() only replaces
+// worldSlots when the file brings slots of its own).
+$('saveRoom').onclick=()=>{
+  const j=Object.assign({format:'bunbun-scene-project', v:1}, session());
+  delete j.slots;
+  const d=new Date(), z=n=>String(n).padStart(2,'0');
+  const stamp=d.getFullYear()+z(d.getMonth()+1)+z(d.getDate())+'-'+z(d.getHours())+z(d.getMinutes());
+  const which=scene.role||'main';
+  const given=(($('sceneName')&&$('sceneName').value)||'').trim()||scene.room||'scene';
+  const stem=(given+' '+which).replace(/[\/:*?"<>|]+/g,'-').replace(/\s+/g,' ').trim().slice(0,50);
+  const el=document.createElement('a');
+  el.href=URL.createObjectURL(new Blob([JSON.stringify(j,null,1)],{type:'application/json'}));
+  el.download='room_'+stem+'_'+stamp+'.json'; el.click();
+  setTimeout(()=>URL.revokeObjectURL(el.href),5000);
+  say(`saved just the ${which} room — Open scene drops it into whatever world is open`) };
 $('saveScene').onclick=()=>{
+  worldSlots[roleKey()]=slotSnap();   // the room on screen counts too
   const j=Object.assign({format:'bunbun-scene-project', v:1}, session());
   const d=new Date(), z=n=>String(n).padStart(2,'0');
   const stamp=d.getFullYear()+z(d.getMonth()+1)+z(d.getDate())+'-'+z(d.getHours())+z(d.getMinutes());
@@ -2952,22 +2970,25 @@ $('play').onclick=()=>{ playing=!playing;
   $('play').classList.toggle('pri',playing); if(playing) loop() };
 function loop(){
   if(!playing) return;
-  const now=performance.now();
-  if(now-lastT>=55){ const dt=Math.min(0.25,(now-lastT)/1000); tick=now/1000;
-    if(raining||clouding||starsOn) weatherStep(dt, scene.room);
-    // "how fast the clock runs": 60 puts a whole day in 24 minutes, 180 in 8.
-    if(simOn && DAYRATE>0){
-      todMin=(todMin + dt*DAYRATE/60) % 1440;
-      const shown=Math.floor(todMin);
-      if(shown!==_lastTod){ _lastTod=shown; $('tod').value=shown; $('todl').textContent=hhmm(shown) }
-    }
-    const wasSaying=sim&&sim.says;
-    stepSim(dt);
-    if(simOn&&sim&&sim.says!==wasSaying) say(sim.says);
-    lastT=now; draw(); if(window.gvOn) drawGameView() }
-  // rAF freezes in hidden/occluded windows and throttled phones - the editor's play
-  // button died of exactly this. A chained timeout keeps the room alive anywhere.
+  // SCHEDULE FIRST, then work - the editor's player taught this twice: rAF freezes in
+  // hidden windows, and a schedule-last chain dies forever on the first exception. The
+  // next beat is booked before this one is allowed to fail.
   setTimeout(loop, 33);
+  try{
+    const now=performance.now();
+    if(now-lastT>=55){ const dt=Math.min(0.25,(now-lastT)/1000); tick=now/1000;
+      if(raining||clouding||starsOn) weatherStep(dt, scene.room);
+      // "how fast the clock runs": 60 puts a whole day in 24 minutes, 180 in 8.
+      if(simOn && DAYRATE>0){
+        todMin=(todMin + dt*DAYRATE/60) % 1440;
+        const shown=Math.floor(todMin);
+        if(shown!==_lastTod){ _lastTod=shown; $('tod').value=shown; $('todl').textContent=hhmm(shown) }
+      }
+      const wasSaying=sim&&sim.says;
+      stepSim(dt);
+      if(simOn&&sim&&sim.says!==wasSaying) say(sim.says);
+      lastT=now; draw(); if(window.gvOn) drawGameView() }
+  }catch(err){ console.error('room loop:', err); }
 }
 $('play').textContent='❮❮ animation: running';
 loop();
@@ -3417,6 +3438,15 @@ async function sendToBunbun(){
 // ---- THE WORLD ---- one scene per room; "this room is" toggles between them.
 let worldSlots={};
 const roleKey=()=>scene.role||'';
+// ONE ROOM PER SLOT. session() embeds the other slots and the custom art libraries,
+// so writing it into a slot verbatim nested every slot inside every other - each
+// room switch DOUBLED the strings until Chrome fell over ("Error code: Out of
+// Memory"). A slot snapshot is the room alone; slots and libraries live one level up.
+function slotSnap(){
+  const s2=session();
+  delete s2.slots; delete s2.customClips; delete s2.customProps;
+  return JSON.stringify(s2);
+}
 function freshSlot(role){
   const room = role==='kitchen'  ? (SD.rooms['kitchen-bare']?'kitchen-bare':'kitchen')
              : role==='bathroom' ? (SD.rooms['washroom']?'washroom':Object.keys(SD.rooms)[0])
@@ -3431,10 +3461,29 @@ function freshSlot(role){
 $('sceneRole').onchange=async e=>{
   const to=e.target.value||'', from=roleKey();
   if(to===from){ $('workLenRow').style.display=to==='work'?'':'none'; return; }
-  worldSlots[from]=JSON.stringify(session());          // the room we are leaving keeps itself
+  worldSlots[from]=slotSnap();          // the room we are leaving keeps itself
   const keep={...worldSlots};
+  // THE WORLD IS ONE PLACE (Jon: "the name should persist from room to room",
+  // "environmental stuff should persist from room to room"): the scene's name, clock,
+  // weather and stars belong to the whole world, so walking into another room must not
+  // reset them to that room's old snapshot.
+  const keepName=($('sceneName')&&$('sceneName').value)||'';
+  const keepLight={todMin, todOn, lampMode, lightScale};
+  const keepWx={raining, clouding, cloudN, cloudStyle, starsOn, starN};
   await restore(keep[to] || JSON.stringify(freshSlot(to)));
   worldSlots=keep;    // restore() replays the snapshot's OLD slots map; the live one wins
+  if($('sceneName')) $('sceneName').value=keepName;
+  ({todMin, todOn, lampMode, lightScale}=keepLight);
+  $('tod').value=todMin; $('todl').textContent=hhmm(todMin);
+  $('lightOff').textContent='lighting: '+(todOn?'on':'off');
+  $('lightOff').classList.toggle('pri',!todOn);
+  $('lampM').textContent='lamps: '+lampMode;
+  $('lsz').value=Math.round(lightScale*100); $('lszl').textContent=Math.round(lightScale*100)+'%';
+  ({raining, clouding, cloudN, cloudStyle, starsOn, starN}=keepWx);
+  $('rn').classList.toggle('pri',raining); $('cl').classList.toggle('pri',clouding);
+  $('cn').value=cloudN; $('cnl').textContent=cloudN; $('cst').value=cloudStyle;
+  $('st').classList.toggle('pri',starsOn); $('stn').value=starN; $('stnl').textContent=starN;
+  rebuildClouds(); weatherInit(scene.room);
   scene.role=to||undefined;
   syncRoleUI(); syncObj(); syncRule(); draw(); autosave();
   say(to ? `now building the ${to==='work'?'work room':to} — the other rooms are kept; \u{1F4E6} ships them all`
@@ -3446,8 +3495,9 @@ function syncRoleUI(){
   $('workLenRow').style.display=scene.role==='work'?'':'none';
   $('wk').value=scene.workMin||10; $('wkl').textContent=scene.workMin||10;
 }
-$('sendDev').onclick=sendToBunbun;
-try{ $('devIp').value=localStorage.getItem('bunbun-device-ip')||'' }catch(e){}
+// Send-to-bunbun retired (Jon: "remove send to bunbun - process should be load it via
+// the /build"): the https site cannot fetch a http device anyway (mixed content), so the
+// package + the device's own /build page is the one path, and it works from anywhere.
 
 // ---- the bunbun package: the port as a FILE ----
 // Jon: "I want the tools to export something that i can import to update the device via
@@ -3462,7 +3512,7 @@ async function exportDevicePackage(){
   try{
     // ONE EXPORT, THE WHOLE WORLD (Jon: "toggle through each of them and do 1 export"):
     // every room the kid built ships together; a single-room world is the old package.
-    worldSlots[roleKey()]=JSON.stringify(session());
+    worldSlots[roleKey()]=slotSnap();
     const keepW={...worldSlots};
     const cameFrom=roleKey();
     const roles=Object.keys(keepW).filter(k=>{
@@ -3959,7 +4009,27 @@ function autosave(){ if(booting||saveTimer) return;
 
 async function restore(raw){
   const p=JSON.parse(raw);
-  if(p.slots) worldSlots={...p.slots};
+  if(p.slots){
+    // autosaves written before the one-room-per-slot rule carry slots nested inside
+    // slots (with full clip art at every layer) - the Out of Memory page. Flatten each
+    // incoming slot to just its room, but PROMOTE any art libraries found in the
+    // nesting first, so a poisoned save heals instead of losing the penguin.
+    worldSlots={};
+    for(const k of Object.keys(p.slots)){
+      try{
+        const q=JSON.parse(p.slots[k]);
+        if(q.customClips) for(const ck of Object.keys(q.customClips))
+          if(!SD.clips[ck]) SD.clips[ck]=q.customClips[ck];
+        if(q.customProps) for(const ck of Object.keys(q.customProps)){
+          const c=q.customProps[ck];
+          if(c&&c.img&&!SD.props[ck]) SD.props[ck]={img:c.img, w:c.w||24, h:c.h||24,
+            kind:'prop', custom:true};
+        }
+        delete q.slots; delete q.customClips; delete q.customProps;
+        worldSlots[k]=JSON.stringify(q);
+      }catch(e){ worldSlots[k]=p.slots[k]; }
+    }
+  }
   if(p.customClips) for(const k of Object.keys(p.customClips)){
     if(!SD.clips[k]) SD.clips[k]=p.customClips[k];
   }
