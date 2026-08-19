@@ -86,7 +86,8 @@ This page makes a single animation: the character doing one thing, with things a
 5. **HIS SIZE, everywhere** — the one dial that sets the character's size for every
    animation and the walking between them. Use this, not the per-animation sizes, unless
    you want a deliberate exception.
-6. **Send it to the shelf**: type the device IP once, press **🐇 Send to bunbun**. The
+6. **Send it to the shelf**: press **📦 save a bunbun package**, then open the device's
+   own page (`http://<device-ip>/build`) and give it the file. The
    page does the entire port — art, animations, rules, words — and checks the pet before
    and after. (Or `Export everything` for a zip a grown-up can port with one command.)
 
@@ -125,7 +126,7 @@ py tools/new_asset.py light <png> <name>    # anything that should glow
 py tools/new_asset.py mark  <png> <name>    # a feeling shown over the head
 ```
 
-The tools see new art immediately; the next **Send to bunbun** carries it to the device.
+The tools see new art immediately; the next **saved package** carries it to the device.
 The doctrine lives in `tools/GENERATION.md` — the short version:
 
 - **Reuse the exact prompt.** Winners are logged verbatim in `assets/rooms/PROMPTS.md` and
