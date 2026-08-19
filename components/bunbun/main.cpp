@@ -3598,6 +3598,7 @@ static void simulate(float dt) {
           g_scCurRole == SCENE_ROLE_MAIN) {
         g_poopDue = 0;
         Serial.println("nature calls: off to the bathroom");
+        say("bunbun needs the potty!");   // the trip announces itself on the ticker
         g_pottySeq = 1;
         g_pottyLock = true;
         sceneDoorTo(SCENE_ROLE_BATH, "toilet");   // the toilet type first; sit is the fallback
@@ -4196,7 +4197,10 @@ static void runMenu(int i) {
             // 15-35 SECONDS, so every feed produced a mess almost immediately and the floor
             // was never clean — it's minutes now, and less of a certainty.
             if ((esp_random() % 100) < (b ? 55 : 35))
-              g_poopDue = millis() + 240000 + esp_random() % 300000;   // 4-9 minutes
+              // TEST SETTING (Jon 8/19: "can we set it to 20 seconds for now so i can
+              // see him go to the bathroom?") - the shipped pace is 4-9 minutes:
+              //   g_poopDue = millis() + 240000 + esp_random() % 300000;
+              g_poopDue = millis() + 20000;   // 20s while watching the routine
             break;
     case 1:                                                   // PLAY opens the games roster
       // Jon 8/11: no games until the pet is reasonably cared for - play is
