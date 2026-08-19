@@ -1408,6 +1408,12 @@ function stepSim(realDt){
   const SLICE=0.1;
   let left=total;
   while(left>1e-4){ const dt=Math.min(SLICE,left); left-=dt; stepOnce(dt); if(!sim) return }
+  // the real-time clock, kept beside the schedule clock: reset on every phase change,
+  // and never multiplied by the speed dial
+  if(sim){
+    if(sim._ph!==sim.phase){ sim._ph=sim.phase; sim.rt=0 }
+    else sim.rt=(sim.rt||0)+realDt;
+  }
 }
 function stepOnce(dt){
   if(!sim){ chooseNext(); if(!sim) return }
@@ -1495,8 +1501,9 @@ function stepOnce(dt){
     }
   } else if(sim.phase==='play'){
     const seq=sim.a.order.length*Math.max(1,sim.a.character.hold);
-    const loops=Math.floor(sim.t*(sim.a.fps||7)/seq);
-    const done = sim.a.dur>0 ? (sim.t>=sim.a.dur) : (loops>=2);
+    const rt=sim.rt||0;
+    const loops=Math.floor(rt*(sim.a.fps||7)/seq);
+    const done = sim.a.dur>0 ? (rt>=sim.a.dur) : (loops>=2);
     if(done){
       sim.didSomething=true;
       // An AUTHORED duration replaces the whole default - on the device the settle drops
@@ -1582,19 +1589,19 @@ function drawSim(){
   if(sim.phase==='walk'){
     const c=sim.walkClip;
     if(!c){ const mine=idleAnim();
-      if(mine){ drawChar(mine, Math.floor(sim.t*(mine.fps||7)), sim.x, sim.y, 1, false); return } }
-    c ? drawChar(sim.a, Math.floor(sim.t*8), sim.x, sim.y, 1, false, c)
-      : drawChar(sim.a, Math.floor(sim.t*(sim.a.fps||7)), sim.x, sim.y, 1, false);
+      if(mine){ drawChar(mine, Math.floor((sim.rt||0)*(mine.fps||7)), sim.x, sim.y, 1, false); return } }
+    c ? drawChar(sim.a, Math.floor((sim.rt||0)*8), sim.x, sim.y, 1, false, c)
+      : drawChar(sim.a, Math.floor((sim.rt||0)*(sim.a.fps||7)), sim.x, sim.y, 1, false);
   } else if(sim.phase==='rest'){
     // A PERFORMANCE REST shows the animation he walked here to do ("i hit the eat button
     // ... it isnt working": the sim was doing Eat while this branch painted his idle over
     // it). An anywhere animation's whole life is this rest - it has to be visible.
     if(sim.perform && !sim.spot && sim.a){
-      drawChar(sim.a, Math.floor(sim.t*(sim.a.fps||7)), sim.x, sim.y, 1, false); return }
+      drawChar(sim.a, Math.floor((sim.rt||0)*(sim.a.fps||7)), sim.x, sim.y, 1, false); return }
     // His own idle if he has one - with its props, its breathing and its size - rather than a
     // stock pose. This is what "can he do idle instead of the turn in circles" asked for.
     const mine=idleAnim();
-    if(mine){ drawChar(mine, Math.floor(sim.t*(mine.fps||7)), sim.x, sim.y, 1, false); return }
+    if(mine){ drawChar(mine, Math.floor((sim.rt||0)*(mine.fps||7)), sim.x, sim.y, 1, false); return }
     const c=idleClip(sim.a);
     // Adult_Idle is a rotation set too - hold it facing the way he last walked, rather than
     // letting him revolve while he thinks about what to do next.
@@ -1602,11 +1609,11 @@ function drawSim(){
     // A real step, not 0. sin(0) is 0 forever, so the breath never moved - which is what
     // "its not breathing" was on this path.
     if(c && isRot(c)) drawChar({...sim.a, facing},
-        Math.floor(sim.t*(sim.a.fps||7)), sim.x, sim.y, 1, false, c);
-    else if(c) drawChar(sim.a, Math.floor(sim.t*6), sim.x, sim.y, 1, false, c);
-    else drawChar(sim.a, Math.floor(sim.t*(sim.a.fps||7)), sim.x, sim.y, 1, false);
+        Math.floor((sim.rt||0)*(sim.a.fps||7)), sim.x, sim.y, 1, false, c);
+    else if(c) drawChar(sim.a, Math.floor((sim.rt||0)*6), sim.x, sim.y, 1, false, c);
+    else drawChar(sim.a, Math.floor((sim.rt||0)*(sim.a.fps||7)), sim.x, sim.y, 1, false);
   } else {
-    drawChar(sim.a, Math.floor(sim.t*(sim.a.fps||7)), sim.x, sim.y, 1, false);
+    drawChar(sim.a, Math.floor((sim.rt||0)*(sim.a.fps||7)), sim.x, sim.y, 1, false);
   }
 }
 
