@@ -3581,23 +3581,30 @@ static void simulate(float dt) {
     // only thing that is passive"): with a bathroom defined he takes himself there
     // instead of leaving a mess where he stands. Kitchen and work never move on their
     // own - buttons only.
-    if (g_scRoleAvail[SCENE_ROLE_BATH] && !g_action && !g_doorTrip && !g_sleepPending &&
-        g_visit < 0 && g_tx < 0 &&   // DEFERRED while any trip runs - a redirect finishes first
-        g_scCurRole == SCENE_ROLE_MAIN) {
+    if (g_scRoleAvail[SCENE_ROLE_BATH]) {
+      if (!g_action && !g_doorTrip && !g_sleepPending && g_visit < 0 && g_tx < 0 &&
+          g_scCurRole == SCENE_ROLE_MAIN) {
+        g_poopDue = 0;
+        Serial.println("nature calls: off to the bathroom");
+        g_pottySeq = 1;
+        g_pottyLock = true;
+        sceneDoorTo(SCENE_ROLE_BATH, "toilet");   // the toilet type first; sit is the fallback
+        g_pottyLock = false;
+        return;
+      }
+      // BUSY OR AWAY: the need KEEPS - the timer stays standing and he goes the
+      // moment he is free. The first version fell through to g_poopDue = 0 and
+      // CONSUMED the trip instead of postponing it ("he didnt go potty" - the
+      // timer ripened mid-settle and died right there). No return: the rest of
+      // think() must keep running or the very trip being waited on would freeze.
+    } else {
       g_poopDue = 0;
-      Serial.println("nature calls: off to the bathroom");
-      g_pottySeq = 1;
-      g_pottyLock = true;
-      sceneDoorTo(SCENE_ROLE_BATH, "toilet");   // the toilet type first; sit is the fallback
-      g_pottyLock = false;
-      return;
-    }
-    g_poopDue = 0;
-    if (false && S.poopN < 4) {   // retired: nothing drops on the floor any more
-      S.poopX[S.poopN] = S.x; S.poopY[S.poopN] = S.y; S.poopN++;
-      S.clean = max(0.0f, S.clean - 8.0f);
-      sfxPlop();                       // W-046, per Piper: "PLOP. hehehehe."
-      say("bunbun made a mess");
+      if (false && S.poopN < 4) {   // retired: nothing drops on the floor any more
+        S.poopX[S.poopN] = S.x; S.poopY[S.poopN] = S.y; S.poopN++;
+        S.clean = max(0.0f, S.clean - 8.0f);
+        sfxPlop();                       // W-046, per Piper: "PLOP. hehehehe."
+        say("bunbun made a mess");
+      }
     }
   }
   Phase np = phaseOf();
