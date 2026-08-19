@@ -1294,6 +1294,14 @@ static const CharacterDef CHARACTERS[] = {
   // tools/mkspecies.py: full adult set; baby rides its crawl art for the walk keys; teen and
   // the work/school sequences deliberately fall back to the base pack until clips exist.
   { "capybara", "Capybara", INHERIT_UPRIGHT, true },
+  // The five-pack cast (2026-08-18, adult-only, owner-curated bases). Work/school/teen
+  // keys fall back to the base pack until such clips exist, exactly as the capybara does.
+  { "bunny",   "Bunny",   INHERIT_UPRIGHT, true  },
+  { "cat",     "Cat",     INHERIT_UPRIGHT, true  },
+  { "dog",     "Dog",     INHERIT_UPRIGHT, true  },
+  { "frog",    "Frog",    INHERIT_UPRIGHT, true  },
+  // flippers: a held object goes on the floor beside him, never dropped (needs_jon flag)
+  { "penguin", "Penguin", INHERIT_UPRIGHT, false },
 };
 static const int CHARACTERS_N = (int)(sizeof(CHARACTERS) / sizeof(CHARACTERS[0]));
 
