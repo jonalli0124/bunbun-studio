@@ -1245,6 +1245,7 @@ static uint32_t g_departAt = 0;
 static float g_lingerT = 0;
 
 static void say(const char *t);
+static bool tickerAwake();   // defined after S - the announce stays quiet over a sleeper
 static const char *emoteLineFor(const char *key);   // defined after scene.h - it reads the scene table
 static void setAnim(const char *k) {
   const AnimDef *a = findAnim(k);
@@ -1260,7 +1261,17 @@ static void setAnim(const char *k) {
     // should say so regardless of what it is") - the moment one of the feeling clips
     // goes up, the ticker says which, whatever put it there.
     const char *ln = emoteLineFor(a->key);
-    if (ln) say(ln);
+    // never over a sleeper ("it keeps saying he is full of beans but while he was
+    // asleep" - taps flick the clip and every flick re-announced), and never the
+    // same line twice in quick succession
+    if (ln && tickerAwake()) {
+      static const char *lastLn = nullptr;
+      static uint32_t lastLnMs = 0;
+      if (ln != lastLn || millis() - lastLnMs > 15000) {
+        lastLn = ln; lastLnMs = millis();
+        say(ln);
+      }
+    }
   }
 }
 // frame sequencing honouring loop / pingpong / once, as the HTML's frameSeq does
@@ -1277,6 +1288,7 @@ static int currentFrame() {
 
 // ---------------- state ----------------
 static GameState S;
+static bool tickerAwake() { return S.lights != 0; }
 
 // The editor's breathing, at last a device behaviour: while a custom animation shows, the
 // whole character pulses about his feet - 1 + br% * sin(2pi * frame / period). The blit
@@ -4600,6 +4612,7 @@ static void tzStore(int localMin) {
   prefs.end();
   Serial.printf("clock: timezone learned (utc%+d min)\n", off);
 }
+
 static int clockNowMin() {
   return (g_clockBaseMin + (int)((millis() - g_clockBaseMs) / 60000)) % 1440;
 }
@@ -4685,6 +4698,23 @@ static void ds3231Write(int minOfDay, int sec = 0) {
   Wire.write(0x0F);
   Wire.write(0x00);
   Wire.endTransmission();
+}
+
+// The CLOCK row's commit, callable over HTTP (/api/debug/clock?min=N): base set,
+// chip written, minute persisted, timezone learned - one call and internet syncs
+// keep it right forever after ("its online but the time isnt updated": tzOffMin was
+// never taught on this unit, so NTP answers were ignored by design).
+extern "C" void bunbun_set_clock(int localMin) {
+  localMin = ((localMin % 1440) + 1440) % 1440;
+  g_clockBaseMin = localMin;
+  g_clockBaseMs = millis();
+  g_clockSet = true;
+  g_clockProvisional = false;
+  ds3231Write(g_clockBaseMin);
+  prefs.begin("bunbun", false);
+  prefs.putInt("clkMin", g_clockBaseMin);
+  prefs.end();
+  tzStore(g_clockBaseMin);
 }
 
 // ---- NTP, when there is a network ----
