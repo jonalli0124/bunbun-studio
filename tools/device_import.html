@@ -252,6 +252,9 @@ $('go').onclick=async()=>{
     const room=bundle.sceneObj.room;
     if(room && !kept.concat(bundle.frag.entries).some(e=>e.name===room))
       $('msg').textContent=`heads up: this bunbun has no "${room}" art - the room will fall back`;
+    {const want=(bundle.sceneObj.world||[bundle.sceneObj]).map(w=>w.animal).find(Boolean);
+     if(want) $('msg').textContent=`this world was animated on the ${want} - if he is a different animal, `+
+       `give him the ${want} from the site's animal shelf so his walking matches`; }
     mark(2,'done'); mark(3,'doing');
     const r1=await fetch('/api/ota/assets',{method:'POST',body:merged});
     if(!r1.ok) throw new Error('art upload failed: '+r1.status);

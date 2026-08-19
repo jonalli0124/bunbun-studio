@@ -1958,6 +1958,12 @@ const project=()=>Object.assign({format:'bunbun-attach-project',v:1,
    // different animal - otherwise "export with the penguin ... it is the capybara":
    // the assembler only owns the ACTIVE species' art, so the file must bring its own
    clipData:(($('charSel')&&$('charSel').value)?DATA.clips[clip]:undefined),
+   // and how this animal WALKS and IDLES, so the scene's whole preview becomes the
+   // animal, not just the one clip ("when he walks, it defaults to capybara")
+   animalKit:(($('charSel')&&$('charSel').value)?(()=>{const k={};
+     for(const c of ['Adult_Idle','Adult_Walk_East','Adult_Walk_West'])
+       if(DATA.clips[c]) k[c]=DATA.clips[c];
+     return k;})():undefined),
    room:gRoom||undefined,                    // the backdrop it was judged against, nothing more
    animRule:{...animRule},
    stage:{x:gX,y:gY,z:gZ,scale:(gScale==null?null:Math.round(gScale/GAMESCALE[guessPhase()]))},

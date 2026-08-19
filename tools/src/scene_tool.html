@@ -1144,9 +1144,13 @@ function someWalkablePoint(awayFrom){
 function walkClipFor(a, dir){
   const baby = phaseOf(a.clip)==='baby';
   const west = dir<0;
-  const order = baby
+  // an animation that arrived on another animal walks AS that animal - its travel kit
+  // registered under animal:Adult_Walk_* at import ("it defaults to capybara")
+  const ns = (a.clip&&a.clip.includes(':')) ? a.clip.split(':')[0]+':' : '';
+  const base = baby
     ? [west?'Baby_Crawl_West':'Baby_Crawl_East','Baby_Crawl','Baby_Onesie']
     : [west?'Adult_Walk_West':'Adult_Walk_East','Adult_Walk','Adult_Idle'];
+  const order = ns ? base.map(k=>ns+k).concat(base) : base;
   return order.find(k=>SD.clips[k]) || null;
 }
 let forcePick=null;      // {a, spot} - the next choice is YOURS, not the dice's
@@ -1423,8 +1427,9 @@ function idleAnim(){
 const idleAnimFor=a=>(a && idleAnim()===a) ? a : null;
 // The stock fallback, only when the scene has nothing of its own to idle in.
 const idleClip=a=>{ const baby=phaseOf(a.clip)==='baby';
-  return (baby?['Baby_Idle','Baby_Bored','Baby_Sit']:['Adult_Idle','Adult_Bored'])
-    .find(k=>SD.clips[k]) || null };
+  const ns=(a.clip&&a.clip.includes(':')) ? a.clip.split(':')[0]+':' : '';
+  const base=baby?['Baby_Idle','Baby_Bored','Baby_Sit']:['Adult_Idle','Adult_Bored'];
+  return (ns?base.map(k=>ns+k).concat(base):base).find(k=>SD.clips[k]) || null };
 function drawSim(){
   if(!simOn||!sim) return;
   if(sim.phase==='walk'){
@@ -2723,6 +2728,10 @@ $('fAnim').onchange=async e=>{
     if(p.animal && p.clipData && p.clip){
       const nk=p.animal+':'+p.clip;
       if(!SD.clips[nk]) SD.clips[nk]=p.clipData;
+      if(p.animalKit) for(const c of Object.keys(p.animalKit)){
+        const kk=p.animal+':'+c;
+        if(!SD.clips[kk]) SD.clips[kk]=p.animalKit[c];
+      }
       p.clip=nk;
     }
     const clip=p.clip||(p.scene&&p.scene.animation&&p.scene.animation.clip);
@@ -3081,6 +3090,8 @@ function inscribedBounds(pts){
 function deviceScene(animPlan){
   const out={name:((($('sceneName')&&$('sceneName').value)||scene.room||'scene').slice(0,20))};
   if(scene.room) out.room='rooms/room-'+scene.room;
+  {const ns=(animPlan.anims.length&&anims.find(a=>a.on&&a.clip&&a.clip.includes(':')));
+   if(ns) out.animal=ns.clip.split(':')[0];}
   if(scene.role) out.role=scene.role;
   if(scene.role==='work') out.wk=scene.workMin||10;
   // PAINTER'S ORDER TRAVELS AS ARRAY ORDER: within a z pass the device draws props in the
