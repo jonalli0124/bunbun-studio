@@ -2971,6 +2971,8 @@ static void think(float dt) {
           g_workUntil = millis() + (uint32_t)sceneWorkMin() * 60000UL;
         g_pottyLock = (g_pottySeq != 0);
         bool ok = sceneErrandTo(g_doorAct);
+        // a scene without a "the toilet" animation still has its plain sit
+        if (!ok && !strcmp(g_doorAct, "toilet")) ok = sceneErrandTo("sit");
         g_pottyLock = false;
         if (!ok) { g_pottySeq = 0; sceneDoorTo(SCENE_ROLE_MAIN, ""); }
       } else {
@@ -3286,7 +3288,7 @@ static void simulate(float dt) {
       Serial.println("nature calls: off to the bathroom");
       g_pottySeq = 1;
       g_pottyLock = true;
-      sceneDoorTo(SCENE_ROLE_BATH, "sit");
+      sceneDoorTo(SCENE_ROLE_BATH, "toilet");   // the toilet type first; sit is the fallback
       g_pottyLock = false;
       return;
     }
