@@ -2259,6 +2259,9 @@ extern "C" void bunbun_brain_snapshot(char *buf, int len) {
 // Set from the web task, consumed on the game task the next tick.
 static char g_dbgAct[8] = "";
 extern "C" void bunbun_debug_act(const char *a) {
+  // stat pokes apply IMMEDIATELY (the queued version raced the next meal - "it says
+  // he is full"); everything that moves him still goes through think()'s consumption
+  if (a && !strcmp(a, "hungry")) { S.food = 20.0f; return; }
   strncpy(g_dbgAct, a ? a : "", sizeof(g_dbgAct) - 1);
   g_dbgAct[sizeof(g_dbgAct) - 1] = 0;
 }
@@ -3056,10 +3059,6 @@ static void think(float dt) {
     char a[8]; strncpy(a, g_dbgAct, sizeof(a)); a[7] = 0; g_dbgAct[0] = 0;
     Serial.printf("debug act: %s\n", a);
     if (!strcmp(a, "potty")) g_poopDue = millis() + 1500;
-    else if (!strcmp(a, "hungry")) {           // test lever: make him feedable
-      S.food = 20.0f;
-      say("bunbun's tummy is rumbling");
-    }
     else sceneErrandTo(a);
   }
   // settled into a piece of furniture â€” hold the pose until it times out
