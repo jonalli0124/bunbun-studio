@@ -2271,7 +2271,20 @@ function drawObjs(){
 // Rebuild a panel ONLY when its content string changes. draw() runs every frame while
 // anything animates; rebuilding the DOM that often destroys the very button being clicked.
 const _sig={};
+// THE ONE BOX THE CHILD IS TYPING IN IS SACRED (rehearsal S5): a wholesale innerHTML
+// swap under a focused input destroys the keystrokes and the caret. Hold the redraw
+// until they leave the field; the value is already committed on every keystroke.
+const _pendingRedraw={};
 function setIf(id, html){
+  { const el=document.activeElement;
+    if(el && (el.tagName==='INPUT'||el.tagName==='TEXTAREA') &&
+       document.getElementById(id) && document.getElementById(id).contains(el)){
+      _pendingRedraw[id]=html;
+      if(!el._redrawGuard){ el._redrawGuard=1;
+        el.addEventListener('blur', ()=>{ const h=_pendingRedraw[id];
+          delete _pendingRedraw[id]; if(h!=null) setIf(id,h); }, {once:true}); }
+      return false;
+    } }
   if(_sig[id]===html) return false;
   _sig[id]=html; $(id).innerHTML=html; return true;
 }
@@ -2319,7 +2332,12 @@ function drawAnims(){
       spot=p.spots.slice().sort((q,r)=>Math.hypot(q.x-fx,q.y-fy)-Math.hypot(r.x-fx,r.y-fy))[0]; }
     forcePick={a, spot};
     if(!simOn){ await $('preview').onclick() }
-    if(sim){ sim.phase='rest'; sim.t=1e9; sim.waitFor=0 }     // the next tick departs
+    // STOP WHAT HE IS DOING FIRST (rehearsal S6): leaving the current plan in place
+    // let the walk or performance he was already on finish and the wander choose
+    // freely afterwards, so the button that lit up was not the move that played.
+    if(sim){ sim.phase='rest'; sim.t=1e9; sim.waitFor=0;
+      sim.spot=null; sim.settle=null; sim.perform=false; sim.didSomething=false;
+      sim.path=[]; sim.goal=null; sim.tx=sim.x; sim.ty=sim.y; }
     say(`going: "${a.name}"${spot?(' at the '+nice(spot.object)):''}`);
   });
   // and the defaults: a stand-in animation built from the stock clip, on the spot. It lives
@@ -2349,8 +2367,13 @@ function drawAnims(){
     const p=placesFor(a);
     const good = p.kind==='anywhere' || p.spots.length>0;
     const where = p.kind==='anywhere' ? 'anywhere he walks'
-      : (p.spots.length ? `${p.spots.length} place${p.spots.length===1?'':'s'} afford "${a.rule.needs}"`
-                        : `nothing here affords "${a.rule.needs}"`);
+      : (a.rule && (a.rule.onItem!=null||a.rule.onItems)
+          ? (p.spots.length ? `pinned to ${p.spots.length} thing${p.spots.length===1?'':'s'}`
+                            : 'pinned, but that thing is gone')
+        : a.rule && a.rule.inArea!=null
+          ? (p.spots.length ? 'in the area you drew' : 'that area has no room to stand')
+        : (p.spots.length ? `${p.spots.length} place${p.spots.length===1?'':'s'} afford "${a.rule.needs}"`
+                          : `nothing here affords "${a.rule.needs}"`));
     return `<div class="anim ${i===asel?'sel':''} ${a.on?'':'off'}">
       <button class="mini" data-on="${i}" style="${a.on?
         'background:var(--accent);color:#fff;border-color:var(--accent)':'opacity:.55'}"
@@ -2398,7 +2421,9 @@ function drawAnims(){
     : '<div class="hint">add the animations you exported from the editor</div>';
   if(setIf('anims', animsHtml)){
   $('anims').querySelectorAll('[data-dur]').forEach(inp=>{ inp.onclick=e=>e.stopPropagation();
-    inp.onchange=e=>{ const a=anims[+inp.dataset.dur];
+    // COMMIT AS THEY TYPE (rehearsal S5): on 'change' alone, a redraw of this list
+    // threw away whatever was in the box - a child's words, silently, with no undo.
+    inp.oninput=inp.onchange=e=>{ const a=anims[+inp.dataset.dur];
       a.dur=Math.max(0,Math.min(120,+e.target.value||0))||undefined; autosave(); } });
   $('anims').querySelectorAll('[data-actas]').forEach(inp=>{ inp.onclick=e=>e.stopPropagation();
     inp.onchange=e=>{ const a=anims[+inp.dataset.actas];
@@ -2406,7 +2431,9 @@ function drawAnims(){
       a.isWork=a.actAs==='work'||undefined;      // the old field follows along
       autosave(); } });
   $('anims').querySelectorAll('[data-txt]').forEach(inp=>{ inp.onclick=e=>e.stopPropagation();
-    inp.onchange=e=>{ const a=anims[+inp.dataset.txt];
+    // COMMIT AS THEY TYPE (rehearsal S5): on 'change' alone, a redraw of this list
+    // threw away whatever was in the box - a child's words, silently, with no undo.
+    inp.oninput=inp.onchange=e=>{ const a=anims[+inp.dataset.txt];
       a.says=(e.target.value||'').trim().slice(0,42)||undefined; autosave(); } });
   $('anims').querySelectorAll('[data-ahide]').forEach(b=>b.onclick=e=>{
     e.stopPropagation();
@@ -3328,6 +3355,7 @@ function deviceScene(animPlan){
    if(ns) out.animal=ns.clip.split(':')[0];}
   if(scene.role) out.role=scene.role;
   if(scene.role==='work' && scene.workMin>0) out.wk=scene.workMin;
+  // (the anim cap lives just below and now matches the firmware's 10 - rehearsal M4)
   // PAINTER'S ORDER TRAVELS AS ARRAY ORDER: within a z pass the device draws props in the
   // order they arrive, so the array is sorted back-to-front by baseline here - the same
   // painter's rule this page draws with. A rug lies under everything at z=-1; the rest sit
@@ -3376,7 +3404,7 @@ function deviceScene(animPlan){
   if(lamps.length) out.lamp=lamps.slice(0,4);
   // marks + the anims table, from the plan the pak merge already made
   if(animPlan.marks.length) out.bun=animPlan.marks.slice(0,6);
-  if(animPlan.anims.length) out.anims=animPlan.anims.slice(0,8);
+  if(animPlan.anims.length) out.anims=animPlan.anims.slice(0,10);
   const env={};
   if(clouding){ env.cn=Math.min(8,cloudN); env.cw=Math.round(cloudSize*100);
     env.cs=Math.round(cloudSpeed*100); env.ca=Math.round(cloudAlpha*100);
@@ -3488,17 +3516,22 @@ async function buildPortPayload(setB){
       const sized=on.find(x=>x.stage&&x.stage.authored&&x.stage.scale);
       const kitScale=(sized&&sized.stage.scale)||100;
       const kitFps=7;
-      for(const [dir,act] of [['East','walk_e'],['West','walk_w']]){
+      // HE MUST BE HIS OWN ANIMAL WHEN HE IS DOING NOTHING (rehearsal S3). Only the two
+      // walks used to ship, so between animations the device fell back to the INSTALLED
+      // species' idle - a croc world on a penguin stood as a penguin most of its waking
+      // life. The idle is what he wears the majority of the time; it ships too.
+      for(const [dir,act] of [['East','walk_e'],['West','walk_w'],['Idle','idle']]){
         if(!ns) break;
-        if(shipped.has(act)) continue;      // the kid authored their own walk: it wins
-        const ck=ns+':Adult_Walk_'+dir;
+        if(shipped.has(act)) continue;      // the kid authored their own: it wins
+        const ck=ns+':Adult_'+(dir==='Idle'?'Idle':'Walk_'+dir);
         const cd=SD.clips[ck]; if(!cd||!cd.frames||!cd.frames.length) continue;
         if(plan.anims.length>=10){ say(`no room left for the ${act} travel clip - the species art walks instead`,true); continue; }
         const ka={clip:ck, order:cd.frames.map((_,i)=>({i})), layers:[],
                   character:{hold:1}, stage:{scale:kitScale, authored:true}};
         setB(`baking the ${dir.toLowerCase()} walk…`);
         await loadArtFor(ka);
-        const slug=animSlug(ns+'-walk-'+dir[0].toLowerCase(), taken), key='c_'+slug;
+        const slug=animSlug(ns+'-'+(dir==='Idle'?'idle':'walk-'+dir[0].toLowerCase()), taken),
+              key='c_'+slug;
         let n=0;
         for(let s2=0;s2<ka.order.length;s2++){
           const cvB=await bakeStep(ka, s2, {K:1, canvas:true});
@@ -3512,7 +3545,8 @@ async function buildPortPayload(setB){
           const e=PakLib.encodeSprite(hg.getImageData(0,0,96,136));
           e.name=`canim/${slug}/${n}`; newEntries.push(e); n++;
         }
-        if(n) plan.anims.push({k:key, f:'canim/'+slug, n:n, act, fps:kitFps, m:0});
+        if(n) plan.anims.push({k:key, f:'canim/'+slug, n:n, act, fps:kitFps, m:0,
+                               ...(act==='idle'?{aw:1}:{})});
       }
     }
     // 3. object art: the SCENE's art is canon for the scene's names - a redrawn item
@@ -3705,7 +3739,7 @@ async function exportDevicePackage(){
     const stamp=d.getFullYear()+z(d.getMonth()+1)+z(d.getDate())+'-'+z(d.getHours())+z(d.getMinutes());
     aEl.download=(((($('sceneName')&&$('sceneName').value)||scene.room||'my-scene')).replace(/[^\w -]+/g,'').trim().replace(/ +/g,'-')||'my-scene')+'_'+stamp+'.bunbun';
     aEl.click(); setTimeout(()=>URL.revokeObjectURL(aEl.href), 5000);
-    say(`package saved! Open your bunbun's own page — http://<its-ip>/build — and give it `+
+    say(`package saved! Open your bunbun's own page — http://bunbun-XXXX.local/build — and give it `+
         `this file. Inside: ${(body[0]==='{'&&body.slice(0,8).includes('world'))?'your whole world, ':'your room, '}`+
         `${plan.anims.length} animation${plan.anims.length===1?'':'s'} `+
         `and ${newEntries.length} pieces of art (${((16+sc.length+frag.length)/1024)|0} KB).`);
@@ -4343,9 +4377,11 @@ async function restore(raw){
   const STEPS=[
     {t:'Pick where he lives', el:'room',
      b:'Every bunbun needs a room. Open this list and pick one you like \u2014 the picture '+
-       'behind him changes right away.',
-     // a room is always pre-picked, so "done" means CHANGED it - or said yes with next
-     done:()=>scene.room!==coachRoom0},
+       'behind him changes right away. Happy with this one? Press <b>next</b>.',
+     // A ROOM IS ALWAYS PRE-PICKED (rehearsal M12): waiting for a CHANGE meant a child
+     // who liked the first room sat on step 1 for ever. Any touch of the list counts,
+     // and 'next' always works.
+     done:()=>scene.room!==coachRoom0||coachTouchedRoom},
     {t:'Put something in it', el:'addBtn',
      b:'Choose a thing from the little list, then press <b>+ add</b>. A bed, a tub, a rug, '+
        'a lamp \u2014 put in as many as you want. Drag them where you like.',
@@ -4370,6 +4406,9 @@ async function restore(raw){
   ];
   let at=-1, timer=null, pointed=null;
   const coachRoom0=(typeof scene!=='undefined'&&scene)?scene.room:null;
+  let coachTouchedRoom=false;
+  { const r=document.getElementById('room');
+    if(r) r.addEventListener('change', ()=>{ coachTouchedRoom=true }, {once:true}); }
   const KEY='bunbun-coach-seen'+((SKEY.match(/--(.+)$/)||[])[0]||'');
   function point(id){
     if(pointed) pointed.classList.remove('coachPoint');
@@ -4386,7 +4425,9 @@ async function restore(raw){
     $c('coachB').innerHTML=st.b;
     $c('coachDone').textContent='';
     $c('coachCard').style.display='block';
-    $c('coachOpen').style.display='none';
+    // the "?" STAYS (rehearsal M12): hiding it left a stuck child with no way back to
+    // help, and the kid guide points at it by name.
+    $c('coachOpen').style.display='block';
     point(st.el);
     clearInterval(timer);
     timer=setInterval(()=>{

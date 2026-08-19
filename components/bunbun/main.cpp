@@ -2367,13 +2367,15 @@ extern "C" void bunbun_brain_snapshot(char *buf, int len) {
     "{\"role\":%d,\"avail\":%d,\"lights\":%d,\"tx\":%d,\"ty\":%d,"
     "\"visit\":%d,\"door\":%d,\"action\":%d,\"settle_ms\":%ld,"
     "\"x\":%d,\"y\":%d,\"anim\":\"%s\",\"potty\":%d,\"work\":%d,"
-    "\"food\":%d,\"fun\":%d,\"energy\":%d,\"clean\":%d}",
+    "\"food\":%d,\"fun\":%d,\"energy\":%d,\"clean\":%d,"
+    "\"floorN\":%d,\"props\":%d,\"anims\":%d,\"sick\":%d}",
     (int)g_scCurRole,
     (g_scRoleAvail[0]?1:0)|(g_scRoleAvail[1]?2:0)|(g_scRoleAvail[2]?4:0)|(g_scRoleAvail[3]?8:0),
     S.lights?1:0, g_tx, g_ty, (int)g_visit, (int)g_doorTrip, g_action?1:0,
     (long)(millis()<g_settleUntil ? (g_settleUntil-millis()) : 0),
     (int)S.x, (int)S.y, g_anim?g_anim->key:"?", (int)g_pottySeq, g_workUntil?1:0,
-    (int)S.food, (int)S.fun, (int)S.energy, (int)S.clean);
+    (int)S.food, (int)S.fun, (int)S.energy, (int)S.clean,
+    (int)g_scFloorN, (int)g_scPropN, (int)g_scAnimN, (int)S.sick);
 }
 // /api/debug/act - the remote lever the door-walk tests (and future layers) need.
 // Set from the web task, consumed on the game task the next tick.
@@ -2382,6 +2384,10 @@ extern "C" void bunbun_debug_act(const char *a) {
   // stat pokes apply IMMEDIATELY (the queued version raced the next meal - "it says
   // he is full"); everything that moves him still goes through think()'s consumption
   if (a && !strcmp(a, "hungry")) { S.food = 20.0f; return; }
+  // THE LEVERS THAT UNSTICK HIM (rehearsal M10): while sick, away or asleep every act
+  // was swallowed with ok:true and nothing happened, with no route to the MEDS button.
+  if (a && !strcmp(a, "meds")) { S.sick = 0; S.health = min(100.0f, S.health + 35); return; }
+  if (a && !strcmp(a, "wake")) { S.lights = 1; g_sleepPending = 0; g_nightSleep = false; return; }
   strncpy(g_dbgAct, a ? a : "", sizeof(g_dbgAct) - 1);
   g_dbgAct[sizeof(g_dbgAct) - 1] = 0;
 }
@@ -2398,6 +2404,14 @@ static const char *sceneTravelAnim(float dx, bool horiz) {
   const char *k = horiz ? sceneActAnim(dx > 0 ? "walk_e" : "walk_w") : nullptr;
   if (!k) k = sceneActAnim("idle");
   return k;
+}
+// Can this act happen anywhere in this world at all? (rehearsal S10) - the same
+// availability the errand router uses, asked before a button changes a meter.
+static bool sceneCanDo(const char *act) {
+  const int bit = sceneActBit(act);
+  if (bit) for (int r = 0; r < 4; r++)
+    if (g_scRoleAvail[r] && (g_scRoleActs[r] & bit)) return true;
+  return sceneActMark(act) >= 0 || sceneActAnim(act) != nullptr;
 }
 static bool sceneWorkAvail() {
   return g_scRoleAvail[SCENE_ROLE_WORK] || sceneActMark("work") >= 0 ||
@@ -2990,7 +3004,16 @@ static void think(float dt) {
         g_pottySeq = 0;
       }
       if (g_workUntil || g_workReps > 0) {
-        if (g_dbgAct[0]) { g_workUntil = 0; g_workReps = 0; }  // a command outranks work
+        // the child hears about a room that was too big to load (rehearsal S7)
+  if (g_scTooBig) {
+    static uint32_t saidBig = 0;
+    if (!saidBig || millis() - saidBig > 60000) {
+      saidBig = millis();
+      say("that room is too big for bunbun - take a few things out and send it again");
+    }
+    g_scTooBig = false;
+  }
+  if (g_dbgAct[0]) { g_workUntil = 0; g_workReps = 0; }  // a command outranks work
         else if ((g_workUntil ? millis() < g_workUntil : g_workReps > 0) &&
             (sceneActMark("work") >= 0 || sceneActAnim("work"))) {
           // HE WALKS HIS ROUNDS (Jon: "shouldnt he walk around?"): back-to-back reps of
@@ -3048,7 +3071,18 @@ static void think(float dt) {
       return;
     }
   }
-  if (S.sick)    { setAnim(moodAnim()); g_tx = g_ty = -1; return; }
+  if (S.sick) {
+    // A SICK PET CANNOT BE ON AN ERRAND (rehearsal S9): this used to wipe the target
+    // every frame while the bedtime branch kept re-issuing one, so he stood frozen
+    // for ever with the reason board cheerfully saying he was off to bed. Being ill
+    // ends the trip honestly instead of fighting it.
+    if (g_visit >= 0 || g_doorTrip || g_sleepPending) {
+      g_visit = -1; g_doorTrip = 0; g_sleepPending = 0;
+      g_workUntil = 0; g_workReps = 0; g_workNextAt = 0; g_pottySeq = 0;
+      say("bunbun is too poorly for that - he needs medicine");
+    }
+    setAnim(moodAnim()); g_tx = g_ty = -1; return;
+  }
 
   // HE MINDS FIRST, THEN HE TIDIES. The builder runs the huff at the very top of stepBun, ahead
   // of the chores, so the reaction lands while the thing is still rolling rather than after he
@@ -4341,6 +4375,14 @@ static void runMenu(int i) {
   bool b = (S.phase == PH_BABY);
   switch (i) {
     case 0: if (S.food >= 98) { sfxNo(); say("bunbun is full"); return; }
+            // NOTHING IS EATEN IF THERE IS NOWHERE TO EAT (rehearsal S10): the meter
+            // used to fill first, so a world with no meal fed him anyway - and the
+            // blocked line that would have told the child was overwritten one line
+            // later by "bunbun ate a meal".
+            if (sceneActive() && !sceneCanDo("eat")) {
+              sfxNo(); whyNote(WHY_BLOCKED, "eat", "");
+              return;
+            }
             // W-047: a meal when he's genuinely hungry is THRILLING - the
             // trill rides in right behind the menu's OK chirp.
             if (S.food < 30) sfxExcited();
@@ -4366,7 +4408,11 @@ static void runMenu(int i) {
         sfxNo(); say("take care of bunbun first, then play"); return;
       }
       g_gameRoster = true; drawGameRoster(); return;
-    case 2: S.clean = min(100.0f, S.clean + 45); S.fun = min(100.0f, S.fun + 6);
+    case 2: if (sceneActive() && !sceneCanDo("bath") && !sceneCanDo("wash")) {
+              sfxNo(); whyNote(WHY_BLOCKED, "bath", "");
+              return;
+            }
+            S.clean = min(100.0f, S.clean + 45); S.fun = min(100.0f, S.fun + 6);
             whyFor(WHY_BUTTON, "clean");
             if (!sceneErrandTo("bath")) startAction(pa("bath"), 4.2f);
             say("bunbun took a bath"); break;

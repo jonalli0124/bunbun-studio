@@ -61,6 +61,8 @@
   <div id="inside"></div>
   <button id="go">Give it to bunbun!</button>
   <ul id="steps"></ul>
+  <div id="rescueBox" style="display:none;margin:10px 0;padding:10px 12px;border:2px solid #27ae60;
+       border-radius:10px;background:#f2fbf3;font-size:14px"></div>
   <p id="msg"></p>
   <p class="pet" id="pet"></p>
 </main>
@@ -206,7 +208,7 @@ async function rescueBundle(pak){
   const scenes=[];
   for(const [role,path] of ROLE_FILES){
     try{
-      const r=await fetch('/api/fs/download?path='+encodeURIComponent(path));
+      const r=await fetch('/api/fs/download?path='+path);   // RAW: the device does not percent-decode
       if(!r.ok) continue;
       const o=JSON.parse(await r.text());
       if(role && !o.role) o.role=role;
@@ -236,11 +238,25 @@ async function rescueBundle(pak){
 function saveRescue(bytes){
   const d=new Date(), z=n=>String(n).padStart(2,'0');
   const stamp=d.getFullYear()+z(d.getMonth()+1)+z(d.getDate())+'-'+z(d.getHours())+z(d.getMinutes());
-  const a=document.createElement('a');
-  a.href=URL.createObjectURL(new Blob([bytes],{type:'application/octet-stream'}));
-  a.download='bunbun-before-'+stamp+'.bunbun';
-  a.click();
-  setTimeout(()=>URL.revokeObjectURL(a.href),8000);
+  const name='bunbun-before-'+stamp+'.bunbun';
+  const url=URL.createObjectURL(new Blob([bytes],{type:'application/octet-stream'}));
+  // A synthetic click this far from the child's own press is dropped by Chrome without
+  // transient activation, and a.click() never throws - so the old code could believe a
+  // save happened when nothing was written. Try it, then ALWAYS leave a real link the
+  // child can press, and never claim the file exists.
+  try{ const a=document.createElement('a'); a.href=url; a.download=name; a.click(); }catch(e){}
+  const box=document.getElementById('rescueBox');
+  if(box){
+    box.innerHTML='';
+    const t=document.createElement('div');
+    t.textContent='Before this, here is everything that was on your bunbun:';
+    const a2=document.createElement('a');
+    a2.href=url; a2.download=name; a2.textContent='\u{1F4BE} save '+name;
+    a2.style.cssText='display:inline-block;margin-top:6px;font-weight:700';
+    box.appendChild(t); box.appendChild(a2);
+    box.style.display='block';
+  }
+  return name;
 }
 
 async function waitBack(){
@@ -262,15 +278,19 @@ $('go').onclick=async()=>{
     mark(0,'done'); mark(1,'doing');
     const pak=PakLib.parse(await (await fetch('/api/ota/assets')).arrayBuffer());
     mark(1,'done'); mark(2,'doing');
-    try{
-      const bak=await rescueBundle(pak);
-      if(bak){ saveRescue(bak);
-        $('msg').textContent='saved what was on him into your Downloads first \u2014 '+
-          'that file puts it all back if you ever want it';
-        $('msg').className='ok';
-      }
-    }catch(e){}
-    mark(2,'done'); mark(3,'doing');
+    let rescued=null;
+    try{ const bak=await rescueBundle(pak); if(bak) rescued=saveRescue(bak); }catch(e){}
+    if(rescued){
+      mark(2,'done');
+    } else {
+      // NEVER claim a save that did not happen (rehearsal S2): the old code printed
+      // "saved ... into your Downloads first" unconditionally, inside an empty catch.
+      mark(2,'bad');
+      $('msg').textContent='could not save a copy of what is on him first \u2014 carrying on, '+
+        'but there is no undo for this install';
+      $('msg').className='bad';
+    }
+    mark(3,'doing');
     if(bundle.sceneObj.species){
       // ONE ANIMAL AT A TIME (the owner's rule): the incoming animal's art replaces
       // every other animal's; the base pack and everything else stay untouched.
@@ -306,8 +326,30 @@ $('go').onclick=async()=>{
     // the device goes, and only the package's own come in - a package with no animations
     // still clears the shelf. Rooms and species art merge by name as before.
     const newNames=new Set(bundle.frag.entries.map(e=>e.name));
+    // WHAT THE ROOMS THIS PACKAGE DOES NOT REPLACE STILL NEED (rehearsal S1). The old
+    // rule cleared EVERY canim/ folder, so installing one room left the other rooms'
+    // animations pointing at deleted art - and charSpriteKey deliberately refuses to
+    // fall back for canim/ names, so the pet drew NOTHING in those rooms. Read the
+    // scene files that are staying and keep the folders they name.
+    const incomingRoles=new Set((bundle.sceneObj.world||[bundle.sceneObj])
+      .map(w=>(w.role||'main')));
+    const ROLE_PATH={main:'/spiffs/scene.json', kitchen:'/spiffs/scene-kitchen.json',
+                     bathroom:'/spiffs/scene-bathroom.json', work:'/spiffs/scene-work.json'};
+    const stillNeeded=new Set();
+    for(const [role,path] of Object.entries(ROLE_PATH)){
+      if(incomingRoles.has(role)) continue;              // this package replaces it
+      try{
+        const r=await fetch('/api/fs/download?path='+path);
+        if(!r.ok) continue;
+        const o=JSON.parse(await r.text());
+        for(const a of (o.anims||[])) if(a && a.f) stillNeeded.add(a.f+'/');
+        if(o.room) stillNeeded.add(o.room);
+        for(const pr of (o.props||[])) if(pr.n) stillNeeded.add(pr.n);
+      }catch(e){}
+    }
     const kept=pak.entries.filter(e=>!newNames.has(e.name)
-      && !e.name.startsWith('canim/'));
+      && (!e.name.startsWith('canim/') ||
+          [...stillNeeded].some(n=>e.name.startsWith(n))));
     const merged=PakLib.build(kept.concat(bundle.frag.entries));
     const room=bundle.sceneObj.room;
     if(room && !kept.concat(bundle.frag.entries).some(e=>e.name===room))

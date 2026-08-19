@@ -141,6 +141,7 @@ static int       g_scBlockN = 0;
 static Bounds    g_scBounds = {0, 0, 0, 0};
 static bool      g_scHasBounds = false;
 static bool      g_scOK = false;          // a usable scene was read
+static bool      g_scTooBig = false;      // a scene file exists but is over SCENE_MAX_BYTES
 // Bumped every time a scene is successfully read. Anything that CACHES something derived from the
 // scene has to watch this, not just its own inputs: buildLightMap() stamped its cache key at boot
 // — before SPIFFS is even mounted, so before any scene exists — and its only other trigger was a
@@ -374,7 +375,18 @@ static bool sceneLoad() {
   FILE *f = fopen(SCENE_ROLE_PATHS[g_scLoadRole], "rb");
   if (!f) return false;                       // no scene file: the normal case, not an error
   fseek(f, 0, SEEK_END); long len = ftell(f); fseek(f, 0, SEEK_SET);
-  if (len <= 1 || len > SCENE_MAX_BYTES) { fclose(f); return false; }
+  // TOO BIG IS NOT THE SAME AS ABSENT (rehearsal S7): a scene one byte over the cap
+  // returned false here and the device drew the compiled-in factory room instead - a
+  // complete, plausible, DIFFERENT room, with nothing said. Remember it so the caller
+  // can tell the child their room was too big rather than pretending it never existed.
+  if (len > SCENE_MAX_BYTES) {
+    fclose(f);
+    Serial.printf("scene: %s is %ld bytes - the limit is %d. NOT loading it.\n",
+                  SCENE_ROLE_PATHS[g_scLoadRole], (long)len, SCENE_MAX_BYTES);
+    g_scTooBig = true;
+    return false;
+  }
+  if (len <= 1) { fclose(f); return false; }
   char *buf = (char *)malloc(len + 1);
   if (!buf) { fclose(f); return false; }
   size_t got = fread(buf, 1, len, f);
@@ -477,8 +489,17 @@ static bool sceneLoad() {
     cJSON *pt = NULL;
     cJSON_ArrayForEach(pt, fl) {
       if (g_scFloorN >= SCENE_MAX_FLOORPTS) break;
-      if (!cJSON_IsArray(pt) || cJSON_GetArraySize(pt) < 2) continue;
-      const cJSON *px = cJSON_GetArrayItem(pt, 0), *py = cJSON_GetArrayItem(pt, 1);
+      // THE TOOL WRITES OBJECTS; ACCEPT BOTH (rehearsal S8). scene_tool exports
+      // "floor":[{"x":15,"y":206},...] and this only ever accepted [[15,206],...] -
+      // so every floor a child drew was silently discarded and the pet fell back to
+      // the compiled band. The golden rule says the export is canon: the firmware
+      // bends. Jon's own device shipped with this broken today.
+      const cJSON *px = NULL, *py = NULL;
+      if (cJSON_IsArray(pt) && cJSON_GetArraySize(pt) >= 2) {
+        px = cJSON_GetArrayItem(pt, 0); py = cJSON_GetArrayItem(pt, 1);
+      } else if (cJSON_IsObject(pt)) {
+        px = cJSON_GetObjectItem(pt, "x"); py = cJSON_GetObjectItem(pt, "y");
+      }
       if (!cJSON_IsNumber(px) || !cJSON_IsNumber(py)) continue;
       // CLAMP wide, do not reject. The point of this is only to stop a silly number wrapping
       // into a negative one on the way into int16_t; it is NOT a canvas test.
