@@ -4405,3 +4405,139 @@ async function restore(raw){
   if(!seen && untouched) setTimeout(()=>show(0), 900); else $c('coachOpen').style.display='block';
 })();
 </script>
+
+<!-- THE HOME MAP (Jon: "a smaller version you can turn on or off ... almost like a
+     minimap ... a sense of his whole life and home"). The house as a plus: kitchen
+     top-left, bathroom bottom-left, the main room in the middle, work to the right -
+     with a dot that is really him, moving where he really is. -->
+<style>
+  #homeMapBtn{position:fixed;left:16px;bottom:16px;z-index:9998;width:44px;height:44px;
+    border-radius:50%;border:3px solid var(--accent);background:#fff;font-size:20px;
+    cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,.18)}
+  #homeMap{position:fixed;left:16px;bottom:70px;z-index:9998;background:#fff;
+    border:3px solid var(--accent);border-radius:14px;padding:8px 8px 6px;
+    box-shadow:0 10px 28px rgba(0,0,0,.2);display:none}
+  #homeMap .hm-t{font-size:11px;text-transform:uppercase;letter-spacing:.5px;
+    opacity:.6;margin:0 0 4px 2px}
+  /* the page styles its big canvas globally; the map's needs its own size back */
+  #homeMap{width:268px}
+  #homeMapC{width:252px !important;height:192px !important;display:block;max-width:none !important;
+    background:transparent;border:0;border-radius:0;box-shadow:none;image-rendering:pixelated;
+    padding:0;margin:0}
+</style>
+<button id="homeMapBtn" title="his whole home, and where he is in it">&#128506;</button>
+<div id="homeMap"><div class="hm-t">his home</div><canvas id="homeMapC" width="252" height="192"></canvas></div>
+<script>
+(function(){
+  const btn=document.getElementById('homeMapBtn'), box=document.getElementById('homeMap');
+  const cv=document.getElementById('homeMapC'), g=cv.getContext('2d');
+  g.imageSmoothingEnabled=false;
+  // the plus: [col,row] on a 3x3, exactly as the world is laid out
+  const CELLS=[
+    {role:'kitchen',  label:'kitchen',  c:0, r:0},
+    {role:'bathroom', label:'bathroom', c:0, r:2},
+    {role:'',         label:'home',     c:1, r:1},
+    {role:'work',     label:'work',     c:2, r:1},
+  ];
+  const W=78, H=58, GAP=6, OX=6, OY=6;
+  const KEY='bunbun-homemap'+((SKEY.match(/--(.+)$/)||[])[0]||'');
+  let on=false; try{ on=localStorage.getItem(KEY)==='1' }catch(e){}
+  function roomOf(role){                       // which picture that room wears
+    try{
+      if(role===roleKey()) return scene.room;
+      const q=JSON.parse(worldSlots[role]||'null');
+      return q&&q.scene?q.scene.room:null;
+    }catch(e){ return null }
+  }
+  function exists(role){ return role===roleKey() || worldSlots[role]!=null }
+  // which picture of him is up this instant: walking uses the travel clip, a performance
+  // its own, and everything else the idle - mirroring drawChar without disturbing it
+  function petFrame(){
+    try{
+      if(!sim||!sim.a) return null;
+      const a=sim.a;
+      let over=null;
+      if(sim.phase==='walk') over=sim.walkClip;
+      else if(!sim.perform) over=(typeof idleClip==='function')?idleClip(a):null;
+      const clip=over||a.clip;
+      if(!SD.clips[clip]) return null;
+      const step=Math.floor(sim.t*(over?7:(a.fps||7)));
+      let fi=0;
+      if(typeof isRot==='function' && isRot(clip)){
+        fi=rotFrame(clip,(a&&a.facing)||faceOnOf(clip));
+      } else if(over){
+        fi=step % (SD.clips[clip].frames.length||1);
+      } else {
+        const seq=[]; for(const o of a.order) for(let h=0;h<(a.character.hold||1);h++) seq.push(o);
+        fi=seq.length? seq[((step%seq.length)+seq.length)%seq.length].i : 0;
+      }
+      return imgs['clip|'+clip+'|'+fi] || imgs['clip|'+clip+'|0'] || null;
+    }catch(e){ return null }
+  }
+  function paint(){
+    if(!on) return;
+    g.clearRect(0,0,cv.width,cv.height);
+    const here=roleKey();
+    // the halls he walks, all of them, before any room sits on top
+    const mx=OX+1*(W+GAP)+W/2, my=OY+1*(H+GAP)+H/2;
+    for(const cell of CELLS){
+      if(cell.role==='' || !exists(cell.role)) continue;
+      const x=OX+cell.c*(W+GAP), y=OY+cell.r*(H+GAP);
+      g.strokeStyle='rgba(138,110,230,.45)'; g.lineWidth=6; g.lineCap='round';
+      g.beginPath(); g.moveTo(x+W/2,y+H/2); g.lineTo(mx,my); g.stroke();
+    }
+    for(const cell of CELLS){
+      const x=OX+cell.c*(W+GAP), y=OY+cell.r*(H+GAP);
+      const live=exists(cell.role), isHere=(cell.role===here);
+      g.save();
+      g.globalAlpha=live?1:0.25;
+      // the room's own picture, if we have it - else a plain card
+      const rn=live?roomOf(cell.role):null;
+      const im=rn?imgs['room|'+rn]:null;
+      g.fillStyle='#efe9dd'; g.fillRect(x,y,W,H);
+      if(im){ try{ g.drawImage(im,x,y,W,H) }catch(e){} }
+      g.strokeStyle=isHere?'var(--accent)':'#b9b0a0';
+      g.strokeStyle=isHere?'#8a6ee6':'#b9b0a0';
+      g.lineWidth=isHere?3:1.5; g.strokeRect(x+.5,y+.5,W-1,H-1);
+      g.fillStyle='rgba(0,0,0,.55)'; g.fillRect(x,y+H-13,W,13);
+      g.fillStyle='#fff'; g.font='10px system-ui,sans-serif'; g.textAlign='center';
+      g.fillText(live?cell.label:cell.label+' \u2014 none', x+W/2, y+H-3);
+      g.restore();
+      // and HIM - the real animated sprite, tiny (Jon: "can we see a small version of
+      // him acting out in the minimap?"). Same clip and same frame the big preview is
+      // showing this instant, so he sits, washes and walks in here too.
+      if(isHere && typeof sim!=='undefined' && sim){
+        const px=x+4+(sim.x/GAME.w)*(W-8), py=y+4+(sim.y/GAME.h)*(H-17);
+        const im=petFrame(), S=22;
+        g.save();
+        g.globalAlpha=.28; g.fillStyle='#000'; g.beginPath();
+        g.ellipse(px, py+1, 5, 2, 0, 0, 7); g.fill();      // a little shadow to stand on
+        g.globalAlpha=1;
+        if(im){
+          if(sim.face<0){                                   // he faces the way he walks
+            g.translate(px,0); g.scale(-1,1); g.translate(-px,0);
+          }
+          try{ g.drawImage(im, px-S/2, py-S*90/96, S, S) }catch(e){}
+        } else {
+          g.beginPath(); g.arc(px,py-4,4,0,7); g.fillStyle='#8a6ee6'; g.fill();
+          g.lineWidth=2; g.strokeStyle='#fff'; g.stroke();
+        }
+        g.restore();
+      }
+    }
+    if(typeof sim==='undefined' || !sim){
+      g.fillStyle='#6b6257'; g.font='11px system-ui,sans-serif'; g.textAlign='left';
+      g.fillText('press Act it out to see him', OX, cv.height-4);
+    }
+  }
+  function show(v){
+    on=v; box.style.display=v?'block':'none';
+    btn.style.background=v?'#8a6ee6':'#fff'; btn.style.color=v?'#fff':'';
+    try{ localStorage.setItem(KEY, v?'1':'0') }catch(e){}
+    if(v) paint();
+  }
+  btn.onclick=()=>show(!on);
+  show(on);
+  setInterval(()=>{ try{ paint() }catch(e){} }, 120);
+})();
+</script>
