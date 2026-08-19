@@ -6366,7 +6366,12 @@ static void updateCat(float dt) {
       // she waits a while and then puts herself on the chair anyway — a cat is not offended.
       // ...but not while the bird already has his attention. See the note at the bird's own
       // claim: two beats writing his destination is what sent him to a third place.
-      if (!g_catPetted && !g_action && !g_workStage && alive() && S.lights && !S.sick &&
+      // ...and not while he is ON AN ERRAND (Jon: "the cat interrupted his go to work
+      // action"): a door trip or a placed visit is a commitment; greeting her used to
+      // overwrite his target mid-walk and the work trip simply vanished. She waits -
+      // the fallback below already puts her on the chair if he never comes.
+      if (!g_catPetted && !g_action && !g_workStage && g_visit < 0 && !g_doorTrip &&
+          alive() && S.lights && !S.sick &&
           g_catT > 1.4f && !(g_birdReacted && g_birdPhase == 2)) {
         g_catPetted = true;
         catPetSpot(&g_tx, &g_ty);
