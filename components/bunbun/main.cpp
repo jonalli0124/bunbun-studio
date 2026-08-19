@@ -2121,6 +2121,7 @@ static void catDismissIfAway();
 static uint8_t  g_doorTrip = 0;      // 1 = walking to the exit edge
 static uint32_t g_visitHomeAt = 0;   // a fruitless side-room visit walks home at this time
 static uint32_t g_roomMinStay = 0;   // Jon: "at least 10 seconds" in a side room, whatever happens
+static uint32_t g_workNextAt = 0;    // the stroll between work reps ends, and the next one starts
 static uint8_t  g_doorRole = 0;
 static char     g_doorAct[8] = "";
 static uint32_t g_workUntil = 0;     // the scene work session deadline; 0 = no session
@@ -2222,7 +2223,7 @@ static bool sceneErrandTo(const char *act) {
       sceneActMark("work") < 0 && !sceneActAnim("work"))
     return false;                    // no workplace anywhere = he does not work
   if (tgt != g_scCurRole) return sceneDoorTo(tgt, act);
-  if (!strcmp(act, "work") && !g_workUntil)
+  if (!strcmp(act, "work") && !g_workUntil && sceneWorkMin() > 0)
     g_workUntil = millis() + (uint32_t)sceneWorkMin() * 60000UL;
   int m = sceneActMark(act);
   if (m < 0) {
@@ -2748,13 +2749,17 @@ static void think(float dt) {
         g_pottySeq = 0;
       }
       if (g_workUntil) {
-        if (millis() < g_workUntil &&
+        if (g_dbgAct[0]) g_workUntil = 0;      // a command outranks the session
+        else if (millis() < g_workUntil &&
             (sceneActMark("work") >= 0 || sceneActAnim("work"))) {
-          sceneErrandTo("work");
+          // HE WALKS HIS ROUNDS (Jon: "shouldnt he walk around?"): back-to-back reps of
+          // a 5s work clip read as standing still. Each rep ends in a short stroll; the
+          // tick below starts the next rep from wherever the stroll took him.
+          g_workNextAt = millis() + 2500 + esp_random() % 3500;
+          g_wanderT = 0.5f;
           return;
         }
-        g_workUntil = 0;
-        say("work is all done!");
+        if (g_workUntil) { g_workUntil = 0; say("work is all done!"); }
       }
       if (g_scCurRole != SCENE_ROLE_MAIN && !g_doorTrip) {
         if (millis() < g_roomMinStay) {          // the visit's minimum stay first
@@ -2953,13 +2958,14 @@ static void think(float dt) {
     // A WORK SESSION OWNS THE CLOCK (Jon: the bug collector must not stop early): while
     // it runs, the performance ending just means the next work animation begins.
     if (g_workUntil) {
-      if (millis() < g_workUntil &&
+      if (g_dbgAct[0]) g_workUntil = 0;        // a command outranks the session
+      else if (millis() < g_workUntil &&
           (sceneActMark("work") >= 0 || sceneActAnim("work"))) {
-        sceneErrandTo("work");
+        g_workNextAt = millis() + 2500 + esp_random() % 3500;   // the same stroll
+        g_wanderT = 0.5f;
         return;
       }
-      g_workUntil = 0;
-      say("work is all done!");
+      if (g_workUntil) { g_workUntil = 0; say("work is all done!"); }
     }
     // an act in another room is over: walk home - after the visit's minimum stay
     if (g_scCurRole != SCENE_ROLE_MAIN && !g_doorTrip) {
@@ -2980,6 +2986,15 @@ static void think(float dt) {
     g_wanderT = 10.0f + (esp_random() % 1000) / 100.0f;   // settle for a good while after a visit
   }
 
+  // the stroll between work reps is over: the next rep starts where he stands
+  if (g_workNextAt && millis() >= g_workNextAt) {
+    if (!g_workUntil) g_workNextAt = 0;            // recalled home mid-stroll: drop it
+    else if (g_visit < 0 && !g_doorTrip && !g_action) {
+      g_workNextAt = 0;
+      sceneErrandTo("work");
+      return;
+    }
+  }
   // the fruitless-visit linger is over: head home (cleared by any new door trip)
   if (g_visitHomeAt && millis() >= g_visitHomeAt) {
     g_visitHomeAt = 0;
@@ -3070,7 +3085,7 @@ static void think(float dt) {
       // run at the edge - only the starting point moved.
       g_tx = g_ty = -1; g_visit = -1;
       if (g_doorAct[0]) {
-        if (!strcmp(g_doorAct, "work") && !g_workUntil)
+        if (!strcmp(g_doorAct, "work") && !g_workUntil && sceneWorkMin() > 0)
           g_workUntil = millis() + (uint32_t)sceneWorkMin() * 60000UL;
         g_pottyLock = (g_pottySeq != 0);
         bool ok = sceneErrandTo(g_doorAct);
@@ -3932,7 +3947,12 @@ static void runMenu(int i) {
   // still protects errands from EACH OTHER — just never from affection.
   if (i == 5) {
     g_workStage = 0;                     // affection outranks the errand
-  } else if (i != 1 && (g_action || g_workStage)) { sfxNo(); say("bunbun is busy"); return; }
+  } else if (i != 1 && (g_action || g_workStage)) {
+    if (i == 7 && g_workUntil) { /* WORK during a work session falls through: it recalls him */ }
+    else { sfxNo();
+      say(g_workUntil ? "bunbun is at work - press work to call him home" : "bunbun is busy");
+      return; }
+  }
   // i == 1 (PLAY) is exempt from the busy gate (Jon 8/11: "the play button
   // shouldn't have to wait for a passive to finish") - opening the games
   // roster is navigation, not an action that would fight a running clip.
@@ -4044,6 +4064,15 @@ static void runMenu(int i) {
               // it used to squat in the cuddle slot for grown bunbuns;
               // Jon then kept ZZZ in its familiar place, so WORK holds the
               // end of the row).
+              // PRESS WORK AGAIN TO CALL HIM HOME ("hes now stuck at work. it just
+              // says he is busy"): the session is Jon's own dont-stop-early rule doing
+              // its job for the full work length - what was missing was the recall.
+              if (g_workUntil) {
+                g_workUntil = 0;
+                say("work is done for today - heading home");
+                if (g_scCurRole != SCENE_ROLE_MAIN && !g_doorTrip) sceneDoorTo(SCENE_ROLE_MAIN, "");
+                break;
+              }
               if (b) { sfxNo(); say("too little for chores - cuddles instead!"); return; }
               bool sc = teenSchool();
               if (S.disc >= 96)  { sfxNo();
@@ -5090,8 +5119,11 @@ static void buildLightMap() {
   const int n = sceneActive() ? sceneLampCount() : 0;
   for (int i = 0; i < n && lit < (int)(sizeof(lamps) / sizeof(lamps[0])); i++)
     if (lampGeomFor(sceneLamp(i), lsc, &lamps[lit], sceneLampCfg(i))) lit++;
-  if (!lit) {
-    // No scene, or a scene with no fixture in it: the room the firmware ships, unchanged.
+  if (!lit && !g_scRoom[0]) {
+    // No scene at all: the room the firmware ships, cone and all. A CUSTOM room with no
+    // lamps gets NO cone - the builder is the lighting record, and a glow from a sconce
+    // that is not there was the device inventing light ("the light from the phantom
+    // sconce at work is still there").
     LampGeom *g = &lamps[0];
     g->sx = 294.0f * VIEW; g->sy = 56.0f * VIEW;
     g->px = 236.0f * VIEW; g->py = (FLOOR_Y + 10) * VIEW;
@@ -5103,7 +5135,7 @@ static void buildLightMap() {
     g->hitsFloor = true;
     lit = 1;
   }
-  lightPaint(lamps, lit);
+  if (lit) lightPaint(lamps, lit);       // 0 lamps = an honest, even room
   g_lightPhase = S.phase;
   g_lightScalePct = env ? env->lightS : 100;
   g_lightGen = g_scGen;

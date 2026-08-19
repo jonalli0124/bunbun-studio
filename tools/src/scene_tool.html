@@ -195,9 +195,9 @@
         <option value="work">work &mdash; the WORK button comes here</option>
       </select>
       <div id="workLenRow" style="display:none;margin-top:6px">
-        <label>work lasts <span id="wkl">10</span> min
+        <label>work lasts <span id="wkl">2</span> min
           <span class="hint">&mdash; the session owns the clock; his job never stops early</span></label>
-        <input type="range" id="wk" min="1" max="60" step="1" value="10" style="width:100%">
+        <input type="range" id="wk" min="1" max="60" step="1" value="2" style="width:100%">
       </div>
       <label>the room</label>
       <select id="room"></select>
@@ -3174,7 +3174,7 @@ function deviceScene(animPlan){
   {const ns=(animPlan.anims.length&&anims.find(a=>a.on&&a.clip&&a.clip.includes(':')));
    if(ns) out.animal=ns.clip.split(':')[0];}
   if(scene.role) out.role=scene.role;
-  if(scene.role==='work') out.wk=scene.workMin||10;
+  if(scene.role==='work') out.wk=scene.workMin||2;
   // PAINTER'S ORDER TRAVELS AS ARRAY ORDER: within a z pass the device draws props in the
   // order they arrive, so the array is sorted back-to-front by baseline here - the same
   // painter's rule this page draws with. A rug lies under everything at z=-1; the rest sit

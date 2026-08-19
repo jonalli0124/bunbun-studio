@@ -43,7 +43,7 @@ static const char *SCENE_ROLE_PATHS[4] = {
 static uint8_t g_scCurRole  = SCENE_ROLE_MAIN;   // which room he is IN
 static uint8_t g_scLoadRole = SCENE_ROLE_MAIN;   // which file sceneLoad() reads
 static bool    g_scRoleAvail[4] = {false, false, false, false};
-static int16_t g_scWorkMin = 10;                 // "work lasts [N] minutes"
+static int16_t g_scWorkMin = 0;                  // "work lasts [N] minutes"; 0 = one visit
 static void sceneRolesScan() {
   for (int r = 0; r < 4; r++) {
     FILE *f = fopen(SCENE_ROLE_PATHS[r], "rb");
@@ -346,8 +346,11 @@ static bool sceneLoad() {
   if (cJSON_IsString(rm)) { strncpy(g_scRoom, rm->valuestring, sizeof(g_scRoom) - 1); }
   {
     const cJSON *wk = cJSON_GetObjectItem(root, "wk");
+    // no wk in the scene = ONE VISIT: he goes, does the job once, stays his 10s
+    // minimum, and walks home (Jon: "it should be at least 10s and then return").
+    // A number here is the opt-in to a real timed session.
     g_scWorkMin = cJSON_IsNumber(wk)
-                      ? (int16_t)constrain((int)cJSON_GetNumberValue(wk), 1, 240) : 10;
+                      ? (int16_t)constrain((int)cJSON_GetNumberValue(wk), 0, 240) : 0;
   }
 
   // the walkable rectangle
