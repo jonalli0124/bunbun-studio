@@ -10,7 +10,10 @@ GitHub Pages site (no install), or locally from `tools/build/`:*
 
 **Getting work onto the device** (the one flow): press **save a bunbun package** in the
 assembler — one timestamped `.bunbun` file with every room, all the art, and the
-animal's walk clips — then open `http://<device-ip>/build` and give it the file. A
+animal's walk clips — then open **`http://bunbun-XXXX.local/build`** (the device answers to its own name — no IP
+hunting; `bunbun-6D1C` is the one on Jon's shelf) and give it the file. The page saves a
+copy of whatever was on the device into your Downloads *before* it installs anything, so
+nobody's world is ever lost. A
 package replaces all custom animations on the device. (The old "Send to bunbun" button
 is gone; wherever this guide mentions it below, read "save a bunbun package + /build".)
 
