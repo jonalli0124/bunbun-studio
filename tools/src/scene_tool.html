@@ -3543,7 +3543,10 @@ async function exportDevicePackage(){
     const blob=new Blob([head, sc, frag], {type:'application/octet-stream'});
     const aEl=document.createElement('a');
     aEl.href=URL.createObjectURL(blob);
-    aEl.download=(((($('sceneName')&&$('sceneName').value)||scene.room||'my-scene')).replace(/[^\w -]+/g,'').trim().replace(/ +/g,'-')||'my-scene')+'.bunbun';
+    // stamped like every other save, so ten packages in Downloads stay tellable apart
+    const d=new Date(), z=n=>String(n).padStart(2,'0');
+    const stamp=d.getFullYear()+z(d.getMonth()+1)+z(d.getDate())+'-'+z(d.getHours())+z(d.getMinutes());
+    aEl.download=(((($('sceneName')&&$('sceneName').value)||scene.room||'my-scene')).replace(/[^\w -]+/g,'').trim().replace(/ +/g,'-')||'my-scene')+'_'+stamp+'.bunbun';
     aEl.click(); setTimeout(()=>URL.revokeObjectURL(aEl.href), 5000);
     say(`package saved! Open your bunbun's own page — http://<its-ip>/build — and give it `+
         `this file. Inside: ${(body[0]==='{'&&body.slice(0,8).includes('world'))?'your whole world, ':'your room, '}`+
