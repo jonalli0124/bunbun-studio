@@ -4053,7 +4053,15 @@ static void runMenu(int i) {
                                    say(sc ? "bunbun is too tired for school"
                                           : "bunbun is too tired to work");
                                    return; }
-              if (sceneWorkAvail() && sceneErrandTo("work")) break;
+              // A WORLD WITH A WORK ROOM NEVER FALLS INTO THE FARM SCRIPT: pressing
+              // WORK while already standing in a work room that has no work animation
+              // used to fail the errand and start the scripted farm sequence instead -
+              // minutes of "bunbun is busy" with no way out ("hes now stuck at work").
+              if (sceneWorkAvail()) {
+                if (!sceneErrandTo("work"))
+                  say("nothing to do at work yet - add a 'his job' animation");
+                break;
+              }
               startWork();
               break;
             }
