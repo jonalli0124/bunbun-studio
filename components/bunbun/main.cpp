@@ -1260,10 +1260,9 @@ static void setAnim(const char *k) {
     // EVERY EMOTE ANNOUNCES ITSELF (Jon: "if he is doing an emote the scroll text
     // should say so regardless of what it is") - the moment one of the feeling clips
     // goes up, the ticker says which, whatever put it there.
-    const char *ln = emoteLineFor(a->key);
-    // never over a sleeper ("it keeps saying he is full of beans but while he was
-    // asleep" - taps flick the clip and every flick re-announced), and never the
-    // same line twice in quick succession
+    const char *ln = nullptr;   // TRIAGE 8/19: announcer suspended during the panic
+                                // hunt (say->sayMood fires sfx voices mid-stream);
+                                // emoteLineFor still serves the busy gate
     if (ln && tickerAwake()) {
       static const char *lastLn = nullptr;
       static uint32_t lastLnMs = 0;
@@ -2248,12 +2247,14 @@ extern "C" void bunbun_brain_snapshot(char *buf, int len) {
   snprintf(buf, len,
     "{\"role\":%d,\"avail\":%d,\"lights\":%d,\"tx\":%d,\"ty\":%d,"
     "\"visit\":%d,\"door\":%d,\"action\":%d,\"settle_ms\":%ld,"
-    "\"x\":%d,\"y\":%d,\"anim\":\"%s\",\"potty\":%d,\"work\":%d}",
+    "\"x\":%d,\"y\":%d,\"anim\":\"%s\",\"potty\":%d,\"work\":%d,"
+    "\"food\":%d,\"fun\":%d,\"energy\":%d,\"clean\":%d}",
     (int)g_scCurRole,
     (g_scRoleAvail[0]?1:0)|(g_scRoleAvail[1]?2:0)|(g_scRoleAvail[2]?4:0)|(g_scRoleAvail[3]?8:0),
     S.lights?1:0, g_tx, g_ty, (int)g_visit, (int)g_doorTrip, g_action?1:0,
     (long)(millis()<g_settleUntil ? (g_settleUntil-millis()) : 0),
-    (int)S.x, (int)S.y, g_anim?g_anim->key:"?", (int)g_pottySeq, g_workUntil?1:0);
+    (int)S.x, (int)S.y, g_anim?g_anim->key:"?", (int)g_pottySeq, g_workUntil?1:0,
+    (int)S.food, (int)S.fun, (int)S.energy, (int)S.clean);
 }
 // /api/debug/act - the remote lever the door-walk tests (and future layers) need.
 // Set from the web task, consumed on the game task the next tick.
@@ -7533,7 +7534,9 @@ static void composeRoom(int fx, int fy, float sc, int lampOn, bool cloudLit, flo
     // MAIN room even when the room art is the child's ("the cat clock disappeared in
     // the main room"). Side rooms show only what the child placed; the sconce and
     // radio stay scene-only in custom rooms either way.
-    const bool clockRoom = shippedRoom || g_scCurRole == SCENE_ROLE_MAIN;
+    // TRIAGE 8/19: clock in custom MAIN suspended while the streaming panic
+    // (bc 14, this draw region) is hunted - restore clockRoom after
+    const bool clockRoom = shippedRoom;
     if (!sceneHas("items/catclock")) { if (clockRoom) drawCatClock(); }
     else {
       // The scene drew the clock's PICTURE in the props pass. Its tail and its hands are lines
@@ -7700,8 +7703,8 @@ static void drawScene() {
   // NOBODY SLEEPS WITH THE LAMPS ON (Jon: "if he is sleeping in a room all lights
   // should turn off in that room"): once he is actually settled asleep - not still
   // walking home in the dark - every beam in the room goes out with him.
-  const bool fastAsleep = !S.lights && g_tx < 0 && g_visit < 0 && !g_doorTrip && !g_action;
-  int lampOn = (g_workStage || g_danceMode || fastAsleep) ? 0 : (int)(lampLevel() * 255);
+  // TRIAGE 8/19: fastAsleep lamp-out suspended during the panic hunt
+  int lampOn = (g_workStage || g_danceMode) ? 0 : (int)(lampLevel() * 255);
   bool cloudLit = nightAmount() < 0.5f;
   const float nt = nightAmount();
 
