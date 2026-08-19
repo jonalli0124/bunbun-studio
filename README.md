@@ -29,9 +29,14 @@ what they build, exactly — the **scene assembler is the spec**.
 
 1. Flash `releases/bunbun-studio-esp32s3.bin` (USB, esptool or your favorite flasher).
 2. Join the device's setup hotspot, give it your WiFi.
-3. Open the tools (`py tools/build.py` then open `tools/build/scene_tool.html`, or any
-   static host). Build a room, press **save a bunbun package**.
-4. Visit `http://<device-ip>/build`, drop the file, press the button. Done.
+3. Open the tools on the project site (GitHub Pages) — or locally: `py tools/build.py`
+   then open `tools/build/scene_tool.html`. Build rooms (toggle "this room is" for the
+   kitchen / bathroom / work room), press **save a bunbun package** — one timestamped
+   file carries the whole world, art and walk clips included.
+4. Visit `http://<device-ip>/build`, drop the file, press the button. Done. A package
+   replaces all custom animations; the pet is checked before and after.
+5. Want a different animal? The site's **animal shelf** has a `.bunbun` per species —
+   import it the same way; the pet's age and stats survive the body swap.
 
 ## The rules that make it work
 

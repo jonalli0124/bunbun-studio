@@ -1,11 +1,28 @@
 # How to use Animation Creation and the Scene Assembler
 
-*Updated 2026-08-17 with the room library refresh and the generation lane.*
+*Updated 2026-08-19: worlds, packages, and species.*
 
-*The two web pages where you build everything your bunbun does. On the home network:*
+*The two web pages where you build everything your bunbun does — on the project's
+GitHub Pages site (no install), or locally from `tools/build/`:*
 
-- **Scene Assembler** — `http://<your-pc-ip>:8000/scene_tool.html`
-- **Animation Creation** — `http://<your-pc-ip>:8000/attach_editor.html`
+- **Scene Assembler** — `scene_tool.html`
+- **Animation Creation** — `attach_editor.html`
+
+**Getting work onto the device** (the one flow): press **save a bunbun package** in the
+assembler — one timestamped `.bunbun` file with every room, all the art, and the
+animal's walk clips — then open `http://<device-ip>/build` and give it the file. A
+package replaces all custom animations on the device. (The old "Send to bunbun" button
+is gone; wherever this guide mentions it below, read "save a bunbun package + /build".)
+
+**Rooms with roles**: the "this room is" selector turns one scene into a world — main,
+kitchen (eating), bathroom (bath / wash / toilet), work. **Counts as** on any animation
+makes it the room's meal / bath / wash-up / toilet / sleep / job, whatever the clip is
+called. Work is one visit by default; the "work lasts" slider opts into a timed session.
+
+**Animals**: pick the animal in Animation Creation before animating — the saved file
+carries the animal and its walks, so it stays that animal in the assembler, the preview,
+and on the device. Swap the device's animal with a species `.bunbun` from the site's
+animal shelf.
 
 Your work saves itself in the browser as you go (each computer/tablet keeps its own).
 `Save scene` / `save animation` write files you can share, back up, or reopen anywhere.
