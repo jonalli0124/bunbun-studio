@@ -2409,7 +2409,7 @@ function syncRule(){
   // If it is set to "anywhere" but the room holds something its own name matches, say so -
   // an animation called "sit" happening on bare floor beside an empty chair is almost always
   // a rule that was never set rather than a decision.
-  const implied=(a.clip||'').replace(/^(Adult|Baby)_/,'').toLowerCase();
+  const implied=(a.clip||'').replace(/^[a-z0-9]+:/,'').replace(/^(Adult|Baby)_/,'').toLowerCase();
   const couldUse=!ruleNeeds(a)
     ? scene.objects.filter(o=>(o.can||[]).includes(implied)) : [];
   if((a.rule&&a.rule.onItems)||(a.rule&&a.rule.onItem!=null)){
@@ -2503,7 +2503,7 @@ function addAnim(name, p){
   const clip=p.clip; if(!clip||!SD.clips[clip]) return null;
   const order=(p.order||[]).filter(o=>!o.skip);
   const ch=p.character||{};
-  const base=clip.replace(/^(Adult|Baby)_/,'').toLowerCase();
+  const base=clip.replace(/^[a-z0-9]+:/,'').replace(/^(Adult|Baby)_/,'').toLowerCase();
   const guess=['sit','sleep','bathe','eat','play'].includes(base)?{needs:base}:{anywhere:true};
   const rule=(p.rule&&p.rule.mode==='needs')?{needs:p.rule.needs}
            :(p.rule&&p.rule.mode==='anywhere')?{anywhere:true}
@@ -3210,7 +3210,7 @@ async function buildPortPayload(setB){
       // the assembler's own isAnywhere() - the rule lives at a.rule.*, and reading it off
       // the top level marked area-bound sleeps as "anywhere" (Jon's sleep, mislabeled)
       // the SEMANTIC KIND, from the clip: how a device button or mood finds this animation
-      const actOf=(a.clip||'').replace(/^(Adult|Baby)_/,'').toLowerCase().split('_')[0];
+      const actOf=(a.clip||'').replace(/^[a-z0-9]+:/,'').replace(/^(Adult|Baby)_/,'').toLowerCase().split('_')[0];
       const act=a.actAs?a.actAs:(a.isWork?'work':(({bathe:'bath'})[actOf]||actOf));
       plan.anims.push({k:key, f:'canim/'+slug, n:n, act:act.slice(0,7),
         ...(a.dur>0?{dur:+(+a.dur).toFixed(1)}:{}),
