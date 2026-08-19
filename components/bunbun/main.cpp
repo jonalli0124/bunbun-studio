@@ -49,19 +49,19 @@ static const char *emoteLineFor(const char *key) {
         break;
       }
   }
-  return !strcmp(b2, "angry")  ? "bunbun is grumpy about that"  :
-         !strcmp(b2, "love")   ? "bunbun is feeling the love"   :
-         !strcmp(b2, "bored")  ? "bunbun is a little bored"     :
-         !strcmp(b2, "hungry") ? "bunbun's tummy is rumbling"   :
-         !strcmp(b2, "sick")   ? "bunbun is not feeling well"   :
-         !strcmp(b2, "tired")  ? "bunbun is getting sleepy"     :
-         !strcmp(b2, "bath")   ? "bunbun is having a bath"      :
-         !strcmp(b2, "wash")   ? "bunbun is washing up"         :
-         !strcmp(b2, "eat")    ? "bunbun is having a bite"      :
-         !strcmp(b2, "sleep")  ? "bunbun is fast asleep... zzz" :
-         !strcmp(b2, "play")   ? "bunbun is playing"            :
-         !strcmp(b2, "jump")   ? "bunbun is full of beans"      :
-         !strcmp(b2, "work")   ? "bunbun is hard at work"       : nullptr;
+  return !strcmp(b2, "angry")  ? "bunbun is not pleased"            :
+       !strcmp(b2, "love")   ? "bunbun's heart is full"           :
+       !strcmp(b2, "bored")  ? "bunbun has run out of ideas"      :
+       !strcmp(b2, "hungry") ? "bunbun could really eat"          :
+       !strcmp(b2, "sick")   ? "bunbun feels a bit rotten"        :
+       !strcmp(b2, "tired")  ? "bunbun's eyes are getting heavy"  :
+       !strcmp(b2, "bath")   ? "bunbun is having a lovely soak"   :
+       !strcmp(b2, "wash")   ? "bunbun is scrubbing up"           :
+       !strcmp(b2, "eat")    ? "bunbun is tucking in"             :
+       !strcmp(b2, "sleep")  ? "bunbun is fast asleep... zzz"     :
+       !strcmp(b2, "play")   ? "bunbun is up to something"        :
+       !strcmp(b2, "jump")   ? "bunbun cannot keep still"         :
+       !strcmp(b2, "work")   ? "bunbun is being very industrious" : nullptr;
 }
 #include "ui.h"
 #include "music.h"
