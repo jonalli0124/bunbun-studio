@@ -188,6 +188,7 @@
         font:inherit;font-weight:600;border:1px solid var(--line);border-radius:8px;
         background:var(--bg);color:var(--ink);margin-bottom:10px">
       <label>this room is <span class="hint">&mdash; acts travel to the room that owns them</span></label>
+      <select id="worldAnimal" title="keep every room, object and rule - just change WHO does it. Animations whose clip the new animal doesn't have keep their old art (reopen those in Animation Creation)."></select>
       <select id="sceneRole">
         <option value="">the main room</option>
         <option value="kitchen">the kitchen &mdash; EAT comes here</option>
@@ -3406,6 +3407,46 @@ async function buildPortPayload(setB){
 // ---- THE WORLD ---- one scene per room; "this room is" toggles between them.
 let worldSlots={};
 const roleKey=()=>scene.role||'';
+// SWITCH THE WORLD'S ANIMAL (Jon: "a button to keep the objects and scenery and just
+// change the animal when it exports"): every animation's clip re-resolves to the chosen
+// species - rooms, objects, ground, rules, durations and words all stay. SD.characters
+// (baked into this page) holds every species' clips; a clip the new animal doesn't
+// have keeps its old art and is counted out loud.
+function animalOptions(){
+  const cur=(anims.find(a=>a.on&&a.clip&&a.clip.includes(':'))||{clip:''}).clip.split(':')[0]||'';
+  $('worldAnimal').innerHTML =
+    `<option value="">animal: ${cur||'the pack\u2019s own'}</option>`+
+    Object.keys(SD.characters||{}).map(k=>`<option value="${k}">make it the ${k}</option>`).join('');
+}
+function switchClip(clip, id){
+  const base=(clip||'').replace(/^[a-z0-9]+:/,'');
+  return (SD.characters[id] && SD.characters[id].clips[base]) ? id+':'+base : null;
+}
+async function switchWorldAnimal(id){
+  if(!id || !SD.characters || !SD.characters[id]) return;
+  // the whole species registers under its namespace once - the travel kit, the
+  // defaults, and every future lookup come along for free
+  for(const c of Object.keys(SD.characters[id].clips))
+    if(!SD.clips[id+':'+c]) SD.clips[id+':'+c]=SD.characters[id].clips[c];
+  let kept=0, moved=0;
+  const swap=a=>{ const nk=switchClip(a.clip, id);
+    if(nk){ a.clip=nk; moved++; } else if(a.clip) kept++; };
+  anims.forEach(swap);
+  for(const rk of Object.keys(worldSlots)){
+    try{ const q=JSON.parse(worldSlots[rk]);
+      (q.anims||[]).forEach(swap);
+      worldSlots[rk]=JSON.stringify(q);
+    }catch(e){}
+  }
+  for(const a of anims) if(a.on) await loadArtFor(a);
+  await loadTravelArt();
+  animalOptions(); syncRule(); draw(); autosave();
+  say(`the whole world is the ${id}'s now \u2014 ${moved} animation${moved===1?'':'s'} changed over`+
+      (kept?`, ${kept} kept their old art (reopen those in Animation Creation to re-dress them)`:'')+
+      `. \u{1F4E6} ships it.`);
+}
+$('worldAnimal').onchange=e=>{ const v=e.target.value; e.target.value='';
+  if(v) switchWorldAnimal(v); };
 // ONE ROOM PER SLOT. session() embeds the other slots and the custom art libraries,
 // so writing it into a slot verbatim nested every slot inside every other - each
 // room switch DOUBLED the strings until Chrome fell over ("Error code: Out of
@@ -3462,6 +3503,7 @@ $('sceneRole').onchange=async e=>{
 const wkLabel=v=>+v>0 ? v+' min' : 'one visit';
 $('wk').oninput=e=>{ scene.workMin=+e.target.value; $('wkl').textContent=wkLabel(e.target.value); autosave(); };
 function syncRoleUI(){
+  animalOptions();
   $('sceneRole').value=scene.role||'';
   $('workLenRow').style.display=scene.role==='work'?'':'none';
   $('wk').value=scene.workMin||0; $('wkl').textContent=wkLabel(scene.workMin||0);
