@@ -143,6 +143,17 @@ function pickFile(f){
     try{
       bundle=readBundle(rd.result);
       const s=bundle.sceneObj;
+      if(s.species){
+        $('inside').style.display='block';
+        $('inside').innerHTML=`a whole new animal is inside: <b>the ${s.species}</b>. `+
+          `Your bunbun will BECOME it - same age, same memories, new look. `+
+          `The animal he is now moves out to make room (one animal lives here at a time).`;
+        $('go').style.display='block'; $('go').disabled=false;
+        $('go').textContent='Become the '+s.species+'!';
+        $('msg').textContent=''; $('msg').className='';
+        return;
+      }
+      $('go').textContent='Give it to bunbun!';
       const nAnim=(s.anims||[]).length, nProp=(s.props||[]).length;
       $('inside').style.display='block';
       $('inside').innerHTML=`<b>${(s.name||'your scene')}</b> is inside: `+
@@ -180,6 +191,7 @@ async function waitBack(){
   throw new Error('the unit did not come back - give it a minute and refresh this page');
 }
 
+const ANIMALS=['capybara','bunny','cat','dog','frog','penguin','croc'];
 $('go').onclick=async()=>{
   if(!bundle) return;
   $('go').disabled=true; drawSteps();
@@ -189,6 +201,34 @@ $('go').onclick=async()=>{
     mark(0,'done'); mark(1,'doing');
     const pak=PakLib.parse(await (await fetch('/api/ota/assets')).arrayBuffer());
     mark(1,'done'); mark(2,'doing');
+    if(bundle.sceneObj.species){
+      // ONE ANIMAL AT A TIME (the owner's rule): the incoming animal's art replaces
+      // every other animal's; the base pack and everything else stay untouched.
+      const sp=bundle.sceneObj.species;
+      const kept=pak.entries.filter(e=>!ANIMALS.some(a2=>e.name.startsWith(a2+'/')));
+      const merged=PakLib.build(kept.concat(bundle.frag.entries));
+      mark(2,'done'); mark(3,'doing');
+      const r1=await fetch('/api/ota/assets',{method:'POST',body:merged});
+      if(!r1.ok) throw new Error('art upload failed: '+r1.status);
+      await waitBack();
+      mark(3,'done'); mark(4,'doing');
+      const r2=await fetch('/api/pet/species?id='+sp,{method:'POST'});
+      if(!r2.ok) throw new Error('species switch failed: '+r2.status);
+      mark(4,'done'); mark(5,'done'); mark(6,'doing');
+      const pet1=await petInfo(5000);
+      if(pet1.phase!==pet0.phase ||
+         (typeof pet1.age==='number'&&typeof pet0.age==='number'&&pet1.age<pet0.age-1)){
+        mark(6,'bad');
+        $('msg').textContent=`!!! THE PET MOVED (was ${pet0.age}/${pet0.phase}, now ${pet1.age}/${pet1.phase}) - tell a grown-up`;
+        $('msg').className='bad';
+      }else{
+        mark(6,'done');
+        $('msg').textContent=`He is the ${sp} now - and still himself (${pet1.age} minutes old).`;
+        $('msg').className='ok';
+      }
+      $('go').disabled=false;
+      return;
+    }
     // the merge, exactly as Send-to-bunbun does it: package art wins on same name, and a
     // canim/<slug>/ folder being replaced is dropped WHOLE so stale frames never linger
     const newNames=new Set(bundle.frag.entries.map(e=>e.name));

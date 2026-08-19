@@ -25,6 +25,9 @@ def main():
     for f in (REPO / "tools" / "build").glob("*.html"):
         shutil.copy(f, site / f.name)
     shutil.copytree(REPO / "docs", site / "docs")
+    sp = REPO / "tools" / "build" / "species"
+    if sp.exists():
+        shutil.copytree(sp, site / "species")
     index = REPO / "tools" / "site_index.html"
     shutil.copy(index, site / "index.html")
     env = dict(os.environ, GIT_AUTHOR_NAME="Bunbun Studio", GIT_COMMITTER_NAME="Bunbun Studio",
