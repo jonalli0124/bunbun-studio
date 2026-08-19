@@ -78,19 +78,26 @@ static void sceneRolesScan() {
     long n = ftell(f);
     fseek(f, 0, SEEK_SET);
     if (n > 0 && n <= SCENE_MAX_BYTES) {
-      char *buf = (char *)malloc((size_t)n + 1);
+      // A STRING SCAN, NOT A JSON PARSE (reset_reason 4 while streaming, 8/19): four
+      // cJSON trees per door crossing allocated from internal RAM - the exact resource
+      // the AirPlay decoder lives on - and the unit panicked mid-song. The buffer goes
+      // to PSRAM and the acts are read with strstr; the exporter writes "act":"..."
+      // with no spaces, and a false hit in some other string costs one wrong bit, not
+      // a crash.
+      char *buf = (char *)heap_caps_malloc((size_t)n + 1, MALLOC_CAP_SPIRAM);
+      if (!buf) buf = (char *)malloc((size_t)n + 1);
       if (buf) {
         size_t got = fread(buf, 1, (size_t)n, f);
         buf[got] = 0;
-        cJSON *root = cJSON_Parse(buf);
-        if (root) {
-          const cJSON *anims = cJSON_GetObjectItem(root, "anims");
-          const cJSON *a;
-          cJSON_ArrayForEach(a, anims) {
-            const cJSON *ac = cJSON_GetObjectItem(a, "act");
-            if (cJSON_IsString(ac)) g_scRoleActs[r] |= sceneActBit(ac->valuestring);
-          }
-          cJSON_Delete(root);
+        const char *q = buf;
+        while ((q = strstr(q, "\"act\":\"")) != nullptr) {
+          q += 7;                              // past "act":" to the value
+          char actv[10];
+          int k = 0;
+          while (q[k] && q[k] != '"' && k < 9) { actv[k] = q[k]; k++; }
+          actv[k] = 0;
+          g_scRoleActs[r] |= sceneActBit(actv);
+          q += k;
         }
         free(buf);
       }
