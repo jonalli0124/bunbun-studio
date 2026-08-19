@@ -1305,6 +1305,8 @@ static const CharacterDef CHARACTERS[] = {
   // THE BEAK CARRY (Jon: "I'm fine with the beak"): flippers cannot hug a jar, so a
   // carried thing rides at his beak - higher and a touch further forward than hands.
   { "penguin", "Penguin", INHERIT_UPRIGHT, true, 2, -12 },
+  // the style reference joins the cast ("let's finish the croc") - hands, like the others
+  { "croc",    "Croc",    INHERIT_UPRIGHT, true, 0, 0 },
 };
 static const int CHARACTERS_N = (int)(sizeof(CHARACTERS) / sizeof(CHARACTERS[0]));
 
