@@ -3590,6 +3590,8 @@ static void simulate(float dt) {
   // consequence; waiting just means it happens when he is up.
   // Nor mid-dance. Same DEFERRAL as sleep rather than a cancellation: the mess still arrives
   // once the party stops, so dance mode is not a way to opt out of cleaning up.
+  if (!g_poopDue)
+    g_poopDue = millis() + 480000 + esp_random() % 420000;   // 8-15 min: nature's own clock
   if (g_poopDue && millis() >= g_poopDue && S.lights && !discoDown()) {
     // THE ONLY PASSIVE ROOM TRIP (Jon: "the if he needs to go to the bathroom is the
     // only thing that is passive"): with a bathroom defined he takes himself there
@@ -4198,11 +4200,12 @@ static void runMenu(int i) {
             // Meals are followed by a mess a while later (babies more often). "A while" was
             // 15-35 SECONDS, so every feed produced a mess almost immediately and the floor
             // was never clean — it's minutes now, and less of a certainty.
-            if ((esp_random() % 100) < (b ? 55 : 35))
-              // TEST SETTING (Jon 8/19: "can we set it to 20 seconds for now so i can
-              // see him go to the bathroom?") - the shipped pace is 4-9 minutes:
-              //   g_poopDue = millis() + 240000 + esp_random() % 300000;
-              g_poopDue = millis() + 20000;   // 20s while watching the routine
+            if ((esp_random() % 100) < (b ? 55 : 35)) {
+              // back to the shipped pace (the 20s test setting is retired) - and a
+              // meal only ever HASTENS the standing baseline, never postpones it
+              uint32_t mealDue = millis() + 240000 + esp_random() % 300000;   // 4-9 min
+              if (!g_poopDue || mealDue < g_poopDue) g_poopDue = mealDue;
+            }
             break;
     case 1:                                                   // PLAY opens the games roster
       // Jon 8/11: no games until the pet is reasonably cared for - play is
