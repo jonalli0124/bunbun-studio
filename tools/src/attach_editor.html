@@ -1459,17 +1459,24 @@ function spec(){
 // pause it didn't work"). A busy phone queues interval callbacks and then renders them
 // in a burst, so every tap waits behind the pile. rAF self-paces: a slow frame simply
 // skips ahead, the main thread breathes, and taps land.
+// chained setTimeout, NOT requestAnimationFrame: rAF freezes in occluded windows and
+// on throttled phones - which read as "play isn't repeating" / dead after a window
+// change. A single self-chaining timeout fires everywhere, paces by real time (slow
+// frames skip ahead instead of stacking - the phone-jank fix stays), and a render
+// hiccup can never kill the chain.
 const play=()=>{stopT();
-  let last=performance.now(), acc=0;
-  const step=t=>{ if(!timer) return;
-    timer.raf=requestAnimationFrame(step);   // schedule FIRST - a render hiccup must not
-    acc+=t-last; last=t;                     // kill the loop ("play isn't repeating")
+  let last=performance.now();
+  const step=()=>{ if(!timer) return;
+    timer.to=setTimeout(step, 25);           // schedule FIRST, always
+    const now=performance.now();
     const frame=1000/Math.max(1,fps);
-    if(acc>=frame){ pos+=Math.max(1,Math.floor(acc/frame)); acc%=frame;
+    if(now-last>=frame){
+      const n=Math.floor((now-last)/frame);
+      pos+=n; last+=n*frame;
       try{ render(); }catch(err){} } };
-  timer={raf:requestAnimationFrame(step)};
+  timer={to:setTimeout(step,16)};
 };
-const stopT=()=>{if(timer){if(timer.raf)cancelAnimationFrame(timer.raf);timer=null}};
+const stopT=()=>{if(timer){clearTimeout(timer.to);timer=null}};
 // everything a move applies to: the whole group when one exists, else the selected layer
 function moveSet(){
   if(multi.size) return [...multi].map(i=>stack[i]).filter(L=>L&&!L.char);
