@@ -2122,6 +2122,16 @@ static uint8_t  g_doorTrip = 0;      // 1 = walking to the exit edge
 static uint32_t g_visitHomeAt = 0;   // a fruitless side-room visit walks home at this time
 static uint32_t g_roomMinStay = 0;   // Jon: "at least 10 seconds" in a side room, whatever happens
 static uint32_t g_workNextAt = 0;    // the stroll between work reps ends, and the next one starts
+static bool     g_actIsWork  = false;   // the running startAction() is a work performance
+// HIS WORK METER GOES UP AT WORK (Jon: "his work meter should go up while he is at
+// work its not doing that") - only the retired farm script ever paid discipline. A
+// one-visit job pays what the script paid; a session pays per rep, so the meter
+// visibly climbs while he is there.
+static void creditWork() {
+  S.disc   = min(100.0f, S.disc + (g_workUntil ? 6.0f : 28.0f));
+  S.energy = max(0.0f, S.energy - (g_workUntil ? 2.0f : 10.0f));
+  saveState();
+}
 static uint8_t  g_doorRole = 0;
 static char     g_doorAct[8] = "";
 static uint32_t g_workUntil = 0;     // the scene work session deadline; 0 = no session
@@ -2236,6 +2246,7 @@ static bool sceneErrandTo(const char *act) {
     float secs = 2.0f * loopS + 2.0f;
     for (int i = 0; i < g_scAnimN; i++)
       if (!strcmp(g_scAnim[i].key, k) && g_scAnim[i].dur > 0.1f) { secs = g_scAnim[i].dur; break; }
+    g_actIsWork = !strcmp(act, "work");
     startAction(k, secs);
     return true;
   }
@@ -2733,6 +2744,7 @@ static void think(float dt) {
   if (g_action) {
     if (millis() >= g_actionEnd) {
       g_action = false;
+      if (g_actIsWork) { g_actIsWork = false; creditWork(); }
       if (g_pottySeq == 1) {
         g_pottySeq = 2;
         const char *washAct = (sceneActMark("wash") >= 0 || sceneActAnim("wash")) ? "wash"
@@ -2955,6 +2967,11 @@ static void think(float dt) {
     } else if (g_pottySeq == 2) {
       g_pottySeq = 0;                      // hands washed; the home walk below takes over
     }
+    // a placed work performance just finished: the meter moves
+    for (int i = 0; i < g_scAnimN; i++)
+      if (!strcmp(g_scAnim[i].key, g_markAnim) && !strcmp(g_scAnim[i].act, "work")) {
+        creditWork(); break;
+      }
     // A WORK SESSION OWNS THE CLOCK (Jon: the bug collector must not stop early): while
     // it runs, the performance ending just means the next work animation begins.
     if (g_workUntil) {

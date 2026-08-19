@@ -195,9 +195,9 @@
         <option value="work">work &mdash; the WORK button comes here</option>
       </select>
       <div id="workLenRow" style="display:none;margin-top:6px">
-        <label>work lasts <span id="wkl">2</span> min
+        <label>work lasts <span id="wkl">one visit</span>
           <span class="hint">&mdash; the session owns the clock; his job never stops early</span></label>
-        <input type="range" id="wk" min="1" max="60" step="1" value="2" style="width:100%">
+        <input type="range" id="wk" min="0" max="60" step="1" value="0" style="width:100%">
       </div>
       <label>the room</label>
       <select id="room"></select>
@@ -2211,7 +2211,7 @@ function drawAnims(){
     forcePick={a, spot};
     if(!simOn){ await $('preview').onclick() }
     if(sim){ sim.phase='rest'; sim.t=1e9; sim.waitFor=0 }
-    say(`going: "${a.name}" (the stock clip — this scene has no ${a.name} animation)`);
+    say(`going: "${a.name}" (${a.place.from})`);
   });
   const animsHtml = anims.length ? anims.map((a,i)=>{
     const p=placesFor(a);
@@ -2528,15 +2528,32 @@ $('rNeeds').onchange=e=>{ const a=anims[asel]; if(!a)return;
 // origins, so the file route stays for that.)
 // A DEFAULT ANIMATION: the stock clip, whole, at the size the scene already established.
 // eat/bathe/sit/sleep still need their affordance; every emotion happens anywhere he stands.
+// which animal lives in this room: the namespace of any live animation's clip
+function roomAnimal(){
+  const c=anims.find(a=>a.on&&a.clip&&a.clip.includes(':'));
+  return c ? c.clip.split(':')[0] : '';
+}
 function defaultAnim(clip){
   if(!SD.clips[clip]) return null;
   const base=clip.replace(/^Adult_/,'').toLowerCase();
+  // THE ROOM'S ANIMAL WEARS THE DEFAULTS ("when i hit defaults its not defaulting to
+  // the animal i have but the capybara"): his own version of the clip when it
+  // travelled with an animation file; else his IDLE standing in - the same
+  // missing-clip fallback the device uses - and only an animal-less room gets the
+  // stock capybara art. The rule stays the emote's either way.
+  const ns=roomAnimal();
+  let useClip=clip, from='the stock clip';
+  if(ns){
+    if(SD.clips[ns+':'+clip]){ useClip=ns+':'+clip; from='his own '+base; }
+    else if(SD.clips[ns+':Adult_Idle']){ useClip=ns+':Adult_Idle';
+      from='his idle stands in - no '+base+' travelled with him'; }
+  }
   const rule=['sit','sleep','bathe','eat'].includes(base)?{needs:base}:{anywhere:true};
   const sized=anims.find(x=>x.stage&&x.stage.authored&&x.stage.scale);
-  return {name:base[0].toUpperCase()+base.slice(1), clip, rule, on:true, fps:7, builtin:true,
+  return {name:base[0].toUpperCase()+base.slice(1), clip:useClip, rule, on:true, fps:7, builtin:true,
     stage:{x:null,y:null,z:null,scale:sized?sized.stage.scale:100,authored:false},
-    place:{dx:0,dy:0,from:'the stock clip'},
-    order:SD.clips[clip].frames.map((_,i)=>({i,cs:100})),
+    place:{dx:0,dy:0,from},
+    order:SD.clips[useClip].frames.map((_,i)=>({i,cs:100})),
     character:{breathe:0,period:8,hold:1,pivot:'feet'}, layers:[]};
 }
 function addAnim(name, p){
@@ -3174,7 +3191,7 @@ function deviceScene(animPlan){
   {const ns=(animPlan.anims.length&&anims.find(a=>a.on&&a.clip&&a.clip.includes(':')));
    if(ns) out.animal=ns.clip.split(':')[0];}
   if(scene.role) out.role=scene.role;
-  if(scene.role==='work') out.wk=scene.workMin||2;
+  if(scene.role==='work' && scene.workMin>0) out.wk=scene.workMin;
   // PAINTER'S ORDER TRAVELS AS ARRAY ORDER: within a z pass the device draws props in the
   // order they arrive, so the array is sorted back-to-front by baseline here - the same
   // painter's rule this page draws with. A rug lies under everything at z=-1; the rest sit
@@ -3384,6 +3401,69 @@ async function buildPortPayload(setB){
     return {plan, newEntries, dev, body};
 }
 
+// ---- THE WORLD ---- one scene per room; "this room is" toggles between them.
+let worldSlots={};
+const roleKey=()=>scene.role||'';
+// ONE ROOM PER SLOT. session() embeds the other slots and the custom art libraries,
+// so writing it into a slot verbatim nested every slot inside every other - each
+// room switch DOUBLED the strings until Chrome fell over ("Error code: Out of
+// Memory"). A slot snapshot is the room alone; slots and libraries live one level up.
+function slotSnap(){
+  const s2=session();
+  delete s2.slots; delete s2.customClips; delete s2.customProps;
+  return JSON.stringify(s2);
+}
+function freshSlot(role){
+  const room = role==='kitchen'  ? (SD.rooms['kitchen-bare']?'kitchen-bare':'kitchen')
+             : role==='bathroom' ? (SD.rooms['washroom']?'washroom':Object.keys(SD.rooms)[0])
+             : role==='work'     ? (SD.rooms['construction']?'construction':Object.keys(SD.rooms)[0])
+             : (SD.rooms['farmhouse']?'farmhouse':Object.keys(SD.rooms)[0]);
+  return {v:1, scene:{room, role:role||undefined, objects:[], zones:[],
+                      character:{x:160,y:200,scalePercent:145}},
+          sceneName:'', anims:[],
+          weather:{raining:false, clouding:false, cloudN:3, cloudStyle:'shipped',
+                   starsOn:false, starN:18}};
+}
+$('sceneRole').onchange=async e=>{
+  const to=e.target.value||'', from=roleKey();
+  if(to===from){ $('workLenRow').style.display=to==='work'?'':'none'; return; }
+  worldSlots[from]=slotSnap();          // the room we are leaving keeps itself
+  const keep={...worldSlots};
+  // THE WORLD IS ONE PLACE (Jon: "the name should persist from room to room",
+  // "environmental stuff should persist from room to room"): the scene's name, clock,
+  // weather and stars belong to the whole world, so walking into another room must not
+  // reset them to that room's old snapshot.
+  const keepName=($('sceneName')&&$('sceneName').value)||'';
+  const keepLight={todMin, todOn, lampMode, lightScale};
+  const keepWx={raining, clouding, cloudN, cloudStyle, starsOn, starN};
+  await restore(keep[to] || JSON.stringify(freshSlot(to)));
+  worldSlots=keep;    // restore() replays the snapshot's OLD slots map; the live one wins
+  if($('sceneName')) $('sceneName').value=keepName;
+  ({todMin, todOn, lampMode, lightScale}=keepLight);
+  $('tod').value=todMin; $('todl').textContent=hhmm(todMin);
+  $('lightOff').textContent='lighting: '+(todOn?'on':'off');
+  $('lightOff').classList.toggle('pri',!todOn);
+  $('lampM').textContent='lamps: '+lampMode;
+  $('lsz').value=Math.round(lightScale*100); $('lszl').textContent=Math.round(lightScale*100)+'%';
+  ({raining, clouding, cloudN, cloudStyle, starsOn, starN}=keepWx);
+  $('rn').classList.toggle('pri',raining); $('cl').classList.toggle('pri',clouding);
+  $('cn').value=cloudN; $('cnl').textContent=cloudN; $('cst').value=cloudStyle;
+  $('st').classList.toggle('pri',starsOn); $('stn').value=starN; $('stnl').textContent=starN;
+  rebuildClouds(); weatherInit(scene.room);
+  scene.role=to||undefined;
+  syncRoleUI(); syncObj(); syncRule(); draw(); autosave();
+  say(to ? `now building the ${to==='work'?'work room':to} — the other rooms are kept; \u{1F4E6} ships them all`
+         : 'now building the main room — the other rooms are kept; \u{1F4E6} ships them all');
+};
+// 0 = ONE VISIT (Jon: "it should be at least 10s and then return"): he goes, does the
+// job once, and walks home. Any number of minutes is the opt-in to a real session.
+const wkLabel=v=>+v>0 ? v+' min' : 'one visit';
+$('wk').oninput=e=>{ scene.workMin=+e.target.value; $('wkl').textContent=wkLabel(e.target.value); autosave(); };
+function syncRoleUI(){
+  $('sceneRole').value=scene.role||'';
+  $('workLenRow').style.display=scene.role==='work'?'':'none';
+  $('wk').value=scene.workMin||0; $('wkl').textContent=wkLabel(scene.workMin||0);
+}
 // Send-to-bunbun retired (Jon: "remove send to bunbun - process should be load it via
 // the /build"): the https site cannot fetch a http device anyway (mixed content), so the
 // package + the device's own /build page is the one path, and it works from anywhere.
