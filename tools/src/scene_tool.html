@@ -3491,9 +3491,19 @@ async function exportDevicePackage(){
         return q&&q.scene&&((q.scene.objects||[]).length||(q.anims||[]).length||(q.scene.zones||[]).length||k===cameFrom); }
       catch(e){ return false; } });
     const scenes=[]; const allEntries=[]; const seen=new Set(); let planCount=0;
+    // THE WEATHER IS WORLD-LEVEL (Jon: "environmental stuff should persist from room
+    // to room") - but each slot still carries the stale weather from when it was last
+    // open, and restore() replays it. Pin the LIVE sky over every room as it packs,
+    // or a world authored with clouds ships cn:0 everywhere ("my bunbun package has
+    // clouds but i dont see them").
+    const wx={raining, clouding, cloudN, cloudStyle, starsOn, starN,
+              todMin, todOn, lampMode, lightScale};
+    const pinWx=()=>{ ({raining, clouding, cloudN, cloudStyle, starsOn, starN,
+                       todMin, todOn, lampMode, lightScale}=wx); };
     for(const rk of roles){
       setB(`packing the ${rk||'main room'}…`);
       await restore(keepW[rk]);
+      pinWx();
       const {plan, newEntries, body}=await buildPortPayload(setB);
       const one=JSON.parse(body);
       if(body.length>8192) throw new Error(`the ${rk||'main'} scene is ${body.length} bytes; the device reads 8192`);
@@ -3501,6 +3511,7 @@ async function exportDevicePackage(){
       for(const e of newEntries){ if(!seen.has(e.name)){ seen.add(e.name); allEntries.push(e); } }
     }
     await restore(keepW[cameFrom]);        // back to the room on screen
+    pinWx();                               // the live sky comes back with it
     worldSlots=keepW;                      // and the world survives the round trip
     const plan={anims:{length:planCount}};
     const newEntries=allEntries;
