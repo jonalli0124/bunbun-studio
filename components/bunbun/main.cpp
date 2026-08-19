@@ -7534,9 +7534,9 @@ static void composeRoom(int fx, int fy, float sc, int lampOn, bool cloudLit, flo
     // MAIN room even when the room art is the child's ("the cat clock disappeared in
     // the main room"). Side rooms show only what the child placed; the sconce and
     // radio stay scene-only in custom rooms either way.
-    // TRIAGE 8/19: clock in custom MAIN suspended while the streaming panic
-    // (bc 14, this draw region) is hunted - restore clockRoom after
-    const bool clockRoom = shippedRoom;
+    // BISECT STEP 1 (8/19): the clock returns alone - if the streaming panic
+    // (bc 14) comes back now, the clock draw in a custom room is the killer
+    const bool clockRoom = shippedRoom || g_scCurRole == SCENE_ROLE_MAIN;
     if (!sceneHas("items/catclock")) { if (clockRoom) drawCatClock(); }
     else {
       // The scene drew the clock's PICTURE in the props pass. Its tail and its hands are lines
