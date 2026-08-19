@@ -54,7 +54,14 @@ static const char *emoteLineFor(const char *key) {
          !strcmp(b2, "bored")  ? "bunbun is a little bored"     :
          !strcmp(b2, "hungry") ? "bunbun's tummy is rumbling"   :
          !strcmp(b2, "sick")   ? "bunbun is not feeling well"   :
-         !strcmp(b2, "tired")  ? "bunbun is getting sleepy"     : nullptr;
+         !strcmp(b2, "tired")  ? "bunbun is getting sleepy"     :
+         !strcmp(b2, "bath")   ? "bunbun is having a bath"      :
+         !strcmp(b2, "wash")   ? "bunbun is washing up"         :
+         !strcmp(b2, "eat")    ? "bunbun is having a bite"      :
+         !strcmp(b2, "sleep")  ? "bunbun is fast asleep... zzz" :
+         !strcmp(b2, "play")   ? "bunbun is playing"            :
+         !strcmp(b2, "jump")   ? "bunbun is full of beans"      :
+         !strcmp(b2, "work")   ? "bunbun is hard at work"       : nullptr;
 }
 #include "ui.h"
 #include "music.h"
@@ -2195,7 +2202,10 @@ static bool sceneDoorTo(uint8_t tgt, const char *act) {
     exitLeft = (tgt == SCENE_ROLE_KITCHEN || tgt == SCENE_ROLE_BATH);
   else
     exitLeft = (g_scCurRole == SCENE_ROLE_WORK);   // side rooms exit toward the main room
-  int ex = exitLeft ? 6 : SCENE_W - 6;
+  // ROOM SPACE, not panel space: the builder's rooms are 320 wide (SCENE_W is the
+  // 240px panel the room is drawn onto at 0.75). The doors live at the room's edges.
+  const int ROOMSPACE_W = 320;
+  int ex = exitLeft ? 6 : ROOMSPACE_W - 6;
   int ey = (int)g_fy;
   if (g_scHasBounds) {
     if (ey < g_scBounds.y0 + 4) ey = g_scBounds.y0 + 4;   // above the floor: come down first
@@ -2699,6 +2709,10 @@ static uint8_t  g_tidyStage = 0;     // 0 to it, 1 lifting, 2 carrying home, 3 s
 static uint32_t g_tidyUntil = 0;
 static bool tidyStep(float dt) {
   if (!g_scLooseN) return false;
+  // AN ERRAND IN FLIGHT BEATS THE CHORE - but only for TAKING a new job. A tidy
+  // already underway (g_tidy >= 0) finishes; a loose thing waits for him to be free.
+  if (g_tidy < 0 && (g_doorTrip || g_visit >= 0 || g_tx >= 0 || g_action || g_sleepPending))
+    return false;
   if (g_tidy < 0) {
     // The chores do not wait on the dice or the timer (the builder says so in as many words).
     // Which object he may touch is decided per object by looseNeedsTidy(), which keeps him off
@@ -2841,7 +2855,12 @@ static void think(float dt) {
     } else return;
   }
 
-  if (discoDown() && S.lights && !S.sick) { danceStep(dt); return; }
+  // the party never steals an errand either - he walks his trip plainly and the
+  // dance takes him back the moment he is free
+  if (discoDown() && S.lights && !S.sick &&
+      !g_doorTrip && g_visit < 0 && g_tx < 0 && !g_action && !g_sleepPending) {
+    danceStep(dt); return;
+  }
   if (!S.lights) {
     // A COMMAND OUTRANKS BEDTIME. This return used to fire before the errand code and
     // wipe g_tx every tick, so at night BATHE/EAT/WORK started a door walk that died
@@ -2915,7 +2934,10 @@ static void think(float dt) {
   //   STOPPED IN IT (no target, or one that keeps him inside) — he leaves, on his feet, using the
   //     ordinary walker. Nothing teleports; "all actions should be procedural".
   bool chairZone = false;
-  if (!bunComingHome()) {
+  if (!bunComingHome() && !g_doorTrip && g_visit < 0) {
+    // keep-out means DON'T LOITER, never don't walk (Jon's own rule): an errand or
+    // door trip crossing the chair front is a walker, and stealing its target sent
+    // every trip to the span's rim instead of the door.
     int clo, chi;
     if (chairFrontSpan(&clo, &chi) && g_fx >= (float)clo && g_fx <= (float)chi) {
       chairZone = true;
@@ -3160,11 +3182,11 @@ static void think(float dt) {
     if (d < 12 && g_visit == 4 && g_doorTrip) {
       // AT THE DOOR: swap the room, walk in from the mirror edge, then do the errand
       g_doorTrip = 0; g_tx = g_ty = -1; g_visit = -1;
-      bool exitedLeft = (g_fx < SCENE_W / 2);
+      bool exitedLeft = (g_fx < 160);              // the ROOM's centre, not the panel's
       if (!sceneLoadRole(g_doorRole)) { g_wanderT = 1.0f; return; }
       catDismissIfAway();                  // the cat is a main-room guest, always
       g_cloudSceneDone = false;              // the new room's sky rules apply fresh
-      int ex2 = exitedLeft ? SCENE_W - 8 : 8;
+      int ex2 = exitedLeft ? 320 - 8 : 8;          // mirror edge in room space
       int ey2 = (int)g_fy;
       // the NEW room's floor may not reach this height - clamp the height first, or
       // clampErrandToFloor yanks the X and he materialises mid-room instead of at
@@ -3186,7 +3208,7 @@ static void think(float dt) {
       // back"): entering at the edge, he first walks to the room's middle - the act
       // he came for waits in g_doorAct and runs from there, so every crossing reads
       // as a real entrance instead of a teleport-and-shuffle along the wall.
-      { int mx = SCENE_W / 2, my = (int)g_fy;
+      { int mx = 160, my = (int)g_fy;              // the room's true middle
         clampErrandToFloor(&mx, &my);
         clearOfBlocks(&mx, &my);
         g_tx = mx; g_ty = my;
@@ -3194,7 +3216,7 @@ static void think(float dt) {
       }
       return;
     }
-    if (d < 6 && g_visit == 5) {
+    if (d < 12 && g_visit == 5) {
       // MADE IT TO THE MIDDLE: now the act he crossed for (or, coming home with no
       // act, his own rhythm). This is the exact consumption the door arrival used to
       // run at the edge - only the starting point moved.
@@ -3234,7 +3256,7 @@ static void think(float dt) {
     // eventually falls asleep" (the 9s backstop, not an arrival). Being NEAR the
     // doorstep is enough: the settle below snaps him onto the authored spot anyway,
     // exactly as it always has.
-    if (d < 9 && g_visit >= 0) {
+    if (d < 9 && g_visit >= 0 && g_visit != 5) {
       // arrived at the furniture: settle in
       g_tx = g_ty = -1;
       g_settleUntil = millis() + 4000 + esp_random() % 6000;
@@ -4083,7 +4105,10 @@ static void runMenu(int i) {
   } else if (i != 1 && (g_action || g_workStage)) {
     if (i == 7 && g_workUntil) { /* WORK during a work session falls through: it recalls him */ }
     else { sfxNo();
-      say(g_workUntil ? "bunbun is at work - press work to call him home" : "bunbun is busy");
+      // name what he is doing instead of a bare "busy"
+      const char *d = g_workUntil ? "bunbun is at work - press work to call him home"
+                    : (g_anim ? emoteLineFor(g_anim->key) : nullptr);
+      say(d ? d : "bunbun is busy");
       return; }
   }
   // i == 1 (PLAY) is exempt from the busy gate (Jon 8/11: "the play button
@@ -7448,7 +7473,12 @@ static void composeRoom(int fx, int fy, float sc, int lampOn, bool cloudLit, flo
     // exactly what the child placed - a sconce materialising in the work room is the
     // device inventing scenery ("there is a sconce in work that shouldnt be there").
     const bool shippedRoom = !g_scRoom[0];
-    if (!sceneHas("items/catclock")) { if (shippedRoom) drawCatClock(); }
+    // the CAT CLOCK is the home fixture and the house's real time - it stays in the
+    // MAIN room even when the room art is the child's ("the cat clock disappeared in
+    // the main room"). Side rooms show only what the child placed; the sconce and
+    // radio stay scene-only in custom rooms either way.
+    const bool clockRoom = shippedRoom || g_scCurRole == SCENE_ROLE_MAIN;
+    if (!sceneHas("items/catclock")) { if (clockRoom) drawCatClock(); }
     else {
       // The scene drew the clock's PICTURE in the props pass. Its tail and its hands are lines
       // the firmware paints, so they have to be added here or a scene-supplied clock is a dead
@@ -10907,7 +10937,7 @@ void setup() {
   // room idle in the center"): the save's position could be a side room's tub or a
   // corner mid-errand, and restoring it read as him materialising somewhere odd.
   // The main scene loads fresh anyway, so he simply starts at its centre.
-  S.x = SCENE_W / 2; S.y = FLOOR_Y;
+  S.x = 160; S.y = FLOOR_Y;                       // centre of the 320-wide room
   g_fx = (float)S.x; g_fy = (float)S.y;
   // An existing pet that predates naming gets asked once, rather than being stuck as "bunbun"
   // with no way to reach the screen.
