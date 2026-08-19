@@ -1,3 +1,23 @@
+> **CURRENT STATE (2026-08-19)** — this spec's ideas are SHIPPED, with these deltas from
+> the original notes below:
+> - There is no `world.json`: a world is the four **role files** — `/spiffs/scene.json`
+>   (main), `scene-kitchen.json`, `scene-bathroom.json`, `scene-work.json`. A role exists
+>   if its file does. Doors are the screen edges (kitchen/bath left, work right); every
+>   crossing walks **through the middle** of each room, and side-to-side transits home.
+> - **Acts route by availability**: the current room wins if it offers the act, else the
+>   act's home room, else any room that has it (the firmware scans all four files' acts).
+> - **The room-trip doctrine**: only the potty leaves home passively; everything else is
+>   commanded, does the room's business (≥10s, performances always finish), and comes
+>   home — no state can strand him in a side room. Bedtime is inbound-only and ends at
+>   the sleep mark.
+> - **Work** = one visit (2 random jobs + the 10s floor) by default; a `wk` minute count
+>   in the scene opts into a timed session. Counts-as now spans work / toilet / wash /
+>   eating / bathing / sleeping.
+> - Delivery is the **.bunbun package → the device's `/build` page** (Send-to-bunbun is
+>   retired). A world package replaces all custom animations and ships the animal's
+>   **travel kit** (reserved acts `walk_e`/`walk_w`).
+> - Full current picture: `docs/BUNBUN-THE-GAME.md`.
+
 # Multi-room worlds — the spec (owner's notes, 2026-08-17 night)
 
 > "Have the creature walk to the side of the room to go to a bathroom / work / kitchen —

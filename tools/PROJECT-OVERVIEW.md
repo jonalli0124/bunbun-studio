@@ -1,3 +1,10 @@
+> **CURRENT STATE (2026-08-19)**: worlds are live on hardware end to end. The flow is
+> GitHub Pages tools -> one timestamped `.bunbun` package -> the device's own `/build`
+> page (Send-to-bunbun retired; https cannot reach an http device). One animal at a time
+> via species packages on the site's animal shelf; animations carry their animal and its
+> travel kit. Adult-only is pinned in firmware. The complete feature picture lives in
+> `docs/BUNBUN-THE-GAME.md`; the shipped world rules in `tools/WORLDS-SPEC.md`'s banner.
+
 # Bunbun: from PixelLab to a living world on the wall
 
 *A chat-ready overview — hand this file to any Claude and it knows the project.
