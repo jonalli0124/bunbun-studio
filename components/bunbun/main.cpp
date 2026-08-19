@@ -2279,14 +2279,34 @@ static const char *whySentence(char *buf, size_t n) {
                        : !strcmp(b->act, "wash")  ? "a wash"
                        : !strcmp(b->act, "toilet")? "the potty"
                        : !strcmp(b->act, "work")  ? "to do my job"
-                       : !strcmp(b->act, "sleep") ? "my bed" : b->act;
-      snprintf(buf, n, "I wanted %s, but there is nowhere to have one", what);
+                       : !strcmp(b->act, "sleep") ? "my bed" : nullptr;
+      if (what) snprintf(buf, n, "I wanted %s, but there is nowhere to have one", what);
+      else      snprintf(buf, n, "I wanted to %s, but there is nowhere for that", b->act);
       break; }
     default: snprintf(buf, n, "I am just being me");
   }
   return buf;
 }
 extern "C" void bunbun_why(char *buf, int len) { whySentence(buf, (size_t)len); }
+// He thinks out loud when what he is doing would look arbitrary from outside - the
+// dice, the clock, and any trip to another room. Said in HIS voice ("I really needed
+// the potty"), which is what marks a reason apart from the usual status line.
+static void whySpeakIfInteresting() {
+  Because *b = whyLast();
+  if (!b || !g_scOK) return;
+  const bool travelling = (b->roomTo != b->roomFrom);
+  const bool worth = travelling || b->cause == WHY_ROLL ||
+                     (b->cause == WHY_SCHEDULE && !strcmp(b->act, "sleep"));
+  if (!worth) return;
+  static uint32_t lastSaid = 0;
+  static uint32_t lastAt = 0;
+  if (b->atMs == lastAt) return;                 // one reason, said once
+  if (millis() - lastSaid < 20000) return;       // and never a stream of them
+  lastSaid = millis(); lastAt = b->atMs;
+  char line[96];
+  whySentence(line, sizeof(line));
+  say(line);
+}
 // the reason a COMMAND carries, set by the caller just before it asks for the act
 static uint8_t g_whyNext = WHY_NONE;
 static char    g_whyNextMeter[12] = "";
@@ -2326,6 +2346,7 @@ static bool sceneDoorTo(uint8_t tgt, const char *act) {
   g_visit = 4;
   g_doorTrip = 1; g_doorRole = tgt; g_visitHomeAt = 0;
   { Because *b = whyLast(); g_whyDoor = b ? b->cause : (uint8_t)WHY_NONE; }
+  whySpeakIfInteresting();          // he says why he is off, in his own words
   strncpy(g_doorAct, act ? act : "", sizeof(g_doorAct) - 1);
   g_doorAct[sizeof(g_doorAct) - 1] = 0;
   g_tripLen = sqrtf((g_tx - g_fx) * (g_tx - g_fx) + (g_ty - g_fy) * (g_ty - g_fy));
@@ -3728,11 +3749,11 @@ static void simulate(float dt) {
           g_scCurRole == SCENE_ROLE_MAIN) {
         g_poopDue = 0;
         Serial.println("nature calls: off to the bathroom");
-        say("bunbun needs the potty!");   // the trip announces itself on the ticker
         g_pottySeq = 1;
         g_pottyLock = true;
         whyNote(WHY_ROLL, "toilet", "");
         { Because *b = whyLast(); if (b) b->roomTo = SCENE_ROLE_BATH; }
+        whySpeakIfInteresting();
         g_whyDoor = WHY_ROLL;
         sceneDoorTo(SCENE_ROLE_BATH, "toilet");   // the toilet type first; sit is the fallback
         g_pottyLock = false;
