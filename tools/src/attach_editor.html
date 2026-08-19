@@ -397,6 +397,13 @@
       <div id="warn"></div>
 
       <div class="row" style="margin-top:10px">
+        <div style="flex:1 1 100%;display:flex;gap:6px;align-items:center;margin-bottom:4px">
+          <button id="fixMode" class="mini" data-on="0"
+            title="ON: dragging and the arrow keys move this ONE frame only - for a pose whose hand or head anchor came out wrong. OFF: they move the whole layer."
+            >&#9998; just this frame: off</button>
+          <button id="fixClear" class="mini" title="forget this frame's own nudge">clear</button>
+          <span class="hint" id="fixNote"></span>
+        </div>
         <div><label>offset x</label><div class="val" id="ox">0</div></div>
         <div><label>offset y</label><div class="val" id="oy">0</div></div>
         <div style="flex:0 0 auto;align-self:end"><button id="reset">reset</button></div>
@@ -722,7 +729,7 @@ async function ensureClip(){
 const fitScale=n=>+(FIT/Math.max(DATA.props[n].w,DATA.props[n].h)).toFixed(2);
 async function addLayer(name,anchor,over,at){
   if(!propImgs[name]) await load(DATA.props[name].img,propImgs,name);
-  const L=Object.assign({prop:name,anchor:anchor||'mid',off:{x:0,y:0},
+  const L=Object.assign({prop:name,anchor:anchor||'mid',off:{x:0,y:0},fix:{},
     scale:fitScale(name),lift:0,rot:0,flip:false,follow:1,jig:0,jrot:0,on:true,
     hue:0,sat:100,bri:100,tint:'#ffffff',tstr:0,opac:100,
     pulse:0,pper:8,frames:null},over||{});
@@ -732,7 +739,7 @@ async function addLayer(name,anchor,over,at){
 // ONE list of authored fields. Every copy path (duplicate, mirror, save, import) reads it,
 // so adding a new control can never again silently drop out of a copy.
 const FIELDS=['prop','anchor','scale','rot','flip','follow','jig','jrot','lift','on',
-              'hue','sat','bri','tint','tstr','opac','pulse','pper','frames'];
+              'hue','sat','bri','tint','tstr','opac','pulse','pper','frames','fix'];
 // "3-5, 1, 7" -> [1,3,4,5]  ·  null means every frame
 function parseFramesPos(str,nf){
   const set=new Set();
@@ -769,6 +776,7 @@ function parseFrames(str,_nf){
 }
 const authored=L=>{
   const o=Object.assign({off:{...L.off}},...FIELDS.map(k=>({[k]:L[k]})));
+  o.fix=JSON.parse(JSON.stringify(L.fix||{}));   // per-frame fixes copy, never share
   o.showOnFramePositions=idsToPos(o.frames);  // stable across saves and reloads
   delete o.frames;                            // never collide with the baked file's `frames`
   return o;
@@ -804,10 +812,22 @@ function anchorMean(L){
   return meanCache[key] = n?[sx/n,sy/n]:null;
 }
 // where the prop actually lands: damped anchor + authored offset + jiggle
+// which pose this frame IS - the key every per-frame fix hangs on. Cached on the frame
+// object itself, so the lookup costs nothing after the first call.
+function frameIx(f){
+  if(f._fi==null){ const c=DATA.clips[clip]; f._fi=c?c.frames.indexOf(f):-1 }
+  return f._fi;
+}
 function placed(f,L,seq,B){
   const a=warp(anchorPt(f,L),B); if(!a) return null;   // anchors ride the breath too
   const m=warp(anchorMean(L),B)||a, fw=L.follow==null?1:L.follow;
   let x=m[0]+(a[0]-m[0])*fw+L.off.x, y=m[1]+(a[1]-m[1])*fw+L.off.y;
+  // THE ONE-FRAME FIX (Jon: "if the hand tracking isn't working in one frame"): the
+  // anchors are derived per frame and are usually right, but a pose where the hand is
+  // hidden, crossed or mis-read needs a nudge of its own. This is that nudge - authored
+  // against the POSE, so it survives reordering and rides into the bake untouched.
+  const fx=L.fix&&L.fix[frameIx(f)];
+  if(fx){ x+=fx.x||0; y+=fx.y||0; }
   if(L.jig){ x+=Math.sin(seq*2.4)*L.jig; y+=Math.cos(seq*3.1)*L.jig*0.6; }
   return [x,y];
 }
@@ -1283,6 +1303,10 @@ function render(){
   $('edit').style.display = L0 ? '' : 'none';
   if(L0){ const d=DATA.props[L0.prop];
     $('ox').textContent=L0.off.x; $('oy').textContent=L0.off.y;
+    { const fx=(L0.fix||{})[nowFi()], n=Object.keys(L0.fix||{}).length;
+      const note=$('fixNote');
+      if(note) note.textContent = fx ? `this frame: ${fx.x>0?'+':''}${fx.x}, ${fx.y>0?'+':''}${fx.y}`
+                                     : (n?`${n} frame${n===1?'':'s'} fixed`:''); }
     $('sv').textContent=L0.scale.toFixed(2); $('lv').textContent=L0.lift||3;
     $('rv').textContent=L0.rot;
     $('huv').textContent=L0.hue; $('sav').textContent=L0.sat; $('brv').textContent=L0.bri;
@@ -1482,8 +1506,22 @@ function moveSet(){
   if(multi.size) return [...multi].map(i=>stack[i]).filter(L=>L&&!L.char);
   const L=cur(); return L?[L]:[];
 }
+// WHICH POSE IS ON SCREEN, computed rather than observed: hooking one draw function
+// was fragile (playback draws through a different path and the hook never fired).
+// pos + the played sequence is the truth, always.
+function nowFi(){ try{ const SQ=seqList(); return SQ.length? SQ[pos%SQ.length].i : 0 }catch(e){ return 0 } }
+const fixOn=()=>{const b=document.getElementById('fixMode'); return !!(b&&b.dataset.on==='1')};
+// every move either shifts the whole layer, or just this pose's correction
+function shiftSet(set,dx,dy){
+  if(fixOn()){
+    const fi=nowFi();
+    for(const L of set){ L.fix=L.fix||{};
+      const f=L.fix[fi]||{x:0,y:0};
+      L.fix[fi]={x:f.x+dx, y:f.y+dy}; }
+  } else set.forEach(L=>{L.off.x+=dx;L.off.y+=dy});
+}
 const nudge=(dx,dy)=>{const set=moveSet(); if(!set.length)return;
-  set.forEach(L=>{L.off.x+=dx;L.off.y+=dy}); render()};
+  shiftSet(set,dx,dy); render()};
 
 function pick(e){                       // topmost drawn layer under the cursor wins
   const r=$('stage').getBoundingClientRect();
@@ -1512,7 +1550,7 @@ $('stage').addEventListener('pointermove',e=>{if(!drag)return;
   const set=moveSet(); if(!set.length)return;
   const dx=Math.round((e.clientX-last.clientX)/Z), dy=Math.round((e.clientY-last.clientY)/Z);
   if(!dx&&!dy) return;
-  set.forEach(L=>{L.off.x+=dx;L.off.y+=dy}); last=e; render()});
+  shiftSet(set,dx,dy); last=e; render()});
 $('stage').addEventListener('pointerup',()=>{drag=false;$('stage').classList.remove('drag')});
 addEventListener('keydown',e=>{
   if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){   // works even inside a slider
@@ -1736,7 +1774,13 @@ $('lift').oninput=e=>{const L=cur();if(L){L.lift=+e.target.value;render()}};
 $('always').onchange=e=>{const L=cur();if(!L)return;
   L.lift=e.target.checked?0:(+$('lift').value||3);
   $('liftbox').style.display=e.target.checked?'none':''; render()};
-$('reset').onclick=()=>{const L=cur();if(L){L.off={x:0,y:0};L.scale=fitScale(L.prop);
+$('fixMode').onclick=()=>{const b=$('fixMode'); const on=b.dataset.on!=='1';
+  b.dataset.on=on?'1':'0';
+  b.innerHTML=(on?'\u270E just this frame: ON':'\u270E just this frame: off');
+  b.style.background=on?'var(--accent)':''; b.style.color=on?'#fff':'';
+  render(); };
+$('fixClear').onclick=()=>{const L=cur(); if(L&&L.fix){ delete L.fix[nowFi()]; render() } };
+$('reset').onclick=()=>{const L=cur();if(L){L.off={x:0,y:0};L.fix={};L.scale=fitScale(L.prop);
   L.rot=0;L.flip=false;L.follow=1;L.jig=0;L.jrot=0;L.pulse=0;L.pper=8;syncEdit();render()}};
 $('nudgeL').onclick=()=>nudge(-1,0); $('nudgeR').onclick=()=>nudge(1,0);
 $('nudgeU').onclick=()=>nudge(0,-1); $('nudgeD').onclick=()=>nudge(0,1);

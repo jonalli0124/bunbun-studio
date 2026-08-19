@@ -153,9 +153,11 @@ function pickFile(f){
         $('msg').textContent=''; $('msg').className='';
         return;
       }
-      if(s.species){
+      if(s.species){   // a new body for the same friend - say so before they press it
         $('inside').style.display='block';
-        $('inside').innerHTML=`a whole new animal is inside: <b>the ${s.species}</b>. `+
+        $('inside').innerHTML=`a whole new body is inside: <b>the ${s.species}</b>. `+
+          `Your bunbun keeps his name, his age and everything he knows — he just wears `+
+          `this animal now. `+
           `Your bunbun will BECOME it - same age, same memories, new look. `+
           `The animal he is now moves out to make room (one animal lives here at a time).`;
         $('go').style.display='block'; $('go').disabled=false;
@@ -186,11 +188,60 @@ $('drop').ondragleave=()=>$('drop').classList.remove('hot');
 $('drop').ondrop=e=>{ e.preventDefault(); $('drop').classList.remove('hot');
   if(e.dataTransfer.files[0]) pickFile(e.dataTransfer.files[0]); };
 
-const STEPS=['finding your bunbun','reading his art','mixing in yours',
+const STEPS=['finding your bunbun','reading his art','saving what he has now','mixing in yours',
              'giving him the art (he restarts once)','giving him the room',
              'one more restart','making sure he is still himself'];
 function drawSteps(){ $('steps').innerHTML=STEPS.map((s,i)=>`<li id="st${i}">${s}</li>`).join(''); }
 function mark(i,cls){ const el=$('st'+i); if(el) el.className=cls; }
+
+// NOBODY'S WORLD IS EVER LOST (panel item 3: "one sister's upload silently erases the
+// other's months of work"). Before an install overwrites anything, the page rebuilds
+// what is ON the device right now into a real .bunbun and hands it to the child's
+// Downloads folder. It re-imports like any other package, so yesterday is always one
+// file away - and it costs the device nothing: the art comes from the pak already
+// fetched, the rooms from files it already serves.
+const ROLE_FILES=[['','/spiffs/scene.json'],['kitchen','/spiffs/scene-kitchen.json'],
+                  ['bathroom','/spiffs/scene-bathroom.json'],['work','/spiffs/scene-work.json']];
+async function rescueBundle(pak){
+  const scenes=[];
+  for(const [role,path] of ROLE_FILES){
+    try{
+      const r=await fetch('/api/fs/download?path='+encodeURIComponent(path));
+      if(!r.ok) continue;
+      const o=JSON.parse(await r.text());
+      if(role && !o.role) o.role=role;
+      scenes.push(o);
+    }catch(e){}
+  }
+  if(!scenes.length) return null;
+  // the art those scenes stand on: every custom animation, plus each room's picture
+  // and every thing they put in it
+  const want=new Set();
+  for(const sc of scenes){
+    if(sc.room) want.add(sc.room);
+    for(const pr of (sc.props||[])) if(pr.n) want.add(pr.n);
+  }
+  const entries=pak.entries.filter(e=>e.name.startsWith('canim/')||want.has(e.name));
+  if(!entries.length) return null;
+  const body=JSON.stringify(scenes.length>1?{world:scenes}:scenes[0]);
+  const sc=new TextEncoder().encode(body);
+  const frag=PakLib.build(entries);
+  const out=new Uint8Array(16+sc.length+frag.length);
+  out.set([0x42,0x4E,0x44,0x4C,1,0,0,0],0);           // "BNDL" ver 1
+  const dv=new DataView(out.buffer);
+  dv.setUint32(8,sc.length,true); dv.setUint32(12,frag.length,true);
+  out.set(sc,16); out.set(frag,16+sc.length);
+  return out;
+}
+function saveRescue(bytes){
+  const d=new Date(), z=n=>String(n).padStart(2,'0');
+  const stamp=d.getFullYear()+z(d.getMonth()+1)+z(d.getDate())+'-'+z(d.getHours())+z(d.getMinutes());
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([bytes],{type:'application/octet-stream'}));
+  a.download='bunbun-before-'+stamp+'.bunbun';
+  a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),8000);
+}
 
 async function waitBack(){
   await new Promise(r=>setTimeout(r,9000));
@@ -211,29 +262,40 @@ $('go').onclick=async()=>{
     mark(0,'done'); mark(1,'doing');
     const pak=PakLib.parse(await (await fetch('/api/ota/assets')).arrayBuffer());
     mark(1,'done'); mark(2,'doing');
+    try{
+      const bak=await rescueBundle(pak);
+      if(bak){ saveRescue(bak);
+        $('msg').textContent='saved what was on him into your Downloads first \u2014 '+
+          'that file puts it all back if you ever want it';
+        $('msg').className='ok';
+      }
+    }catch(e){}
+    mark(2,'done'); mark(3,'doing');
     if(bundle.sceneObj.species){
       // ONE ANIMAL AT A TIME (the owner's rule): the incoming animal's art replaces
       // every other animal's; the base pack and everything else stay untouched.
       const sp=bundle.sceneObj.species;
       const kept=pak.entries.filter(e=>!ANIMALS.some(a2=>e.name.startsWith(a2+'/')));
       const merged=PakLib.build(kept.concat(bundle.frag.entries));
-      mark(2,'done'); mark(3,'doing');
+      mark(3,'done'); mark(4,'doing');
       const r1=await fetch('/api/ota/assets',{method:'POST',body:merged});
       if(!r1.ok) throw new Error('art upload failed: '+r1.status);
       await waitBack();
-      mark(3,'done'); mark(4,'doing');
+      mark(4,'done'); mark(5,'doing');
       const r2=await fetch('/api/pet/species?id='+sp,{method:'POST'});
       if(!r2.ok) throw new Error('species switch failed: '+r2.status);
-      mark(4,'done'); mark(5,'done'); mark(6,'doing');
+      mark(5,'done'); mark(6,'done'); mark(7,'doing');
       const pet1=await petInfo(5000);
       if(pet1.phase!==pet0.phase ||
          (typeof pet1.age==='number'&&typeof pet0.age==='number'&&pet1.age<pet0.age-1)){
-        mark(6,'bad');
+        mark(7,'bad');
         $('msg').textContent=`!!! THE PET MOVED (was ${pet0.age}/${pet0.phase}, now ${pet1.age}/${pet1.phase}) - tell a grown-up`;
         $('msg').className='bad';
       }else{
-        mark(6,'done');
-        $('msg').textContent=`He is the ${sp} now - and still himself (${pet1.age} minutes old).`;
+        mark(7,'done');
+        $('msg').textContent=`He is the ${sp} now - and he is STILL YOUR SAME FRIEND: same `+
+          `name, same age (${pet1.age} minutes old), same everything he remembers. He just `+
+          `looks like a ${sp} today.`;
         $('msg').className='ok';
       }
       $('go').disabled=false;
@@ -253,11 +315,11 @@ $('go').onclick=async()=>{
     {const want=(bundle.sceneObj.world||[bundle.sceneObj]).map(w=>w.animal).find(Boolean);
      if(want) $('msg').textContent=`this world was animated on the ${want} - if he is a different animal, `+
        `give him the ${want} from the site's animal shelf so his walking matches`; }
-    mark(2,'done'); mark(3,'doing');
+    mark(3,'done'); mark(4,'doing');
     const r1=await fetch('/api/ota/assets',{method:'POST',body:merged});
     if(!r1.ok) throw new Error('art upload failed: '+r1.status);
     await waitBack();
-    mark(3,'done'); mark(4,'doing');
+    mark(4,'done'); mark(5,'doing');
     const worldScenes = bundle.sceneObj.world || [bundle.sceneObj];
     for(const s2 of worldScenes){
       const role=s2.role;
@@ -266,17 +328,17 @@ $('go').onclick=async()=>{
         {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(s2)});
       if(!r2.ok) throw new Error('scene upload failed: '+r2.status);
     }
-    mark(4,'done'); mark(5,'doing');
+    mark(5,'done'); mark(6,'doing');
     await fetch('/api/system/restart',{method:'POST'}).catch(()=>{});
     const pet1=await waitBack();
-    mark(5,'done'); mark(6,'doing');
+    mark(6,'done'); mark(7,'doing');
     if(pet1.phase!==pet0.phase ||
        (typeof pet1.age==='number'&&typeof pet0.age==='number'&&pet1.age<pet0.age-1)){
-      mark(6,'bad');
+      mark(7,'bad');
       $('msg').textContent=`!!! THE PET MOVED (was ${pet0.age}/${pet0.phase}, now ${pet1.age}/${pet1.phase}) - tell a grown-up before anything else`;
       $('msg').className='bad';
     }else{
-      mark(6,'done');
+      mark(7,'done');
       $('msg').textContent=`All done! Your world is on his screen - and he is still your same bunbun (${pet1.age} minutes old).`;
       $('msg').className='ok';
       $('pet').textContent='';

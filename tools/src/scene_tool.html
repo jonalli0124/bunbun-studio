@@ -4167,3 +4167,115 @@ async function restore(raw){
   draw();
 })();
 </script>
+
+<!-- THE COACH: the guided first room (panel item 4 - "an expert's bench, not a child's
+     playmat"; Jon: "a simple guided tutorial"). One instruction at a time, in kid words,
+     pointing at the real control - and it notices when you do the thing, so the child is
+     driving the actual tool, never a fake one. "?" reopens it forever. -->
+<style>
+  #coachCard{position:fixed;right:16px;bottom:16px;width:290px;z-index:9999;
+    background:#fff;border:3px solid var(--accent);border-radius:16px;
+    box-shadow:0 10px 30px rgba(0,0,0,.22);padding:14px 16px;font-size:14px;
+    line-height:1.45;display:none}
+  #coachCard h4{margin:0 0 6px;font-size:16px;color:var(--accent)}
+  #coachCard .cstep{font-size:11px;opacity:.6;letter-spacing:.5px;text-transform:uppercase}
+  #coachCard .crow{display:flex;gap:8px;margin-top:10px;align-items:center}
+  #coachCard button{flex:1 1 auto;padding:7px 10px;border-radius:9px;cursor:pointer;
+    border:1px solid var(--line);background:var(--bg);font:inherit;font-size:13px}
+  #coachCard button.go{background:var(--accent);color:#fff;border-color:var(--accent);font-weight:700}
+  #coachDone{font-size:20px;line-height:1;margin-left:2px}
+  #coachOpen{position:fixed;right:16px;bottom:16px;z-index:9998;width:44px;height:44px;
+    border-radius:50%;border:3px solid var(--accent);background:#fff;color:var(--accent);
+    font-size:22px;font-weight:800;cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,.18)}
+  @keyframes coachPulse{0%,100%{box-shadow:0 0 0 0 rgba(138,110,230,.85)}
+                        50%{box-shadow:0 0 0 9px rgba(138,110,230,0)}}
+  .coachPoint{animation:coachPulse 1.25s infinite;border-radius:10px;
+    outline:3px solid var(--accent);outline-offset:2px}
+</style>
+<button id="coachOpen" title="show me how">?</button>
+<div id="coachCard">
+  <div class="cstep" id="coachN"></div>
+  <h4 id="coachT"></h4>
+  <div id="coachB"></div>
+  <div class="crow">
+    <button id="coachSkip">skip</button>
+    <button id="coachNext" class="go">next</button>
+    <span id="coachDone"></span>
+  </div>
+</div>
+<script>
+(function(){
+  const $c=id=>document.getElementById(id);
+  // Each step: what to say, what to point at, and how to KNOW the child did it.
+  const STEPS=[
+    {t:'Pick where he lives', el:'room',
+     b:'Every bunbun needs a room. Open this list and pick one you like \u2014 the picture '+
+       'behind him changes right away.',
+     // a room is always pre-picked, so "done" means CHANGED it - or said yes with next
+     done:()=>scene.room!==coachRoom0},
+    {t:'Put something in it', el:'addBtn',
+     b:'Choose a thing from the little list, then press <b>+ add</b>. A bed, a tub, a rug, '+
+       'a lamp \u2014 put in as many as you want. Drag them where you like.',
+     done:()=>(scene.objects||[]).length>0},
+    {t:'Draw where he can walk', el:'zFloor',
+     b:'Press <b>+ walkable</b>, then click around the floor to draw a shape. Click your '+
+       'first dot again to finish. Green means "you may walk here".',
+     done:()=>(scene.zones||[]).some(z=>z.kind==='floor'||z.kind==='walk'||!z.kind)},
+    {t:'Bring in a move', el:'impAnim',
+     b:'The moves you made in Animation Creation come in here. Press <b>Add animations</b> '+
+       'and pick one \u2014 or press it and choose one off the shelf.',
+     done:()=>anims.length>0},
+    {t:'Watch him live in it', el:'preview',
+     b:'Press <b>Act it out</b>. He starts walking around your room and doing your moves, '+
+       'exactly like he will on the real bunbun.',
+     done:()=>typeof simOn!=='undefined'&&simOn},
+    {t:'Send it to your bunbun', el:'exportPkg',
+     b:'Press <b>\u{1F4E6} save a bunbun package</b> \u2014 that one file holds your whole '+
+       'world. Then open your bunbun\u2019s own page (<b>http://bunbun-XXXX.local/build</b>) '+
+       'and give it the file. That is it!',
+     done:()=>false},
+  ];
+  let at=-1, timer=null, pointed=null;
+  const coachRoom0=(typeof scene!=='undefined'&&scene)?scene.room:null;
+  const KEY='bunbun-coach-seen'+((SKEY.match(/--(.+)$/)||[])[0]||'');
+  function point(id){
+    if(pointed) pointed.classList.remove('coachPoint');
+    pointed=id?document.getElementById(id):null;
+    if(pointed){ pointed.classList.add('coachPoint');
+      pointed.scrollIntoView({block:'center',behavior:'smooth'}); }
+  }
+  function show(i){
+    at=i;
+    if(i>=STEPS.length){ finish(true); return }
+    const st=STEPS[i];
+    $c('coachN').textContent=`step ${i+1} of ${STEPS.length}`;
+    $c('coachT').textContent=st.t;
+    $c('coachB').innerHTML=st.b;
+    $c('coachDone').textContent='';
+    $c('coachCard').style.display='block';
+    $c('coachOpen').style.display='none';
+    point(st.el);
+    clearInterval(timer);
+    timer=setInterval(()=>{
+      let ok=false; try{ ok=!!st.done() }catch(e){}
+      if(ok && at===i){ $c('coachDone').textContent='\u2705';
+        clearInterval(timer);
+        setTimeout(()=>{ if(at===i) show(i+1) }, 900); }
+    }, 500);
+  }
+  function finish(done){
+    clearInterval(timer); point(null); at=-1;
+    $c('coachCard').style.display='none';
+    $c('coachOpen').style.display='block';
+    try{ localStorage.setItem(KEY,'1') }catch(e){}
+    if(done) say('that is the whole thing \u2014 press ? any time you want the steps back');
+  }
+  $c('coachNext').onclick=()=>show(at+1);
+  $c('coachSkip').onclick=()=>finish(false);
+  $c('coachOpen').onclick=()=>show(0);
+  // first visit only: a room nobody has touched yet
+  let seen=false; try{ seen=!!localStorage.getItem(KEY) }catch(e){}
+  const untouched=!(scene.objects||[]).length && !anims.length;
+  if(!seen && untouched) setTimeout(()=>show(0), 900); else $c('coachOpen').style.display='block';
+})();
+</script>
