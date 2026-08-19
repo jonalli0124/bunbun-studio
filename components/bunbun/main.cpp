@@ -1397,6 +1397,10 @@ static const char *charSpriteKey(const char *key, char *buf, size_t bufLen) {
   if (!id || !*id) return key;
   snprintf(buf, bufLen, "%s/%s", id, key);
   if (pakFind(buf)) return buf;
+  // a CUSTOM animation's frames (canim/) are the child's own art, not species art -
+  // the idle fallback below must never eat them ("he is no longer doing my bath
+  // animation": the first version swapped every canim frame for the penguin's idle)
+  if (!strncmp(key, "canim/", 6)) return key;
   // DEFAULT TO IDLE, NEVER TO ANOTHER ANIMAL (Jon: "he became a bunny and was walking
   // north for a bit"): a clip this species pack lacks used to fall through to the base
   // pack's BUNNY frames mid-move. The species' own idle is the honest stand-in - same
@@ -2116,6 +2120,7 @@ static void catDismissIfAway();
 // happen at all - both by the owner's rule.
 static uint8_t  g_doorTrip = 0;      // 1 = walking to the exit edge
 static uint32_t g_visitHomeAt = 0;   // a fruitless side-room visit walks home at this time
+static uint32_t g_roomMinStay = 0;   // Jon: "at least 10 seconds" in a side room, whatever happens
 static uint8_t  g_doorRole = 0;
 static char     g_doorAct[8] = "";
 static uint32_t g_workUntil = 0;     // the scene work session deadline; 0 = no session
@@ -2200,6 +2205,7 @@ static bool sceneErrandTo(const char *act) {
   // bathroom, if he hits eat, he can go to the kitchen")
   uint8_t want = SCENE_ROLE_MAIN;
   if      (!strcmp(act, "bath")) want = SCENE_ROLE_BATH;
+  else if (!strcmp(act, "wash")) want = SCENE_ROLE_BATH;   // washing up lives there too
   else if (!strcmp(act, "eat"))  want = SCENE_ROLE_KITCHEN;
   else if (!strcmp(act, "work")) want = SCENE_ROLE_WORK;
   // routed acts fall back to the MAIN room; everything else (sit, the emotions) happens
@@ -2745,8 +2751,10 @@ static void think(float dt) {
         say("work is all done!");
       }
       if (g_scCurRole != SCENE_ROLE_MAIN && !g_doorTrip) {
-        sceneDoorTo(SCENE_ROLE_MAIN, "");
-        return;
+        if (millis() < g_roomMinStay) {          // the visit's minimum stay first
+          if (!g_visitHomeAt) g_visitHomeAt = g_roomMinStay;
+          g_wanderT = 2.0f;
+        } else { sceneDoorTo(SCENE_ROLE_MAIN, ""); return; }
       }
     } else return;
   }
@@ -2947,10 +2955,12 @@ static void think(float dt) {
       g_workUntil = 0;
       say("work is all done!");
     }
-    // an act in another room is over: walk home
+    // an act in another room is over: walk home - after the visit's minimum stay
     if (g_scCurRole != SCENE_ROLE_MAIN && !g_doorTrip) {
-      sceneDoorTo(SCENE_ROLE_MAIN, "");
-      return;
+      if (millis() < g_roomMinStay) {
+        if (!g_visitHomeAt) g_visitHomeAt = g_roomMinStay;
+        g_wanderT = 2.0f;
+      } else { sceneDoorTo(SCENE_ROLE_MAIN, ""); return; }
     }
     // the performance is OVER: drop to his mood/idle right now, exactly as the preview's
     // rest does. Leaving the clip up made a 5-second duration look like 20 ("its going
@@ -3028,6 +3038,10 @@ static void think(float dt) {
       g_fx = (float)ex2; g_fy = (float)ey2;
       S.x = (int16_t)ex2; S.y = (int16_t)ey2;
       Serial.printf("door: now in role %d\n", (int)g_scCurRole);
+      // A VISIT IS A VISIT (Jon: "when he goes to work or kitchen, he needs to stay in
+      // there for at least 10 seconds"): even a 3-second meal keeps him in the room a
+      // human-visible while before the walk home.
+      g_roomMinStay = (g_scCurRole != SCENE_ROLE_MAIN) ? millis() + 10000 + esp_random() % 4000 : 0;
       if (g_doorAct[0]) {
         if (!strcmp(g_doorAct, "work") && !g_workUntil)
           g_workUntil = millis() + (uint32_t)sceneWorkMin() * 60000UL;
