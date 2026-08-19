@@ -2143,6 +2143,12 @@ static bool sceneDoorTo(uint8_t tgt, const char *act) {
     exitLeft = (g_scCurRole == SCENE_ROLE_WORK);   // side rooms exit toward the main room
   int ex = exitLeft ? 6 : SCENE_W - 6;
   int ey = (int)g_fy;
+  if (g_scHasBounds) {
+    if (ey < g_scBounds.y0 + 4) ey = g_scBounds.y0 + 4;   // above the floor: come down first
+    if (ey > g_scBounds.y1 - 2) ey = g_scBounds.y1 - 2;
+  }
+  clampErrandToFloor(&ex, &ey);
+  clearOfBlocks(&ex, &ey);
   clampErrandToFloor(&ex, &ey);
   g_tx = ex; g_ty = ey;
   g_visit = 4;
@@ -6380,7 +6386,10 @@ static void updateCat(float dt) {
         g_tripLen = sqrtf((g_tx - g_fx) * (g_tx - g_fx) + (g_ty - g_fy) * (g_ty - g_fy));
         g_crawling = !babyCanStand(); g_crawlFrac = babyCanStand() ? 2 : 0;
       }
-      if (g_catPetted) {
+      if (g_catPetted && g_visit < 0 && !g_doorTrip) {
+        // the greet owns this walk ONLY when no errand does - with g_catPetted armed,
+        // this used to read ANY reached target as "he reached her", so arriving at a
+        // room's middle mid-errand turned into petting a cat two rooms away
         float dx = g_tx - g_fx, dy = g_ty - g_fy;
         if (dx * dx + dy * dy < 64.0f) {      // he reached her
           g_catPhase = 3; g_catT = 0;
@@ -6399,8 +6408,10 @@ static void updateCat(float dt) {
       g_catFaceE = (g_fx > g_catX);           // she turns to whoever is making the fuss
       if (g_catT > 3.5f) {
         g_catPhase = catDecide(); g_catT = 0;
-        g_tx = g_ty = -1;                     // release him; he wanders off as usual
-        g_wanderT = 5.0f;
+        if (g_visit < 0 && !g_doorTrip) {     // release him - unless an errand owns him now
+          g_tx = g_ty = -1;                   // ("the cat shouldnt ever cause him to be stuck")
+          g_wanderT = 5.0f;
+        }
       }
       break;
     }
@@ -7257,7 +7268,12 @@ static void composeRoom(int fx, int fy, float sc, int lampOn, bool cloudLit, flo
     g_stenApply = false;
     sceneDrawProps(true);
     // ...and the room does not draw its own copy of anything the scene already placed
-    if (!sceneHas("items/catclock")) drawCatClock();
+    // THE BUILDER IS THE LIGHTING RECORD (and the furnishing record): the compiled-in
+    // clock, sconce and radio belong to the SHIPPED farmhouse only. A custom room shows
+    // exactly what the child placed - a sconce materialising in the work room is the
+    // device inventing scenery ("there is a sconce in work that shouldnt be there").
+    const bool shippedRoom = !g_scRoom[0];
+    if (!sceneHas("items/catclock")) { if (shippedRoom) drawCatClock(); }
     else {
       // The scene drew the clock's PICTURE in the props pass. Its tail and its hands are lines
       // the firmware paints, so they have to be added here or a scene-supplied clock is a dead
@@ -7265,8 +7281,8 @@ static void composeRoom(int fx, int fy, float sc, int lampOn, bool cloudLit, flo
       const SceneProp *cc = sceneFindProp("items/catclock");
       if (cc) { catClockFace(cc->x, cc->y, cc->sx, true); catClockFace(cc->x, cc->y, cc->sx, false); }
     }
-    if (!sceneHas("items/sconce") && !sceneHas("items/lamp")) drawLampFixture();
-    if (!sceneHas("items/radio")) drawRadio();
+    if (shippedRoom && !sceneHas("items/sconce") && !sceneHas("items/lamp")) drawLampFixture();
+    if (shippedRoom && !sceneHas("items/radio")) drawRadio();
     drawBird();
     // WHO IS IN FRONT, bunbun or the cat. Straight off the builder (placer.html drawSim):
     //   const dy = S.cat.y - S.bun.y;
