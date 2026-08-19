@@ -2285,6 +2285,13 @@ static bool sceneWorkAvail() {
 
 static bool sceneErrandTo(const char *act) {
   if (!g_pottyLock) g_pottySeq = 0;  // any real command outranks the routine
+  // ...and it ends the WORK commitment the same way ("i had him go to work and then
+  // go eat and he went back to work after eating"): the menu's eat/bath never cleared
+  // the session, so the owed reps and the stroll tick re-summoned him after the meal.
+  // Only work itself, and the potty's own internal legs, keep the session alive.
+  if (strcmp(act, "work") != 0 && !g_pottyLock) {
+    g_workUntil = 0; g_workReps = 0; g_workNextAt = 0;
+  }
   // WHICH ROOM does this act live in? ("if someone hits bathe... he can go to the
   // bathroom, if he hits eat, he can go to the kitchen")
   // THE ROOM HE IS IN WINS WHEN IT OFFERS THE ACT (Jon: "if eat is available in the
