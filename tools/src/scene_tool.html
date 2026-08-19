@@ -4411,22 +4411,22 @@ async function restore(raw){
      top-left, bathroom bottom-left, the main room in the middle, work to the right -
      with a dot that is really him, moving where he really is. -->
 <style>
-  #homeMapBtn{position:fixed;left:16px;bottom:16px;z-index:9998;width:44px;height:44px;
-    border-radius:50%;border:3px solid var(--accent);background:#fff;font-size:20px;
-    cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,.18)}
-  #homeMap{position:fixed;left:16px;bottom:70px;z-index:9998;background:#fff;
-    border:3px solid var(--accent);border-radius:14px;padding:8px 8px 6px;
-    box-shadow:0 10px 28px rgba(0,0,0,.2);display:none}
+  #homeMapBtn{position:absolute;z-index:60;width:34px;height:34px;
+    border-radius:50%;border:2px solid var(--accent);background:rgba(255,255,255,.92);
+    font-size:16px;cursor:pointer;box-shadow:0 3px 10px rgba(0,0,0,.25);padding:0}
+  /* a HUD, not a panel: no card, no white - just the rooms floating over the world */
+  #homeMap{position:absolute;z-index:59;background:transparent;border:0;padding:0;
+    box-shadow:none;display:none;pointer-events:none}
   #homeMap .hm-t{font-size:11px;text-transform:uppercase;letter-spacing:.5px;
     opacity:.6;margin:0 0 4px 2px}
   /* the page styles its big canvas globally; the map's needs its own size back */
-  #homeMap{width:268px}
-  #homeMapC{width:252px !important;height:192px !important;display:block;max-width:none !important;
+  #homeMap{width:258px}
+  #homeMapC{width:252px !important;height:232px !important;display:block;max-width:none !important;
     background:transparent;border:0;border-radius:0;box-shadow:none;image-rendering:pixelated;
     padding:0;margin:0}
 </style>
 <button id="homeMapBtn" title="his whole home, and where he is in it">&#128506;</button>
-<div id="homeMap"><div class="hm-t">his home</div><canvas id="homeMapC" width="252" height="192"></canvas></div>
+<div id="homeMap"><canvas id="homeMapC" width="252" height="232"></canvas></div>
 <script>
 (function(){
   const btn=document.getElementById('homeMapBtn'), box=document.getElementById('homeMap');
@@ -4439,7 +4439,9 @@ async function restore(raw){
     {role:'',         label:'home',     c:1, r:1},
     {role:'work',     label:'work',     c:2, r:1},
   ];
-  const W=78, H=58, GAP=6, OX=6, OY=6;
+  const W=78, H=58, GAP=8, NAME=12, OX=6, OY=4;
+  const cellX=c=>OX+c*(W+GAP);
+  const cellY=r=>OY+r*(H+NAME+GAP)+NAME;      // the name sits in the space above
   const KEY='bunbun-homemap'+((SKEY.match(/--(.+)$/)||[])[0]||'');
   let on=false; try{ on=localStorage.getItem(KEY)==='1' }catch(e){}
   function roomOf(role){                       // which picture that room wears
@@ -4450,6 +4452,15 @@ async function restore(raw){
     }catch(e){ return null }
   }
   function exists(role){ return role===roleKey() || worldSlots[role]!=null }
+  const asked=new Set();
+  function thumb(rn){                          // that room's own picture, fetched once
+    if(!rn) return null;
+    const k='room|'+rn;
+    if(imgs[k]) return imgs[k];
+    if(!asked.has(k) && SD.rooms && SD.rooms[rn]){ asked.add(k);
+      try{ load(SD.rooms[rn], k) }catch(e){} }
+    return null;
+  }
   // which picture of him is up this instant: walking uses the travel clip, a performance
   // its own, and everything else the idle - mirroring drawChar without disturbing it
   function petFrame(){
@@ -4474,60 +4485,77 @@ async function restore(raw){
       return imgs['clip|'+clip+'|'+fi] || imgs['clip|'+clip+'|0'] || null;
     }catch(e){ return null }
   }
+  function roundRect(x,y,w,h,r){
+    g.beginPath();
+    g.moveTo(x+r,y); g.arcTo(x+w,y,x+w,y+h,r); g.arcTo(x+w,y+h,x,y+h,r);
+    g.arcTo(x,y+h,x,y,r); g.arcTo(x,y,x+w,y,r); g.closePath();
+  }
   function paint(){
     if(!on) return;
     g.clearRect(0,0,cv.width,cv.height);
     const here=roleKey();
-    // the halls he walks, all of them, before any room sits on top
-    const mx=OX+1*(W+GAP)+W/2, my=OY+1*(H+GAP)+H/2;
+    // the halls between the rooms, faint, under everything
+    const mx=cellX(1)+W/2, my=cellY(1)+H/2;
     for(const cell of CELLS){
       if(cell.role==='' || !exists(cell.role)) continue;
-      const x=OX+cell.c*(W+GAP), y=OY+cell.r*(H+GAP);
-      g.strokeStyle='rgba(138,110,230,.45)'; g.lineWidth=6; g.lineCap='round';
+      const x=cellX(cell.c), y=cellY(cell.r);
+      g.strokeStyle='rgba(255,255,255,.5)'; g.lineWidth=5; g.lineCap='round';
+      g.beginPath(); g.moveTo(x+W/2,y+H/2); g.lineTo(mx,my); g.stroke();
+      g.strokeStyle='rgba(138,110,230,.75)'; g.lineWidth=2.5;
       g.beginPath(); g.moveTo(x+W/2,y+H/2); g.lineTo(mx,my); g.stroke();
     }
     for(const cell of CELLS){
-      const x=OX+cell.c*(W+GAP), y=OY+cell.r*(H+GAP);
+      const x=cellX(cell.c), y=cellY(cell.r);
       const live=exists(cell.role), isHere=(cell.role===here);
+      // the name, above its room
+      g.font=(isHere?'bold ':'')+'10px system-ui,sans-serif';
+      g.textAlign='center'; g.textBaseline='alphabetic';
+      g.lineWidth=3; g.strokeStyle='rgba(0,0,0,.55)';
+      g.strokeText(cell.label, x+W/2, y-3);
+      g.fillStyle=isHere?'#ffffff':(live?'rgba(255,255,255,.72)':'rgba(255,255,255,.4)');
+      g.fillText(cell.label, x+W/2, y-3);
       g.save();
-      g.globalAlpha=live?1:0.25;
-      // the room's own picture, if we have it - else a plain card
-      const rn=live?roomOf(cell.role):null;
-      const im=rn?imgs['room|'+rn]:null;
-      g.fillStyle='#efe9dd'; g.fillRect(x,y,W,H);
-      if(im){ try{ g.drawImage(im,x,y,W,H) }catch(e){} }
-      g.strokeStyle=isHere?'var(--accent)':'#b9b0a0';
-      g.strokeStyle=isHere?'#8a6ee6':'#b9b0a0';
-      g.lineWidth=isHere?3:1.5; g.strokeRect(x+.5,y+.5,W-1,H-1);
-      g.fillStyle='rgba(0,0,0,.55)'; g.fillRect(x,y+H-13,W,13);
-      g.fillStyle='#fff'; g.font='10px system-ui,sans-serif'; g.textAlign='center';
-      g.fillText(live?cell.label:cell.label+' \u2014 none', x+W/2, y+H-3);
+      roundRect(x,y,W,H,7); g.clip();
+      const rn=live?roomOf(cell.role):null, im=rn?thumb(rn):null;
+      if(im){
+        g.globalAlpha=isHere?1:.72;                 // he is not in there
+        try{ g.drawImage(im,x,y,W,H) }catch(e){}
+        if(!isHere){ g.globalAlpha=.45; g.fillStyle='#6f6a63'; g.fillRect(x,y,W,H); }
+      } else {
+        g.globalAlpha=live?.35:.18; g.fillStyle='#000'; g.fillRect(x,y,W,H);
+      }
       g.restore();
-      // and HIM - the real animated sprite, tiny (Jon: "can we see a small version of
-      // him acting out in the minimap?"). Same clip and same frame the big preview is
-      // showing this instant, so he sits, washes and walks in here too.
+      // the outline: bright for the room he is in, a dashed hint for one that is missing
+      g.save();
+      roundRect(x,y,W,H,7);
+      if(!live){ g.setLineDash([4,4]); g.strokeStyle='rgba(255,255,255,.45)'; g.lineWidth=1.5; }
+      else { g.strokeStyle=isHere?'#a78bfa':'rgba(255,255,255,.55)'; g.lineWidth=isHere?2.5:1.5; }
+      g.stroke();
+      g.restore();
+      // and HIM - the real animated sprite, tiny, in the room he is really in
       if(isHere && typeof sim!=='undefined' && sim){
-        const px=x+4+(sim.x/GAME.w)*(W-8), py=y+4+(sim.y/GAME.h)*(H-17);
-        const im=petFrame(), S=22;
+        const px=x+4+(sim.x/GAME.w)*(W-8), py=y+4+(sim.y/GAME.h)*(H-8);
+        const im2=petFrame(), S=22;
         g.save();
-        g.globalAlpha=.28; g.fillStyle='#000'; g.beginPath();
-        g.ellipse(px, py+1, 5, 2, 0, 0, 7); g.fill();      // a little shadow to stand on
+        g.globalAlpha=.3; g.fillStyle='#000';
+        g.beginPath(); g.ellipse(px, py+1, 5, 2, 0, 0, 7); g.fill();
         g.globalAlpha=1;
-        if(im){
-          if(sim.face<0){                                   // he faces the way he walks
-            g.translate(px,0); g.scale(-1,1); g.translate(-px,0);
-          }
-          try{ g.drawImage(im, px-S/2, py-S*90/96, S, S) }catch(e){}
+        if(im2){
+          if(sim.face<0){ g.translate(px,0); g.scale(-1,1); g.translate(-px,0); }
+          try{ g.drawImage(im2, px-S/2, py-S*90/96, S, S) }catch(e){}
         } else {
-          g.beginPath(); g.arc(px,py-4,4,0,7); g.fillStyle='#8a6ee6'; g.fill();
+          g.beginPath(); g.arc(px,py-4,4,0,7); g.fillStyle='#a78bfa'; g.fill();
           g.lineWidth=2; g.strokeStyle='#fff'; g.stroke();
         }
         g.restore();
       }
     }
     if(typeof sim==='undefined' || !sim){
-      g.fillStyle='#6b6257'; g.font='11px system-ui,sans-serif'; g.textAlign='left';
-      g.fillText('press Act it out to see him', OX, cv.height-4);
+      g.font='9px system-ui,sans-serif'; g.textAlign='center';
+      g.lineWidth=3; g.strokeStyle='rgba(0,0,0,.5)';
+      g.strokeText('press Act it out', cv.width/2, cv.height-3);
+      g.fillStyle='rgba(255,255,255,.8)';
+      g.fillText('press Act it out', cv.width/2, cv.height-3);
     }
   }
   function show(v){
@@ -4536,8 +4564,20 @@ async function restore(raw){
     try{ localStorage.setItem(KEY, v?'1':'0') }catch(e){}
     if(v) paint();
   }
-  btn.onclick=()=>show(!on);
-  show(on);
+  // ride the room view's own top-right corner
+  function place(){
+    const view=document.getElementById('view'); if(!view) return;
+    const host=view.offsetParent||view.parentElement||document.body;
+    if(btn.parentElement!==host){ host.appendChild(btn); host.appendChild(box);
+      if(getComputedStyle(host).position==='static') host.style.position='relative'; }
+    const t=view.offsetTop, l=view.offsetLeft, w=view.offsetWidth;
+    btn.style.top=(t+8)+'px';  btn.style.left=(l+w-42)+'px';
+    box.style.top=(t+48)+'px'; box.style.left=(l+w-274)+'px';
+  }
+  addEventListener('resize', place);
+  setInterval(place, 800);
+  btn.onclick=()=>{ show(!on); place(); };
+  show(on); place(); setTimeout(place, 400);
   setInterval(()=>{ try{ paint() }catch(e){} }, 120);
 })();
 </script>

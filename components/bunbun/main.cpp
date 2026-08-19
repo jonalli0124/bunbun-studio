@@ -2173,6 +2173,7 @@ static void catDismissIfAway();
 // defined: eat and bath simply happen here (the main-room fallback), work does not
 // happen at all - both by the owner's rule.
 static uint8_t  g_doorTrip = 0;      // 1 = walking to the exit edge
+static uint8_t  g_whyDoor = 0;       // the reason that started this crossing
 static uint32_t g_visitHomeAt = 0;   // a fruitless side-room visit walks home at this time
 static uint32_t g_roomMinStay = 0;   // Jon: "at least 10 seconds" in a side room, whatever happens
 static uint32_t g_workNextAt = 0;    // the stroll between work reps ends, and the next one starts
@@ -2196,6 +2197,104 @@ static void creditWork() {
 // tags: the sit act is the toilet, the bath act is the sink. 1 = sitting, 2 = washing.
 static uint8_t g_pottySeq  = 0;
 static bool    g_pottyLock = false;  // routine-internal dispatches don't cancel it
+// ---- "WHY DID YOU DO THAT?" (WHYFEATURE.md) ------------------------------------
+// The reason is written in the same breath as the decision. Nothing here ever inspects
+// current state and guesses backwards - by the time a child asks, the meter that started
+// the trip has already been refilled by the meal it caused.
+enum WhyCause : uint8_t {
+  WHY_NONE = 0, WHY_METER, WHY_BUTTON, WHY_ROLL, WHY_SCHEDULE,
+  WHY_ROUTINE, WHY_FILLER, WHY_INTERRUPTED, WHY_BLOCKED
+};
+struct Because {
+  uint8_t  cause;
+  char     act[12];
+  char     meter[12];
+  uint8_t  roomFrom, roomTo;
+  uint32_t atMs;
+};
+static Because g_why[4];
+static uint8_t g_whyN = 0;          // how many are real
+static uint8_t g_whyAt = 0;         // next slot
+static const char *ROOM_WORD[4] = {"the main room", "the kitchen", "the bathroom", "work"};
+static void say(const char *t);
+static void whyNote(uint8_t cause, const char *act, const char *meter) {
+  Because &b = g_why[g_whyAt];
+  b.cause = cause;
+  snprintf(b.act, sizeof(b.act), "%s", act ? act : "");
+  snprintf(b.meter, sizeof(b.meter), "%s", meter ? meter : "");
+  b.roomFrom = g_scCurRole;
+  b.roomTo = g_scCurRole;           // a door trip stamps the real destination later
+  b.atMs = millis();
+  g_whyAt = (uint8_t)((g_whyAt + 1) % 4);
+  if (g_whyN < 4) g_whyN++;
+  // THE ONE THAT MUST BE HEARD, not merely available if asked
+  if (cause == WHY_BLOCKED && g_scOK) {
+    static uint32_t lastBlk = 0;
+    if (millis() - lastBlk > 15000) {
+      lastBlk = millis();
+      char line[96];
+      const char *what = !strcmp(b.act, "eat")   ? "a snack"
+                       : !strcmp(b.act, "bath")  ? "a bath"
+                       : !strcmp(b.act, "wash")  ? "a wash"
+                       : !strcmp(b.act, "toilet")? "the potty"
+                       : !strcmp(b.act, "work")  ? "a job to do"
+                       : !strcmp(b.act, "sleep") ? "a bed" : b.act;
+      snprintf(line, sizeof(line), "bunbun wanted %s - there is nowhere for it yet", what);
+      say(line);
+    }
+  }
+}
+static Because *whyLast() { return g_whyN ? &g_why[(g_whyAt + 3) % 4] : nullptr; }
+// the sentence, in the same voice as the ticker: kid words, name the actual thing
+static const char *whySentence(char *buf, size_t n) {
+  Because *b = whyLast();
+  if (!b || !b->cause) { snprintf(buf, n, "I am just being me"); return buf; }
+  const char *room = (b->roomTo < 4) ? ROOM_WORD[b->roomTo] : "";
+  const bool moved = (b->roomTo != b->roomFrom);
+  switch (b->cause) {
+    case WHY_METER:
+      if (!strcmp(b->meter, "food"))   snprintf(buf, n, "my tummy was rumbling%s%s",
+                                                moved ? ", so I went to " : "", moved ? room : "");
+      else if (!strcmp(b->meter, "clean")) snprintf(buf, n, "I was getting grubby%s%s",
+                                                moved ? ", so I went to " : "", moved ? room : "");
+      else if (!strcmp(b->meter, "energy")) snprintf(buf, n, "my eyes were getting heavy");
+      else snprintf(buf, n, "I was feeling %s", b->meter);
+      break;
+    case WHY_BUTTON:
+      if (moved) snprintf(buf, n, "you asked me to, so I went to %s", room);
+      else       snprintf(buf, n, "you asked me to!");
+      break;
+    case WHY_ROLL:     snprintf(buf, n, "I really needed the potty"); break;
+    case WHY_SCHEDULE:
+      if (!strcmp(b->act, "sleep")) snprintf(buf, n, "it is night time, so I am off to bed");
+      else if (moved)               snprintf(buf, n, "it was time for %s", room);
+      else                          snprintf(buf, n, "it was time to get on with it");
+      break;
+    case WHY_ROUTINE:  snprintf(buf, n, "I always wash my hands after"); break;
+    case WHY_FILLER:   snprintf(buf, n, "nothing much - just pottering about"); break;
+    case WHY_INTERRUPTED: snprintf(buf, n, "I was busy, but something needed me"); break;
+    case WHY_BLOCKED: {
+      const char *what = !strcmp(b->act, "eat")   ? "a snack"
+                       : !strcmp(b->act, "bath")  ? "a bath"
+                       : !strcmp(b->act, "wash")  ? "a wash"
+                       : !strcmp(b->act, "toilet")? "the potty"
+                       : !strcmp(b->act, "work")  ? "to do my job"
+                       : !strcmp(b->act, "sleep") ? "my bed" : b->act;
+      snprintf(buf, n, "I wanted %s, but there is nowhere to have one", what);
+      break; }
+    default: snprintf(buf, n, "I am just being me");
+  }
+  return buf;
+}
+extern "C" void bunbun_why(char *buf, int len) { whySentence(buf, (size_t)len); }
+// the reason a COMMAND carries, set by the caller just before it asks for the act
+static uint8_t g_whyNext = WHY_NONE;
+static char    g_whyNextMeter[12] = "";
+static void whyFor(uint8_t cause, const char *meter) {
+  g_whyNext = cause;
+  snprintf(g_whyNextMeter, sizeof(g_whyNextMeter), "%s", meter ? meter : "");
+}
+
 static bool sceneErrandTo(const char *act);
 static bool sceneDoorTo(uint8_t tgt, const char *act) {
   // no side-to-side teleports: work to kitchen goes THROUGH the main room. The act
@@ -2226,6 +2325,7 @@ static bool sceneDoorTo(uint8_t tgt, const char *act) {
   g_tx = ex; g_ty = ey;
   g_visit = 4;
   g_doorTrip = 1; g_doorRole = tgt; g_visitHomeAt = 0;
+  { Because *b = whyLast(); g_whyDoor = b ? b->cause : (uint8_t)WHY_NONE; }
   strncpy(g_doorAct, act ? act : "", sizeof(g_doorAct) - 1);
   g_doorAct[sizeof(g_doorAct) - 1] = 0;
   g_tripLen = sqrtf((g_tx - g_fx) * (g_tx - g_fx) + (g_ty - g_fy) * (g_ty - g_fy));
@@ -2284,6 +2384,10 @@ static bool sceneWorkAvail() {
 }
 
 static bool sceneErrandTo(const char *act) {
+  // WHY: whoever asked set g_whyNext; an unattributed errand is the pet's own pottering
+  const uint8_t why = g_whyNext ? g_whyNext : (uint8_t)WHY_FILLER;
+  char whyMeter[12]; snprintf(whyMeter, sizeof(whyMeter), "%s", g_whyNextMeter);
+  g_whyNext = WHY_NONE; g_whyNextMeter[0] = 0;
   if (!g_pottyLock) g_pottySeq = 0;  // any real command outranks the routine
   // ...and it ends the WORK commitment the same way ("i had him go to work and then
   // go eat and he went back to work after eating"): the menu's eat/bath never cleared
@@ -2316,13 +2420,20 @@ static bool sceneErrandTo(const char *act) {
         found = true;
       }
     if (!found) {
-      if (!strcmp(act, "work")) return false;   // no workplace anywhere = he does not work
+      if (!strcmp(act, "work")) {
+        whyNote(WHY_BLOCKED, act, "");
+        return false;                           // no workplace anywhere = he does not work
+      }
       // his bed is home even unmarked; anything else tries its canonical room
       tgt = !strcmp(act, "sleep") ? SCENE_ROLE_MAIN
           : (g_scRoleAvail[home] ? home : g_scCurRole);
     }
   }
-  if (tgt != g_scCurRole) return sceneDoorTo(tgt, act);
+  if (tgt != g_scCurRole) {
+    whyNote(why, act, whyMeter);
+    { Because *b = whyLast(); if (b) b->roomTo = tgt; }   // he is going THERE
+    return sceneDoorTo(tgt, act);
+  }
   if (!strcmp(act, "work") && !g_workUntil && sceneWorkMin() > 0)
     g_workUntil = millis() + (uint32_t)sceneWorkMin() * 60000UL;
   int m = sceneActMark(act);
@@ -2330,16 +2441,18 @@ static bool sceneErrandTo(const char *act) {
     // no PLACE for this act, but maybe the child's ANIMATION exists with an "anywhere"
     // rule - then it happens right where he stands, exactly as the assembler plays it
     const char *k = sceneActAnim(act);
-    if (!k) return false;
+    if (!k) { whyNote(WHY_BLOCKED, act, ""); return false; }
     const AnimDef *ad = findAnim(k);
     float loopS = ad->frames / (ad->fps > 0.1f ? ad->fps : 7.0f);
     float secs = 2.0f * loopS + 2.0f;
     for (int i = 0; i < g_scAnimN; i++)
       if (!strcmp(g_scAnim[i].key, k) && g_scAnim[i].dur > 0.1f) { secs = g_scAnim[i].dur; break; }
     g_actIsWork = !strcmp(act, "work");
+    whyNote(why, act, whyMeter);
     startAction(k, secs);
     return true;
   }
+  whyNote(why, act, whyMeter);
   g_performBehind = false;   // he steps OUT of whatever he was in ("he goes behind the rug")
   g_settleUntil = 0;         // and stops the current performance to go ("hit sleeping should
                              // cause him to stop his current animation and then go to sleep")
@@ -2846,6 +2959,7 @@ static void think(float dt) {
                             : nullptr;
         if (washAct) {
           g_pottyLock = true;
+          whyFor(WHY_ROUTINE, "");
           bool ok = sceneErrandTo(washAct);
           g_pottyLock = false;
           if (ok) return;
@@ -2903,6 +3017,7 @@ static void think(float dt) {
         int sm = sceneActMark("sleep");
         if (sm >= 0) {
           const int dx = g_scBun[sm].x - (int)g_fx, dy = g_scBun[sm].y - (int)g_fy;
+          whyFor(WHY_SCHEDULE, "energy");
           if (dx * dx + dy * dy > 144 && sceneErrandTo("sleep")) return;
         }
       }
@@ -3065,7 +3180,7 @@ static void think(float dt) {
     char a[8]; strncpy(a, g_dbgAct, sizeof(a)); a[7] = 0; g_dbgAct[0] = 0;
     Serial.printf("debug act: %s\n", a);
     if (!strcmp(a, "potty")) g_poopDue = millis() + 1500;
-    else sceneErrandTo(a);
+    else { whyFor(WHY_BUTTON, ""); sceneErrandTo(a); }
   }
   // settled into a piece of furniture â€” hold the pose until it times out
   if (millis() < g_settleUntil) return;
@@ -3081,6 +3196,7 @@ static void think(float dt) {
                           : nullptr;
       if (washAct) {
         g_pottyLock = true;
+        whyFor(WHY_ROUTINE, "");
         bool ok = sceneErrandTo(washAct);  // wash those hands
         g_pottyLock = false;
         if (ok) return;
@@ -3140,6 +3256,7 @@ static void think(float dt) {
   // a walk-to-bed that died (backstop, interruption) is re-issued the moment he is
   // free - g_sleepPending must never dangle with the lights still on
   if (g_sleepPending && g_tx < 0 && g_visit < 0 && !g_doorTrip && !g_action && S.lights) {
+    whyFor(WHY_SCHEDULE, "energy");
     if (!sceneErrandTo("sleep")) {
       S.lights = 0; g_sleepAtMs = millis();
       if (g_sleepPending == 2) { g_nightSleep = true; saveSleepState(3); }
@@ -3154,6 +3271,7 @@ static void think(float dt) {
     if (!g_workUntil && g_workReps <= 0) g_workNextAt = 0;   // nothing owed: drop it
     else if (g_visit < 0 && !g_doorTrip && !g_action) {
       g_workNextAt = 0;
+      whyFor(WHY_SCHEDULE, "");
       sceneErrandTo("work");
       return;
     }
@@ -3261,6 +3379,7 @@ static void think(float dt) {
           g_workReps = g_workUntil ? -1 : 2;   // a visit owes two jobs; a session owes the clock
         }
         g_pottyLock = (g_pottySeq != 0);
+        whyFor(g_whyDoor ? g_whyDoor : (uint8_t)WHY_BUTTON, "");   // the reason travelled too
         bool ok = sceneErrandTo(g_doorAct);
         // a scene without a "the toilet" animation still has its plain sit
         if (!ok && !strcmp(g_doorAct, "toilet")) ok = sceneErrandTo("sit");
@@ -3612,6 +3731,9 @@ static void simulate(float dt) {
         say("bunbun needs the potty!");   // the trip announces itself on the ticker
         g_pottySeq = 1;
         g_pottyLock = true;
+        whyNote(WHY_ROLL, "toilet", "");
+        { Because *b = whyLast(); if (b) b->roomTo = SCENE_ROLE_BATH; }
+        g_whyDoor = WHY_ROLL;
         sceneDoorTo(SCENE_ROLE_BATH, "toilet");   // the toilet type first; sit is the fallback
         g_pottyLock = false;
         return;
@@ -4202,6 +4324,7 @@ static void runMenu(int i) {
             // trill rides in right behind the menu's OK chirp.
             if (S.food < 30) sfxExcited();
             S.food = min(100.0f, S.food + 35); S.fun = min(100.0f, S.fun + 2);
+            whyFor(WHY_BUTTON, "food");
             if (!sceneErrandTo("eat")) startAction(pa("eat"), 3.4f);
             say("bunbun ate a meal");
             // Meals are followed by a mess a while later (babies more often). "A while" was
@@ -4223,6 +4346,7 @@ static void runMenu(int i) {
       }
       g_gameRoster = true; drawGameRoster(); return;
     case 2: S.clean = min(100.0f, S.clean + 45); S.fun = min(100.0f, S.fun + 6);
+            whyFor(WHY_BUTTON, "clean");
             if (!sceneErrandTo("bath")) startAction(pa("bath"), 4.2f);
             say("bunbun took a bath"); break;
     case 3: if (!S.poopN) { sfxNo(); say("nothing to sweep"); return; }
@@ -4292,6 +4416,7 @@ static void runMenu(int i) {
               // used to fail the errand and start the scripted farm sequence instead -
               // minutes of "bunbun is busy" with no way out ("hes now stuck at work").
               if (sceneWorkAvail()) {
+                whyFor(WHY_BUTTON, "");
                 if (!sceneErrandTo("work"))
                   say("nothing to do at work yet - add a 'his job' animation");
                 break;
