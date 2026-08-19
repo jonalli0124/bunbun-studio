@@ -7529,7 +7529,11 @@ static void drawScene() {
   // Lamp off during dance mode — you do not run a disco with the big light on. lampLevel() is
   // purely time-of-day, so this suppresses the BEAM without touching S.lights, which is
   // bunbun's sleep state and would have put it to bed instead.
-  int lampOn = (g_workStage || g_danceMode) ? 0 : (int)(lampLevel() * 255);
+  // NOBODY SLEEPS WITH THE LAMPS ON (Jon: "if he is sleeping in a room all lights
+  // should turn off in that room"): once he is actually settled asleep - not still
+  // walking home in the dark - every beam in the room goes out with him.
+  const bool fastAsleep = !S.lights && g_tx < 0 && g_visit < 0 && !g_doorTrip && !g_action;
+  int lampOn = (g_workStage || g_danceMode || fastAsleep) ? 0 : (int)(lampLevel() * 255);
   bool cloudLit = nightAmount() < 0.5f;
   const float nt = nightAmount();
 
