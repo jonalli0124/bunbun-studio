@@ -1213,6 +1213,7 @@ static uint32_t g_departAt = 0;
 // Counts down to the next "linger": a multi-beat freeze on a single idle frame.
 static float g_lingerT = 0;
 
+static void say(const char *t);
 static void setAnim(const char *k) {
   const AnimDef *a = findAnim(k);
   // Changing clip ALWAYS releases the freeze. g_holdUntil stops the global animation clock, so
@@ -1221,7 +1222,22 @@ static void setAnim(const char *k) {
   // the hold — up to 8 beats, longer than the action itself, which looked like being stuck in
   // the tub. A hold is meant to still ONE pose, so it cannot outlive that pose.
   // Anything that wants a new clip to start held must set g_holdUntil AFTER calling this.
-  if (a != g_anim) { g_anim = a; g_animT = 0; g_holdUntil = 0; }
+  if (a != g_anim) {
+    g_anim = a; g_animT = 0; g_holdUntil = 0;
+    // EVERY EMOTE ANNOUNCES ITSELF (Jon: "if he is doing an emote the scroll text
+    // should say so regardless of what it is") - the moment one of the feeling clips
+    // goes up, the ticker says which, whatever put it there.
+    const char *b2 = a->key;
+    if (!strncmp(b2, "baby_", 5) || !strncmp(b2, "teen_", 5)) b2 += 5;
+    const char *ln =
+        !strcmp(b2, "angry")  ? "bunbun is grumpy about that"  :
+        !strcmp(b2, "love")   ? "bunbun is feeling the love"   :
+        !strcmp(b2, "bored")  ? "bunbun is a little bored"     :
+        !strcmp(b2, "hungry") ? "bunbun's tummy is rumbling"   :
+        !strcmp(b2, "sick")   ? "bunbun is not feeling well"   :
+        !strcmp(b2, "tired")  ? "bunbun is getting sleepy"     : nullptr;
+    if (ln) say(ln);
+  }
 }
 // frame sequencing honouring loop / pingpong / once, as the HTML's frameSeq does
 static int currentFrame() {
@@ -2818,6 +2834,16 @@ static void think(float dt) {
         sceneDoorTo(SCENE_ROLE_MAIN, "");
         return;
       }
+      // AT HOME, THE BED IS THE BED ("uhh he just went and slept on the chair"):
+      // lights-out used to bed him wherever it caught him. If the room has a sleep
+      // spot and he is not on it, he walks there first; sleep takes him on arrival.
+      {
+        int sm = sceneActMark("sleep");
+        if (sm >= 0) {
+          const int dx = g_scBun[sm].x - (int)g_fx, dy = g_scBun[sm].y - (int)g_fy;
+          if (dx * dx + dy * dy > 144 && sceneErrandTo("sleep")) return;
+        }
+      }
       const char *cs = sceneActAnim("sleep");   // the child's sleep, if the scene brought one
       setAnim(cs ? cs : pa("sleep"));
       g_tx = g_ty = -1;
@@ -3030,6 +3056,18 @@ static void think(float dt) {
     g_wanderT = 10.0f + (esp_random() % 1000) / 100.0f;   // settle for a good while after a visit
   }
 
+  // a walk-to-bed that died (backstop, interruption) is re-issued the moment he is
+  // free - g_sleepPending must never dangle with the lights still on
+  if (g_sleepPending && g_tx < 0 && g_visit < 0 && !g_doorTrip && !g_action && S.lights) {
+    if (!sceneErrandTo("sleep")) {
+      S.lights = 0; g_sleepAtMs = millis();
+      if (g_sleepPending == 2) { g_nightSleep = true; saveSleepState(3); }
+      g_sleepPending = 0;
+      saveState();
+    }
+    return;
+  }
+
   // the stroll between work reps is over: the next rep starts where he stands
   if (g_workNextAt && millis() >= g_workNextAt) {
     if (!g_workUntil && g_workReps <= 0) g_workNextAt = 0;   // nothing owed: drop it
@@ -3102,6 +3140,13 @@ static void think(float dt) {
       g_cloudSceneDone = false;              // the new room's sky rules apply fresh
       int ex2 = exitedLeft ? SCENE_W - 8 : 8;
       int ey2 = (int)g_fy;
+      // the NEW room's floor may not reach this height - clamp the height first, or
+      // clampErrandToFloor yanks the X and he materialises mid-room instead of at
+      // the edge ("when he enters the main room from work he isnt on the side")
+      if (g_scHasBounds) {
+        if (ey2 < g_scBounds.y0 + 4) ey2 = g_scBounds.y0 + 4;
+        if (ey2 > g_scBounds.y1 - 2) ey2 = g_scBounds.y1 - 2;
+      }
       clampErrandToFloor(&ex2, &ey2);
       g_fx = (float)ex2; g_fy = (float)ey2;
       S.x = (int16_t)ex2; S.y = (int16_t)ey2;
@@ -6479,6 +6524,7 @@ static void updateCat(float dt) {
       // the fallback below already puts her on the chair if he never comes.
       if (!g_catPetted && !g_action && !g_workStage && g_visit < 0 && !g_doorTrip &&
           g_tx < 0 &&   // only from a standstill - never steal a walk already underway
+          !g_sleepPending &&   // bedtime outranks the cat ("he pet a cat and then didnt go to sleep")
           alive() && S.lights && !S.sick &&
           g_catT > 1.4f && !(g_birdReacted && g_birdPhase == 2)) {
         g_catPetted = true;
