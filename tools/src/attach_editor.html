@@ -1817,7 +1817,10 @@ function shelfPut(name, proj){
 }
 const exportStem=()=>{
   const named=(($('animName')&&$('animName').value)||($('libName')&&$('libName').value)||'').trim();
-  return (named||clip).replace(/[\/:*?"<>|]+/g,'-').replace(/\s+/g,'_').slice(0,50);
+  // the ANIMAL leads the filename when one is chosen ("the exports need to include the
+  // animal") - so a downloads folder full of sits reads penguin_Sit, croc_Sit at a glance
+  const who=($('charSel')&&$('charSel').value)?$('charSel').value+'_':'';
+  return (who+(named||clip)).replace(/[\/:*?"<>|]+/g,'-').replace(/\s+/g,'_').slice(0,50);
 };
 const save=(obj,name)=>{ handOver(JSON.stringify(obj,null,1),name)
   .then(n=>{ if(n) flash('saved '+n) }); return name };
