@@ -1462,10 +1462,11 @@ function spec(){
 const play=()=>{stopT();
   let last=performance.now(), acc=0;
   const step=t=>{ if(!timer) return;
-    acc+=t-last; last=t;
+    timer.raf=requestAnimationFrame(step);   // schedule FIRST - a render hiccup must not
+    acc+=t-last; last=t;                     // kill the loop ("play isn't repeating")
     const frame=1000/Math.max(1,fps);
-    if(acc>=frame){ pos+=Math.max(1,Math.floor(acc/frame)); acc%=frame; render(); }
-    timer.raf=requestAnimationFrame(step); };
+    if(acc>=frame){ pos+=Math.max(1,Math.floor(acc/frame)); acc%=frame;
+      try{ render(); }catch(err){} } };
   timer={raf:requestAnimationFrame(step)};
 };
 const stopT=()=>{if(timer){if(timer.raf)cancelAnimationFrame(timer.raf);timer=null}};

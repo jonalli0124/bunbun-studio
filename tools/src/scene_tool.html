@@ -3325,8 +3325,32 @@ async function sendToBunbun(){
     B.disabled=false; B.textContent='🐇 Send to bunbun';
   }
 }
-$('sceneRole').onchange=e=>{ scene.role=e.target.value||undefined;
-  $('workLenRow').style.display=scene.role==='work'?'':'none'; autosave(); };
+// ---- THE WORLD ---- one scene per room; "this room is" toggles between them.
+let worldSlots={};
+const roleKey=()=>scene.role||'';
+function freshSlot(role){
+  const room = role==='kitchen'  ? (SD.rooms['kitchen-bare']?'kitchen-bare':'kitchen')
+             : role==='bathroom' ? (SD.rooms['washroom']?'washroom':Object.keys(SD.rooms)[0])
+             : role==='work'     ? (SD.rooms['construction']?'construction':Object.keys(SD.rooms)[0])
+             : (SD.rooms['farmhouse']?'farmhouse':Object.keys(SD.rooms)[0]);
+  return {v:1, scene:{room, role:role||undefined, objects:[], zones:[],
+                      character:{x:160,y:200,scalePercent:145}},
+          sceneName:'', anims:[],
+          weather:{raining:false, clouding:false, cloudN:3, cloudStyle:'shipped',
+                   starsOn:false, starN:18}};
+}
+$('sceneRole').onchange=async e=>{
+  const to=e.target.value||'', from=roleKey();
+  if(to===from){ $('workLenRow').style.display=to==='work'?'':'none'; return; }
+  worldSlots[from]=JSON.stringify(session());          // the room we are leaving keeps itself
+  const keep={...worldSlots};
+  await restore(keep[to] || JSON.stringify(freshSlot(to)));
+  worldSlots=keep;    // restore() replays the snapshot's OLD slots map; the live one wins
+  scene.role=to||undefined;
+  syncRoleUI(); syncObj(); syncRule(); draw(); autosave();
+  say(to ? `now building the ${to==='work'?'work room':to} — the other rooms are kept; \u{1F4E6} ships them all`
+         : 'now building the main room — the other rooms are kept; \u{1F4E6} ships them all');
+};
 $('wk').oninput=e=>{ scene.workMin=+e.target.value; $('wkl').textContent=e.target.value; autosave(); };
 function syncRoleUI(){
   $('sceneRole').value=scene.role||'';
@@ -3347,9 +3371,31 @@ async function exportDevicePackage(){
   const B=$('exportPkg'), setB=t=>{B.textContent=t};
   B.disabled=true;
   try{
-    const {plan, newEntries, body}=await buildPortPayload(setB);
+    // ONE EXPORT, THE WHOLE WORLD (Jon: "toggle through each of them and do 1 export"):
+    // every room the kid built ships together; a single-room world is the old package.
+    worldSlots[roleKey()]=JSON.stringify(session());
+    const keepW={...worldSlots};
+    const cameFrom=roleKey();
+    const roles=Object.keys(keepW).filter(k=>{
+      try{ const q=JSON.parse(keepW[k]);
+        return q&&q.scene&&((q.scene.objects||[]).length||(q.anims||[]).length||(q.scene.zones||[]).length||k===cameFrom); }
+      catch(e){ return false; } });
+    const scenes=[]; const allEntries=[]; const seen=new Set(); let planCount=0;
+    for(const rk of roles){
+      setB(`packing the ${rk||'main room'}…`);
+      await restore(keepW[rk]);
+      const {plan, newEntries, body}=await buildPortPayload(setB);
+      const one=JSON.parse(body);
+      if(body.length>8192) throw new Error(`the ${rk||'main'} scene is ${body.length} bytes; the device reads 8192`);
+      scenes.push(one); planCount+=plan.anims.length;
+      for(const e of newEntries){ if(!seen.has(e.name)){ seen.add(e.name); allEntries.push(e); } }
+    }
+    await restore(keepW[cameFrom]);        // back to the room on screen
+    worldSlots=keepW;                      // and the world survives the round trip
+    const plan={anims:{length:planCount}};
+    const newEntries=allEntries;
+    const body= scenes.length>1 ? JSON.stringify({world:scenes}) : JSON.stringify(scenes[0]);
     const sc=new TextEncoder().encode(body);
-    if(sc.length>8192) throw new Error(`scene is ${sc.length} bytes; the device reads 8192`);
     const frag=PakLib.build(newEntries);
     const head=new Uint8Array(16);
     head.set([0x42,0x4E,0x44,0x4C,1,0,0,0]);   // "BNDL", version 1
@@ -3361,7 +3407,8 @@ async function exportDevicePackage(){
     aEl.download=(((($('sceneName')&&$('sceneName').value)||scene.room||'my-scene')).replace(/[^\w -]+/g,'').trim().replace(/ +/g,'-')||'my-scene')+'.bunbun';
     aEl.click(); setTimeout(()=>URL.revokeObjectURL(aEl.href), 5000);
     say(`package saved! Open your bunbun's own page — http://<its-ip>/build — and give it `+
-        `this file. Inside: your room, ${plan.anims.length} animation${plan.anims.length===1?'':'s'} `+
+        `this file. Inside: ${(body[0]==='{'&&body.slice(0,8).includes('world'))?'your whole world, ':'your room, '}`+
+        `${plan.anims.length} animation${plan.anims.length===1?'':'s'} `+
         `and ${newEntries.length} pieces of art (${((16+sc.length+frag.length)/1024)|0} KB).`);
   }catch(err){
     say('package failed — '+err.message,true);
@@ -3758,6 +3805,7 @@ scene.room=$('room').value;
 // pack on load, so this stays small.
 function session(){
   return {v:1, savedAt:new Date().toISOString(),
+    slots:(()=>{ const s={...worldSlots}; delete s[roleKey()]; return s; })(),
     scene, passiveScale, travelScale,
     sceneName: ($('sceneName')&&$('sceneName').value)||'',
     // EVERYTHING about each animation. The first version of this listed seven fields and
@@ -3819,6 +3867,7 @@ function autosave(){ if(booting||saveTimer) return;
 
 async function restore(raw){
   const p=JSON.parse(raw);
+  if(p.slots) worldSlots={...p.slots};
   if(p.customProps) for(const k of Object.keys(p.customProps)){
     const c=p.customProps[k];
     if(c&&c.img&&!SD.props[k]) SD.props[k]={img:c.img, w:c.w||24, h:c.h||24,

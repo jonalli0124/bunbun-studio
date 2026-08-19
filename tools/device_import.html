@@ -128,7 +128,7 @@ function readBundle(buf){
   if(u8[4]!==1) throw new Error('this package is from a newer tool than this page understands');
   const sLen=dv.getUint32(8,true), fLen=dv.getUint32(12,true);
   if(16+sLen+fLen!==buf.byteLength) throw new Error('the package file looks cut short - save it again');
-  if(sLen>8192) throw new Error(`the scene inside is ${sLen} bytes; the device reads 8192`);
+  if(sLen>8192*5) throw new Error(`the scene block is ${sLen} bytes - too big even for a world`);
   const sceneBytes=u8.subarray(16,16+sLen);
   const sceneText=new TextDecoder().decode(sceneBytes);
   const sceneObj=JSON.parse(sceneText);
@@ -143,6 +143,16 @@ function pickFile(f){
     try{
       bundle=readBundle(rd.result);
       const s=bundle.sceneObj;
+      if(s.world){
+        const names=s.world.map(w=>w.role||'main').join(' + ');
+        $('inside').style.display='block';
+        $('inside').innerHTML=`a whole <b>world</b> is inside: ${names} — `+
+          `${s.world.length} rooms, ${bundle.frag.entries.length} pieces of art.`;
+        $('go').style.display='block'; $('go').disabled=false;
+        $('go').textContent='Give him the whole world!';
+        $('msg').textContent=''; $('msg').className='';
+        return;
+      }
       if(s.species){
         $('inside').style.display='block';
         $('inside').innerHTML=`a whole new animal is inside: <b>the ${s.species}</b>. `+
@@ -247,11 +257,14 @@ $('go').onclick=async()=>{
     if(!r1.ok) throw new Error('art upload failed: '+r1.status);
     await waitBack();
     mark(3,'done'); mark(4,'doing');
-    const role=bundle.sceneObj.role;
-    const rolePath=(role&&role!=='main')?`/spiffs/scene-${role}.json`:'/spiffs/scene.json';
-    const r2=await fetch('/api/fs/upload?path='+rolePath,
-      {method:'POST',headers:{'Content-Type':'application/json'},body:bundle.sceneText});
-    if(!r2.ok) throw new Error('scene upload failed: '+r2.status);
+    const worldScenes = bundle.sceneObj.world || [bundle.sceneObj];
+    for(const s2 of worldScenes){
+      const role=s2.role;
+      const rolePath=(role&&role!=='main')?`/spiffs/scene-${role}.json`:'/spiffs/scene.json';
+      const r2=await fetch('/api/fs/upload?path='+rolePath,
+        {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(s2)});
+      if(!r2.ok) throw new Error('scene upload failed: '+r2.status);
+    }
     mark(4,'done'); mark(5,'doing');
     await fetch('/api/system/restart',{method:'POST'}).catch(()=>{});
     const pet1=await waitBack();
