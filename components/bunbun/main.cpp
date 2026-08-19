@@ -2709,10 +2709,18 @@ static void think(float dt) {
 
   if (discoDown() && S.lights && !S.sick) { danceStep(dt); return; }
   if (!S.lights) {
-    const char *cs = sceneActAnim("sleep");   // the child's sleep, if the scene brought one
-    setAnim(cs ? cs : pa("sleep"));
-    g_tx = g_ty = -1;
-    return;
+    // A COMMAND OUTRANKS BEDTIME. This return used to fire before the errand code and
+    // wipe g_tx every tick, so at night BATHE/EAT/WORK started a door walk that died
+    // the same instant ("i hit take a bath and its not walking to the next room - a
+    // reboot didnt fix it": nothing was broken, it was 9pm). While a debug act waits,
+    // an errand walks, or a settle performs, he stays up; the moment the errand is
+    // done and he is back to no-target, this branch reclaims him and he sleeps.
+    if (!g_dbgAct[0] && g_visit < 0 && !g_doorTrip && millis() >= g_settleUntil) {
+      const char *cs = sceneActAnim("sleep");   // the child's sleep, if the scene brought one
+      setAnim(cs ? cs : pa("sleep"));
+      g_tx = g_ty = -1;
+      return;
+    }
   }
   if (S.sick)    { setAnim(moodAnim()); g_tx = g_ty = -1; return; }
 

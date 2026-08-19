@@ -721,7 +721,7 @@ function startWeatherLoop(){
       weatherStep(Math.min(0.05,(now-wLast)/1000),scene.room); wLast=now;
       draw();
     }
-    requestAnimationFrame(tick)})()}
+    setTimeout(tick, 45)})()}
 const hhmm=m=>{ // the running clock advances by fractions of a minute, so floor before formatting
   const t=Math.floor(m); return String(Math.floor(t/60)).padStart(2,'0')+':'+String(t%60).padStart(2,'0') };
 
@@ -1320,6 +1320,18 @@ function stepOnce(dt){
         sim.walkClip=walkClipFor(sim.a, sim.face) }
       return }
     if(d<Math.max(ARRIVE_PX,step)){ sim.x=(sim.settle?sim.settle.x:sim.tx); sim.y=(sim.settle?sim.settle.y:sim.ty);
+      // NEVER SETTLE WHERE HE MAY NOT LINGER: a blocked or clipped escape used to rest
+      // right inside the keep-out. If this arrival is not a performance and the ground
+      // here forbids stopping, take one more hop to the nearest allowed spot instead.
+      if(!sim.spot && !canStop(sim.x,sim.y)){
+        const ns=nearestStop(sim.x,sim.y);
+        if(ns && (Math.abs(ns.x-sim.x)>2 || Math.abs(ns.y-sim.y)>2)){
+          sim.phase='walk'; sim.t=0; sim.path=[];
+          sim.goal={x:ns.x,y:ns.y}; sim.tx=ns.x; sim.ty=ns.y;
+          sim.face=(ns.x<sim.x?-1:1); sim.walkClip=walkClipFor(sim.a,sim.face);
+          return;
+        }
+      }
       sim.phase = sim.spot ? 'play' : 'rest';     // a wander ends in a pause, not an action
       sim.t=0;
       sim.says=sim.a.says||(sim.spot?`${sim.a.name} at the ${nice(sim.spot.object)}`:sim.a.name); }
@@ -1384,11 +1396,29 @@ function stepOnce(dt){
       // preview must not keep showing the clip through the 18-42s rest. Without a dur,
       // the default stands: the animation stays up through its rest, both sides alike.
       if(sim.a.dur>0) sim.perform=false;
+      // and a SPOT performance ends when he leaves the spot - stepping off the toilet
+      // used to keep perform set, so the rest re-drew the SIT beside it ("he still is
+      // sitting next to the toilet"). The anywhere rest keeps its clip; a pinned one
+      // never follows him off the furniture.
+      if(sim.spot) sim.perform=false;
       // He has finished using the thing. He may not LOITER where he is - sitting in the chair
       // put him inside its keep-out, and idling there is the one thing the zone forbids. So he
       // steps back out to somewhere he is allowed to linger, and idles there.
       if(!canStop(sim.x, sim.y)){
-        const out = (sim.approach && stoppable(sim.approach.x, sim.approach.y))
+        // STEP AWAY, don't just step off ("he just moves near it but in weird spots"):
+        // the device's tidy rule walks a deliberate distance from the thing it finished
+        // with, far side first - the same manners here, so the get-off reads intended
+        let out=null;
+        { const dir = sim.x>=160 ? -1 : 1;             // toward the room's open side
+          for(const side of [dir,-dir]){
+            for(const d of [55,70,42,90,110]){
+              const cx=sim.x+side*d, cy=sim.y+6;
+              const fix=stoppable(cx,cy)?{x:cx,y:cy}:nudgeLegal(cx,cy);
+              if(fix && stoppable(fix.x,fix.y)){ out=fix; break; }
+            }
+            if(out) break; }
+        }
+        if(!out) out = (sim.approach && stoppable(sim.approach.x, sim.approach.y))
                   ? sim.approach : nearestStop(sim.x, sim.y);
         if(out){
           // The licence to cross the zone he is getting down INTO. His feet are above its
@@ -1399,7 +1429,16 @@ function stepOnce(dt){
           sim.allowZone=lv;
           sim.allowObjId=(sim.spot&&sim.spot.oid!=null)?sim.spot.oid:blockObjAt(sim.x,sim.y+6);
           sim.phase='walk'; sim.t=0; sim.spot=null; sim.settle=null;
-          sim.path=[]; sim.goal={x:out.x,y:out.y}; sim.tx=out.x; sim.ty=out.y;
+          // ROUTE the escape ("his get out of the way doesn't honor the keep out - and he
+          // stops"): the straight-line walk jammed on the furniture and rested wherever it
+          // stood, inside the zone. Plan from the nearest legal ground like every trip.
+          { const from = walkable(sim.x,sim.y)?{x:sim.x,y:sim.y}
+                        :(nudgeLegal(sim.x,sim.y)||sim.approach||{x:sim.x,y:sim.y});
+            const r=findRoute(from.x,from.y,out.x,out.y);
+            sim.path=r||[]; }
+          sim.goal={x:out.x,y:out.y};
+          { const first=(sim.path&&sim.path.length)?sim.path[0]:out;
+            sim.tx=first.x; sim.ty=first.y; }
           sim.face=(out.x<sim.x?-1:1); sim.faceHold=0;
           sim.walkClip=walkClipFor(sim.a, sim.face);
           sim.says='stepping back out'; return;
@@ -2700,6 +2739,23 @@ $('fReplace').onchange=async e=>{
   const a=anims[replaceTarget]; replaceTarget=-1;
   if(!f||!a) return;
   let p; try{ p=JSON.parse(await f.text()) }catch(err){ return say('that file is not readable',true) }
+  // a replacement arrives by the SAME door as a new animation: its drawn props and its
+  // animal's clip art come along ("when i replace an animation it defaults to capybara" -
+  // this path used to look the clip up in the resident pack and find the wrong species)
+  if(p.customProps) for(const k of Object.keys(p.customProps)){
+    const c=p.customProps[k];
+    if(c&&c.img&&!SD.props[k]){ SD.props[k]={img:c.img, w:c.w||24, h:c.h||24,
+      kind:'prop', custom:true}; }
+  }
+  if(p.animal && p.clipData && p.clip){
+    const nk=p.animal+':'+p.clip;
+    if(!SD.clips[nk]) SD.clips[nk]=p.clipData;
+    if(p.animalKit) for(const c of Object.keys(p.animalKit)){
+      const kk=p.animal+':'+c;
+      if(!SD.clips[kk]) SD.clips[kk]=p.animalKit[c];
+    }
+    p.clip=nk;
+  }
   const clip=p.clip;
   if(!clip||!SD.clips[clip]) return say('no clip in that file, or it is not in this pack',true);
   const fresh=addAnim('__replace__', p);
@@ -2909,7 +2965,9 @@ function loop(){
     stepSim(dt);
     if(simOn&&sim&&sim.says!==wasSaying) say(sim.says);
     lastT=now; draw(); if(window.gvOn) drawGameView() }
-  requestAnimationFrame(loop);
+  // rAF freezes in hidden/occluded windows and throttled phones - the editor's play
+  // button died of exactly this. A chained timeout keeps the room alive anywhere.
+  setTimeout(loop, 33);
 }
 $('play').textContent='❮❮ animation: running';
 loop();
@@ -3329,7 +3387,8 @@ async function sendToBunbun(){
     for(let i=0;i<20&&!pet1;i++){
       try{ const c=new AbortController(); const t=setTimeout(()=>c.abort(),3000);
         const j=await (await fetch(`http://${ip}/api/system/info`,{signal:c.signal})).json();
-        clearTimeout(t); pet1={age:j.info&&j.info.pet_age_min, phase:j.info&&j.info.pet_phase}; }
+        clearTimeout(t); pet1={age:j.info&&j.info.pet_age_min, phase:j.info&&j.info.pet_phase,
+          species:j.info&&j.info.species_id}; }
       catch(e){ await new Promise(r=>setTimeout(r,2500)); }
     }
     if(!pet1) throw new Error('scene sent, but the unit has not come back to be checked');
@@ -3339,6 +3398,16 @@ async function sendToBunbun(){
       say(`It flew to your bunbun! Your room, ${dev.props.length} things and `+
           `${plan.anims.length} animation${plan.anims.length===1?'':'s'} are on the shelf — `+
           `and he's still your same bunbun (${pet1.age} minutes old).`);
+    // ONE ANIMAL LIVES ON THE DEVICE AT A TIME. The scene's baked clips play as the animal
+    // the kid drew, but the pet WALKING between them wears the installed species - so a
+    // penguin scene on a capybara unit looks half-swapped ("it is still a capybara").
+    // The device just told us who it is; if that's not who this scene was animated on,
+    // say so and point at the shelf, because no amount of re-sending fixes it.
+    const sceneAnimal=(dev&&dev.animal)||null;
+    if(sceneAnimal && pet1.species && pet1.species!==sceneAnimal)
+      say(`heads up: this scene stars the ${sceneAnimal}, but your bunbun is a `+
+          `${pet1.species}. Download the ${sceneAnimal} from the site's animal shelf and `+
+          `import it at http://${ip}/build so he matches.`,true);
   }catch(err){
     say('send failed — '+err.message+' (Export everything + the port command still works)',true);
   }finally{
