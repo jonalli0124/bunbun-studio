@@ -2123,18 +2123,20 @@ static uint32_t g_visitHomeAt = 0;   // a fruitless side-room visit walks home a
 static uint32_t g_roomMinStay = 0;   // Jon: "at least 10 seconds" in a side room, whatever happens
 static uint32_t g_workNextAt = 0;    // the stroll between work reps ends, and the next one starts
 static bool     g_actIsWork  = false;   // the running startAction() is a work performance
+static int8_t   g_workReps   = 0;       // visit mode: work performances still owed (-1 = a wk session governs)
+static uint8_t  g_doorRole = 0;
+static char     g_doorAct[8] = "";
+static uint32_t g_workUntil = 0;     // the scene work session deadline; 0 = no session
 // HIS WORK METER GOES UP AT WORK (Jon: "his work meter should go up while he is at
 // work its not doing that") - only the retired farm script ever paid discipline. A
 // one-visit job pays what the script paid; a session pays per rep, so the meter
 // visibly climbs while he is there.
 static void creditWork() {
-  S.disc   = min(100.0f, S.disc + (g_workUntil ? 6.0f : 28.0f));
-  S.energy = max(0.0f, S.energy - (g_workUntil ? 2.0f : 10.0f));
+  S.disc   = min(100.0f, S.disc + (g_workUntil ? 6.0f : 14.0f));
+  S.energy = max(0.0f, S.energy - (g_workUntil ? 2.0f : 5.0f));
+  if (g_workReps > 0) g_workReps--;
   saveState();
 }
-static uint8_t  g_doorRole = 0;
-static char     g_doorAct[8] = "";
-static uint32_t g_workUntil = 0;     // the scene work session deadline; 0 = no session
 // THE POTTY ROUTINE (Jon: "he should walk to bathroom and do a defined sit action and
 // then wash hands before going back to main room"). Reads the bathroom scene's own
 // tags: the sit act is the toilet, the bath act is the sink. 1 = sitting, 2 = washing.
@@ -2142,6 +2144,9 @@ static uint8_t g_pottySeq  = 0;
 static bool    g_pottyLock = false;  // routine-internal dispatches don't cancel it
 static bool sceneErrandTo(const char *act);
 static bool sceneDoorTo(uint8_t tgt, const char *act) {
+  // no side-to-side teleports: work to kitchen goes THROUGH the main room. The act
+  // rides along; the errand re-runs at main's middle and routes the second leg.
+  if (g_scCurRole != SCENE_ROLE_MAIN && tgt != SCENE_ROLE_MAIN) tgt = SCENE_ROLE_MAIN;
   g_performBehind = false; g_settleUntil = 0; g_watching = false;
   // kitchen is left of the main room; bathroom and work are right. Leaving a side room
   // always heads back toward the main room's side.
@@ -2221,13 +2226,18 @@ static bool sceneErrandTo(const char *act) {
   // WHICH ROOM does this act live in? ("if someone hits bathe... he can go to the
   // bathroom, if he hits eat, he can go to the kitchen")
   uint8_t want = SCENE_ROLE_MAIN;
+  bool homeAct = false;
   if      (!strcmp(act, "bath")) want = SCENE_ROLE_BATH;
   else if (!strcmp(act, "wash")) want = SCENE_ROLE_BATH;   // washing up lives there too
   else if (!strcmp(act, "eat"))  want = SCENE_ROLE_KITCHEN;
   else if (!strcmp(act, "work")) want = SCENE_ROLE_WORK;
+  // SLEEP BELONGS AT HOME (Jon: "while at work any action should send him to where it
+  // belongs, sleep back to the main room to sleep"): commanded in a side room it walks
+  // him home first. Sits and the emotions stay local, as ever.
+  else if (!strcmp(act, "sleep")) homeAct = (g_scCurRole != SCENE_ROLE_MAIN);
   // routed acts fall back to the MAIN room; everything else (sit, the emotions) happens
   // wherever he already is - a sit must never drag him through a door
-  bool routed = (want != SCENE_ROLE_MAIN);
+  bool routed = (want != SCENE_ROLE_MAIN) || homeAct;
   uint8_t tgt = routed ? (g_scRoleAvail[want] ? want : SCENE_ROLE_MAIN) : g_scCurRole;
   if (!strcmp(act, "work") && tgt == SCENE_ROLE_MAIN &&
       sceneActMark("work") < 0 && !sceneActAnim("work"))
@@ -2760,9 +2770,9 @@ static void think(float dt) {
       } else if (g_pottySeq == 2) {
         g_pottySeq = 0;
       }
-      if (g_workUntil) {
-        if (g_dbgAct[0]) g_workUntil = 0;      // a command outranks the session
-        else if (millis() < g_workUntil &&
+      if (g_workUntil || g_workReps > 0) {
+        if (g_dbgAct[0]) { g_workUntil = 0; g_workReps = 0; }  // a command outranks work
+        else if ((g_workUntil ? millis() < g_workUntil : g_workReps > 0) &&
             (sceneActMark("work") >= 0 || sceneActAnim("work"))) {
           // HE WALKS HIS ROUNDS (Jon: "shouldnt he walk around?"): back-to-back reps of
           // a 5s work clip read as standing still. Each rep ends in a short stroll; the
@@ -2791,6 +2801,12 @@ static void think(float dt) {
     // an errand walks, or a settle performs, he stays up; the moment the errand is
     // done and he is back to no-target, this branch reclaims him and he sleeps.
     if (!g_dbgAct[0] && g_visit < 0 && !g_doorTrip && millis() >= g_settleUntil) {
+      if (g_scCurRole != SCENE_ROLE_MAIN) {
+        // his bed is at home: the working day ends and he walks back before sleeping
+        g_workUntil = 0; g_workReps = 0; g_workNextAt = 0; g_visitHomeAt = 0;
+        sceneDoorTo(SCENE_ROLE_MAIN, "");
+        return;
+      }
       const char *cs = sceneActAnim("sleep");   // the child's sleep, if the scene brought one
       setAnim(cs ? cs : pa("sleep"));
       g_tx = g_ty = -1;
@@ -2974,9 +2990,9 @@ static void think(float dt) {
       }
     // A WORK SESSION OWNS THE CLOCK (Jon: the bug collector must not stop early): while
     // it runs, the performance ending just means the next work animation begins.
-    if (g_workUntil) {
-      if (g_dbgAct[0]) g_workUntil = 0;        // a command outranks the session
-      else if (millis() < g_workUntil &&
+    if (g_workUntil || g_workReps > 0) {
+      if (g_dbgAct[0]) { g_workUntil = 0; g_workReps = 0; }    // a command outranks work
+      else if ((g_workUntil ? millis() < g_workUntil : g_workReps > 0) &&
           (sceneActMark("work") >= 0 || sceneActAnim("work"))) {
         g_workNextAt = millis() + 2500 + esp_random() % 3500;   // the same stroll
         g_wanderT = 0.5f;
@@ -3005,7 +3021,7 @@ static void think(float dt) {
 
   // the stroll between work reps is over: the next rep starts where he stands
   if (g_workNextAt && millis() >= g_workNextAt) {
-    if (!g_workUntil) g_workNextAt = 0;            // recalled home mid-stroll: drop it
+    if (!g_workUntil && g_workReps <= 0) g_workNextAt = 0;   // nothing owed: drop it
     else if (g_visit < 0 && !g_doorTrip && !g_action) {
       g_workNextAt = 0;
       sceneErrandTo("work");
@@ -3102,8 +3118,11 @@ static void think(float dt) {
       // run at the edge - only the starting point moved.
       g_tx = g_ty = -1; g_visit = -1;
       if (g_doorAct[0]) {
-        if (!strcmp(g_doorAct, "work") && !g_workUntil && sceneWorkMin() > 0)
-          g_workUntil = millis() + (uint32_t)sceneWorkMin() * 60000UL;
+        if (!strcmp(g_doorAct, "work")) {
+          if (!g_workUntil && sceneWorkMin() > 0)
+            g_workUntil = millis() + (uint32_t)sceneWorkMin() * 60000UL;
+          g_workReps = g_workUntil ? -1 : 2;   // a visit owes two jobs; a session owes the clock
+        }
         g_pottyLock = (g_pottySeq != 0);
         bool ok = sceneErrandTo(g_doorAct);
         // a scene without a "the toilet" animation still has its plain sit
@@ -4084,8 +4103,8 @@ static void runMenu(int i) {
               // PRESS WORK AGAIN TO CALL HIM HOME ("hes now stuck at work. it just
               // says he is busy"): the session is Jon's own dont-stop-early rule doing
               // its job for the full work length - what was missing was the recall.
-              if (g_workUntil) {
-                g_workUntil = 0;
+              if (g_workUntil || g_workReps > 0) {
+                g_workUntil = 0; g_workReps = 0; g_workNextAt = 0;
                 say("work is done for today - heading home");
                 if (g_scCurRole != SCENE_ROLE_MAIN && !g_doorTrip) sceneDoorTo(SCENE_ROLE_MAIN, "");
                 break;
