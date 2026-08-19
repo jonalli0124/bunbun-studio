@@ -44,11 +44,54 @@ static uint8_t g_scCurRole  = SCENE_ROLE_MAIN;   // which room he is IN
 static uint8_t g_scLoadRole = SCENE_ROLE_MAIN;   // which file sceneLoad() reads
 static bool    g_scRoleAvail[4] = {false, false, false, false};
 static int16_t g_scWorkMin = 0;                  // "work lasts [N] minutes"; 0 = one visit
+// WHICH ACTS EACH ROOM OFFERS - the routing table behind "actions should only happen
+// in the room where they are available" (Jon). Filled by sceneRolesScan from each
+// role file's anims[].act, so the errand can ask the whole WORLD, not guess by role.
+#define SCENE_ACT_EAT    1
+#define SCENE_ACT_BATH   2
+#define SCENE_ACT_WASH   4
+#define SCENE_ACT_TOILET 8
+#define SCENE_ACT_WORK   16
+#define SCENE_ACT_SLEEP  32
+static uint8_t g_scRoleActs[4] = {0, 0, 0, 0};
+static int sceneActBit(const char *act) {
+  if (!act || !act[0]) return 0;
+  if (!strcmp(act, "eat"))    return SCENE_ACT_EAT;
+  if (!strcmp(act, "bath"))   return SCENE_ACT_BATH;
+  if (!strcmp(act, "wash"))   return SCENE_ACT_WASH;
+  if (!strcmp(act, "toilet")) return SCENE_ACT_TOILET;
+  if (!strcmp(act, "work"))   return SCENE_ACT_WORK;
+  if (!strcmp(act, "sleep"))  return SCENE_ACT_SLEEP;
+  return 0;
+}
 static void sceneRolesScan() {
   for (int r = 0; r < 4; r++) {
+    g_scRoleActs[r] = 0;
     FILE *f = fopen(SCENE_ROLE_PATHS[r], "rb");
     g_scRoleAvail[r] = (f != nullptr);
-    if (f) fclose(f);
+    if (!f) continue;
+    fseek(f, 0, SEEK_END);
+    long n = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    if (n > 0 && n <= SCENE_MAX_BYTES) {
+      char *buf = (char *)malloc((size_t)n + 1);
+      if (buf) {
+        size_t got = fread(buf, 1, (size_t)n, f);
+        buf[got] = 0;
+        cJSON *root = cJSON_Parse(buf);
+        if (root) {
+          const cJSON *anims = cJSON_GetObjectItem(root, "anims");
+          const cJSON *a;
+          cJSON_ArrayForEach(a, anims) {
+            const cJSON *ac = cJSON_GetObjectItem(a, "act");
+            if (cJSON_IsString(ac)) g_scRoleActs[r] |= sceneActBit(ac->valuestring);
+          }
+          cJSON_Delete(root);
+        }
+        free(buf);
+      }
+    }
+    fclose(f);
   }
 }
 #define SCENE_MAX_PROPS   24

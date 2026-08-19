@@ -2254,6 +2254,8 @@ function drawAnims(){
         <option value="toilet" ${a.actAs==='toilet'?'selected':''}>the toilet</option>
         <option value="wash" ${a.actAs==='wash'?'selected':''}>washing up</option>
         <option value="eat" ${a.actAs==='eat'?'selected':''}>eating</option>
+        <option value="bath" ${a.actAs==='bath'?'selected':''}>bathing</option>
+        <option value="sleep" ${a.actAs==='sleep'?'selected':''}>sleeping</option>
       </select>
       <span class="hint" style="flex:0 0 auto">s &middot; he says</span>
       <input data-txt="${i}" value="${(a.says||'').replace(/"/g,'&quot;')}"

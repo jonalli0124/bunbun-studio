@@ -2225,23 +2225,34 @@ static bool sceneErrandTo(const char *act) {
   if (!g_pottyLock) g_pottySeq = 0;  // any real command outranks the routine
   // WHICH ROOM does this act live in? ("if someone hits bathe... he can go to the
   // bathroom, if he hits eat, he can go to the kitchen")
-  uint8_t want = SCENE_ROLE_MAIN;
-  bool homeAct = false;
-  if      (!strcmp(act, "bath")) want = SCENE_ROLE_BATH;
-  else if (!strcmp(act, "wash")) want = SCENE_ROLE_BATH;   // washing up lives there too
-  else if (!strcmp(act, "eat"))  want = SCENE_ROLE_KITCHEN;
-  else if (!strcmp(act, "work")) want = SCENE_ROLE_WORK;
-  // SLEEP BELONGS AT HOME (Jon: "while at work any action should send him to where it
-  // belongs, sleep back to the main room to sleep"): commanded in a side room it walks
-  // him home first. Sits and the emotions stay local, as ever.
-  else if (!strcmp(act, "sleep")) homeAct = (g_scCurRole != SCENE_ROLE_MAIN);
-  // routed acts fall back to the MAIN room; everything else (sit, the emotions) happens
-  // wherever he already is - a sit must never drag him through a door
-  bool routed = (want != SCENE_ROLE_MAIN) || homeAct;
-  uint8_t tgt = routed ? (g_scRoleAvail[want] ? want : SCENE_ROLE_MAIN) : g_scCurRole;
-  if (!strcmp(act, "work") && tgt == SCENE_ROLE_MAIN &&
-      sceneActMark("work") < 0 && !sceneActAnim("work"))
-    return false;                    // no workplace anywhere = he does not work
+  // THE ROOM HE IS IN WINS WHEN IT OFFERS THE ACT (Jon: "if eat is available in the
+  // bathroom or the kitchen and he is in the bathroom, he can eat. if not, he walks
+  // to the main room and to the kitchen"). The roles scan read every room's acts, so
+  // this asks the world instead of guessing by role: here first, then the act's home
+  // room, then any room that has it. Sits and the emotions stay local, as ever.
+  const int bit = sceneActBit(act);
+  uint8_t tgt = g_scCurRole;
+  if (bit && !(g_scRoleActs[g_scCurRole] & bit)) {
+    const uint8_t home = !strcmp(act, "eat")  ? SCENE_ROLE_KITCHEN
+                       : !strcmp(act, "work") ? SCENE_ROLE_WORK
+                       : (!strcmp(act, "bath") || !strcmp(act, "wash") ||
+                          !strcmp(act, "toilet")) ? SCENE_ROLE_BATH
+                       : SCENE_ROLE_MAIN;
+    const uint8_t tryOrder[5] = {home, SCENE_ROLE_MAIN, SCENE_ROLE_KITCHEN,
+                                 SCENE_ROLE_BATH, SCENE_ROLE_WORK};
+    bool found = false;
+    for (int i = 0; i < 5 && !found; i++)
+      if (g_scRoleAvail[tryOrder[i]] && (g_scRoleActs[tryOrder[i]] & bit)) {
+        tgt = tryOrder[i];
+        found = true;
+      }
+    if (!found) {
+      if (!strcmp(act, "work")) return false;   // no workplace anywhere = he does not work
+      // his bed is home even unmarked; anything else tries its canonical room
+      tgt = !strcmp(act, "sleep") ? SCENE_ROLE_MAIN
+          : (g_scRoleAvail[home] ? home : g_scCurRole);
+    }
+  }
   if (tgt != g_scCurRole) return sceneDoorTo(tgt, act);
   if (!strcmp(act, "work") && !g_workUntil && sceneWorkMin() > 0)
     g_workUntil = millis() + (uint32_t)sceneWorkMin() * 60000UL;
@@ -6453,6 +6464,7 @@ static void updateCat(float dt) {
       // overwrite his target mid-walk and the work trip simply vanished. She waits -
       // the fallback below already puts her on the chair if he never comes.
       if (!g_catPetted && !g_action && !g_workStage && g_visit < 0 && !g_doorTrip &&
+          g_tx < 0 &&   // only from a standstill - never steal a walk already underway
           alive() && S.lights && !S.sick &&
           g_catT > 1.4f && !(g_birdReacted && g_birdPhase == 2)) {
         g_catPetted = true;
