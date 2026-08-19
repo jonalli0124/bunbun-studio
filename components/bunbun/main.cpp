@@ -1260,9 +1260,7 @@ static void setAnim(const char *k) {
     // EVERY EMOTE ANNOUNCES ITSELF (Jon: "if he is doing an emote the scroll text
     // should say so regardless of what it is") - the moment one of the feeling clips
     // goes up, the ticker says which, whatever put it there.
-    const char *ln = nullptr;   // TRIAGE 8/19: announcer suspended during the panic
-                                // hunt (say->sayMood fires sfx voices mid-stream);
-                                // emoteLineFor still serves the busy gate
+    const char *ln = emoteLineFor(a->key);   // acquitted with the lamps and restored
     if (ln && tickerAwake()) {
       static const char *lastLn = nullptr;
       static uint32_t lastLnMs = 0;
@@ -7703,8 +7701,10 @@ static void drawScene() {
   // NOBODY SLEEPS WITH THE LAMPS ON (Jon: "if he is sleeping in a room all lights
   // should turn off in that room"): once he is actually settled asleep - not still
   // walking home in the dark - every beam in the room goes out with him.
-  // TRIAGE 8/19: fastAsleep lamp-out suspended during the panic hunt
-  int lampOn = (g_workStage || g_danceMode) ? 0 : (int)(lampLevel() * 255);
+  // NOBODY SLEEPS WITH THE LAMPS ON - acquitted by the stabilization crash (the
+  // image panicked with this off) and restored
+  const bool fastAsleep = !S.lights && g_tx < 0 && g_visit < 0 && !g_doorTrip && !g_action;
+  int lampOn = (g_workStage || g_danceMode || fastAsleep) ? 0 : (int)(lampLevel() * 255);
   bool cloudLit = nightAmount() < 0.5f;
   const float nt = nightAmount();
 
@@ -11324,7 +11324,8 @@ void loop() {
     // most of why she was never caught.
     if (!g_nextCatAt && !catHere())
       g_nextCatAt = millis() + 2000 + (esp_random() % 4000);
-    updateEvents(dt);
+    BC(BC_EVENTS); updateEvents(dt);   // the old fleet-beacon suspect lives in here -
+                                       // stamped so the next panic names it or clears it
     if (millis() >= g_holdUntil) g_animT += dt;   // held still for a beat after arriving
   }
 
