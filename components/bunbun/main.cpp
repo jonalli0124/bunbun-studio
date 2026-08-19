@@ -1895,6 +1895,17 @@ static bool loadState() {
   prefs.end();
   return ok;
 }
+// THE UNDO FOR "start over?" (Jon, 8/18: "i just restarted him and he became a baby" -
+// the start-over pin sits one thumb-width from RESTART). statebk is written on a slow
+// cadence and NEVER by freshState, so for ~5 minutes after an accidental reset the real
+// pet is still in it. This copies it back over the fresh egg and re-saves both keys.
+extern "C" bool bunbun_restore_backup(void) {
+  prefs.begin("bunbun", true);
+  bool ok = loadStateFrom("statebk");
+  prefs.end();
+  if (ok) { saveState(); saveStateBackup(); }
+  return ok;
+}
 
 // Pet snapshot for /api/system/info — so a fleet update can be verified to have
 // PRESERVED the pet (stage/phase/age unchanged), not silently hatched a fresh
@@ -10876,6 +10887,12 @@ void setup() {
   // The copy follows the gesture (P3, R4d): there is no MENU key to press anymore, and the
   // shell has always been the thing kids actually reach for.
   if (!loadState()) { freshState(); say("tap the egg to warm it"); }
+  // A RESTART OPENS ON HIM AT HOME (Jon: "restart should just put him in the main
+  // room idle in the center"): the save's position could be a side room's tub or a
+  // corner mid-errand, and restoring it read as him materialising somewhere odd.
+  // The main scene loads fresh anyway, so he simply starts at its centre.
+  S.x = SCENE_W / 2; S.y = FLOOR_Y;
+  g_fx = (float)S.x; g_fy = (float)S.y;
   // An existing pet that predates naming gets asked once, rather than being stuck as "bunbun"
   // with no way to reach the screen.
   if (!g_petName[0]) { g_nameAsk = true; g_namePainted = false; }
