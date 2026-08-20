@@ -2598,11 +2598,15 @@ function drawAnims(){
     let done=false;
     const commit=()=>{ if(done) return; done=true;
       const n=inp.value.trim(); if(n) a.name=n;
-      // draw() repaints, but the rule panel header ("where X may happen") only follows on a
-      // sync - without it the old name sat there and the rename looked ignored
-      setTimeout(()=>{ syncRule(); draw() }, 0); };
+      // draw() repaints the ROOM and syncRule() the rule header, but neither puts the row
+      // back: the <input> we swapped in for the name stayed there for good, with no .nm span
+      // and no handlers, so that row could not be clicked again and the list was stale until
+      // something else rebuilt it - "unless i go to another room and back" (Jon).
+      // drawAnims() is what returns it. Still on the next tick, because the blur that ends a
+      // rename is usually a click on ANOTHER row and rebuilding mid-click swallows it.
+      setTimeout(()=>{ syncRule(); drawAnims(); draw() }, 0); };
     inp.onkeydown=k=>{ if(k.key==='Enter') commit();
-      if(k.key==='Escape'){ done=true; setTimeout(()=>draw(),0) } };
+      if(k.key==='Escape'){ done=true; setTimeout(()=>{ drawAnims(); draw() },0) } };
     inp.onblur=commit;
   });
   $('anims').querySelectorAll('[data-exp]').forEach(b=>b.onclick=ev=>{
