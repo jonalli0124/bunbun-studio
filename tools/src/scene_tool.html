@@ -3353,8 +3353,12 @@ $('master').oninput=e=>{ const v=+e.target.value;
   $('msl').textContent=v+'%';
   if(rooms) say(`he is ${v}% everywhere now \u2014 this room and ${rooms} more`);
   drawAnims(); draw(); autosave(); };
-// show where the room currently sits: unanimous -> that number, mixed -> a dash
-(function(){ const vals=new Set(anims.map(a=>Math.round((a.stage&&a.stage.scale)||100)));
+// Show where the WHOLE HOUSE currently sits: unanimous -> that number, otherwise say so.
+// DEFERRED ON PURPOSE. worldSlots is declared several hundred lines below this point, so
+// reading it while the script is still being evaluated throws ReferenceError from the
+// temporal dead zone - which killed every line after it and left the room and object lists
+// empty. A parse check cannot see this; only loading the page can.
+function masterReadout(){ const vals=new Set(anims.map(a=>Math.round((a.stage&&a.stage.scale)||100)));
   for(const k of Object.keys(worldSlots||{})){
     try{ (JSON.parse(worldSlots[k]).anims||[])
            .forEach(a=>vals.add(Math.round((a.stage&&a.stage.scale)||100))) }catch(e){}
@@ -3362,7 +3366,8 @@ $('master').oninput=e=>{ const v=+e.target.value;
   const v=[...vals];
   if(v.length===1 && Math.round(travelScale*100)===v[0]){
     $('master').value=v[0]; $('msl').textContent=v[0]+'%'; }
-  else $('msl').textContent = v.length>1 ? 'different in each room' : 'mixed'; })();
+  else $('msl').textContent = v.length>1 ? 'different in each room' : 'mixed'; }
+setTimeout(masterReadout, 0);        // after this script has finished defining everything
 $('tsReset').onclick=()=>{ travelScale=1; $('ts').value=100; $('tsl').textContent='100%'; draw() };
 $('tod').oninput=e=>{ todMin=+e.target.value;
   $('todl').textContent=hhmm(todMin); litCache.key=''; draw() };
