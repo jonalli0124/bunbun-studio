@@ -3433,11 +3433,41 @@ function loop(){
 $('play').textContent='❮❮ animation: running';
 loop();
 
-{ const byKind=w=>Object.keys(SD.props).filter(k=>(SD.props[k].kind||'prop')===w)
-    .sort((a,b)=>nice(a).localeCompare(nice(b)))
-    .map(k=>`<option value="${k}">${nice(k)}</option>`).join('');
-  $('addSel').innerHTML=`<optgroup label="things">${byKind('prop')}</optgroup>`+
-    `<optgroup label="lights">${byKind('light')}</optgroup>`; }
+// THE CATALOGUE, GROUPED BY THE ROOM YOU ARE BUILDING (Jon: "group the objects like the
+// sims based on room / activity"). One flat alphabetical list of 37 put "bath mat" between
+// "barrier" and "bed" and left the two chairs nowhere near each other - Eli went hunting for
+// a chair through a list where chairs are not together.
+//
+// Order is the order a child builds in: somewhere to sit, then the rooms that have jobs, then
+// the things that dress the place. Anything not named here still appears, under "everything
+// else" - a hand-written map that silently swallowed a new prop would be worse than no map.
+const PROP_GROUPS=[
+  ['sitting and sleeping', ['Wooden Chair','Beanbag Chair','bed']],
+  ['the kitchen',          ['fridge','stove','kitchen counter','cooking pot','food_bowl']],
+  ['the bathroom',         ['toilet','tub','blue bath tub','sink','soap','towel rack',
+                            'bath mat','duck','bubble_cloud']],
+  ['work and building',    ['toolbox','hard hat','wooden crate','traffic cone','barrier']],
+  ['on the floor',         ['Rug']],
+  ['growing and living',   ['plant','bird flock','flying bird']],
+  // these only show inside a sky box - the group name is the reminder
+  ['in the sky',           ['sun','setting sun','moon','crescent moon','star','star cluster',
+                            'shooting star','puffy cloud','wispy cloud','storm cloud']],
+];
+{ const opt=k=>`<option value="${k}">${nice(k)}</option>`;
+  const byKind=w=>Object.keys(SD.props).filter(k=>(SD.props[k].kind||'prop')===w);
+  const props=byKind('prop'), placed=new Set();
+  let html='';
+  for(const [label, names] of PROP_GROUPS){
+    const have=names.filter(n=>props.includes(n));
+    if(!have.length) continue;
+    have.forEach(n=>placed.add(n));
+    html+=`<optgroup label="${label}">${have.map(opt).join('')}</optgroup>`;
+  }
+  const rest=props.filter(k=>!placed.has(k)).sort((a,b)=>nice(a).localeCompare(nice(b)));
+  if(rest.length) html+=`<optgroup label="everything else">${rest.map(opt).join('')}</optgroup>`;
+  const lights=byKind('light').sort((a,b)=>nice(a).localeCompare(nice(b)));
+  if(lights.length) html+=`<optgroup label="lights">${lights.map(opt).join('')}</optgroup>`;
+  $('addSel').innerHTML=html; }
 // Three states in one button: all -> none -> back. "All" also opens every eye, so one click
 // recovers from any mix of hidden ghosts.
 
