@@ -84,7 +84,7 @@ SPEC_BABY = {
 }
 # keys the base pack has that no recipe covers - printed so the fallback is a decision,
 # never a surprise
-KNOWN_FALLBACKS = ["work-basket", "work-drive", "work-dig", "work-carrot", "teen-* (all)",
+KNOWN_FALLBACKS = ["baby-* (retired, not generated)", "work-basket", "work-drive", "work-dig", "work-carrot", "teen-* (all)",
                    "school-*", "teen-dance", "baby-fall-west/east", "egg (shared, correct)"]
 
 PAK_NAME_MAX = 31
@@ -106,7 +106,10 @@ def main():
     if out.exists():
         shutil.rmtree(out)          # a rebuild replaces, never accumulates
     written, missing = 0, []
-    for folder, (count, recipe) in {**SPEC_ADULT, **SPEC_BABY}.items():
+    # ADULT ONLY (Jon 8/19: "strip all baby we only have adults"). SPEC_BABY is kept
+    # below as the record of how the baby set was built, but nothing generates it any
+    # more - regenerating a pack used to quietly put all 25 baby clips back.
+    for folder, (count, recipe) in SPEC_ADULT.items():
         clip = src / recipe[1]
         if not clip.is_dir():
             missing.append(f"{folder} <- {recipe[1]} (clip not in the pack)")

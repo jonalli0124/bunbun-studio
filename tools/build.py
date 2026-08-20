@@ -50,6 +50,14 @@ run("mkdata.py")
 run("mkscene.py")
 
 print("--- pages")
+# THE DEVICE'S OWN PAGE IS A PAGE TOO. It is served from the bunbun's SPIFFS, so building it
+# here is not enough - it has to be pushed. Copy it in and say so loudly; deploy_builder.py
+# does the pushing and verifies what actually landed.
+import shutil as _sh
+_sh.copyfile(os.path.join(HERE, "device_import.html"),
+             os.path.join(BUILD, "builder.html"))
+print("    builder.html  %.2f MB   (device page - run: py tools/deploy_builder.py --push)"
+      % (os.path.getsize(os.path.join(BUILD, "builder.html")) / 1e6))
 # the attach editor takes raw JSON, so wrap it into the global the page reads
 raw = io.open(os.path.join(BUILD, "attach_data.json"), encoding="utf-8").read()
 io.open(os.path.join(BUILD, "_attach_data.js"), "w", encoding="utf-8").write(

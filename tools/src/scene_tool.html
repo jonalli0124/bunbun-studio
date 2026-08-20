@@ -94,12 +94,30 @@
       font-size:11px;max-height:180px;overflow:auto;margin:0}
   #msg{font-size:12.5px;min-height:18px;color:var(--mut)}
   #msg.bad{color:var(--warn);font-weight:600}
+  /* ...and the same words again where a person is actually looking. Fixed to the bottom
+     so it finds you on a phone and wherever you have scrolled to. */
+  #toast{position:fixed;left:12px;right:12px;bottom:calc(14px + env(safe-area-inset-bottom,0px));
+    margin:0 auto;max-width:520px;z-index:9999;cursor:pointer;
+    background:#1c7a46;color:#fff;font-size:15px;line-height:1.35;font-weight:600;
+    padding:13px 15px;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.30);
+    visibility:hidden;opacity:0;transform:translateY(12px);
+    transition:opacity .18s ease,transform .18s ease,visibility .18s}
+  #toast.show{visibility:visible;opacity:1;transform:translateY(0)}
+  #toast.bad{background:#a8341a}
+  /* the way IN to the walkthrough - named, not a punctuation mark in a corner */
+  #tourBtn{margin-left:auto;align-self:center;flex:0 0 auto;padding:9px 15px;
+    border-radius:11px;border:1px solid #6b3fa0;background:#7a49b8;color:#fff;
+    font-size:15px;font-weight:700;cursor:pointer;white-space:nowrap}
+  #tourBtn:hover{background:#6b3fa0}
+  header{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+  @media (prefers-reduced-motion: reduce){ #toast{transition:none;transform:none} }
 </style>
 
 <header>
   <h1>Scene Assembler</h1>
   <span class="hint">bring in a room, add the animations you made, and say where each one may
     happen &mdash; the scene declares WHERE, the pet decides WHEN</span>
+  <button id="tourBtn">&#x1F393; Show me how</button>
 </header>
 
 <main>
@@ -116,10 +134,10 @@
       <button id="saveRoom" title="just the room on screen, for moving one room between scenes">&#128193; save room</button>
       <button id="impScene">&#128194; Open scene</button>
       <button id="freshScene" title="empty room, nothing placed - save first if you want this one back">&#10024; start fresh</button>
-      <button id="exportPkg" class="pri" title="saves one .bunbun file with every room and animation - open your bunbun's own page (http://its-ip/build) and give it this file. Works from anywhere, no network tricks">&#128230; save a bunbun package</button>
+      <button id="exportPkg" class="pri" title="saves one .bunbun file with every room and animation - open your bunbun's own page (http://bunbun-XXXX.local/build) and give it this file. Works from anywhere, no network tricks">&#128230; save a bunbun package</button>
       <button id="preview">Act it out</button>
       <button id="ghosts">Ghosts: on</button>
-      <button id="marksBtn" title="the red spot under the ghost and the purple ring under things that afford an action">Circles: on</button>
+      <button id="marksBtn" title="the red spot under the ghost, and the purple ring under things he can use">Circles: on</button>
       <button id="gvBtn" title="the scene inside the shipped 240x320 chrome, drawn from ui.h - not sprites">Game view</button>
     </div>
     <div class="row" id="forceRow" style="margin-top:8px;flex-wrap:wrap;gap:5px"></div>
@@ -139,17 +157,32 @@
 
   <div class="side">
     <div class="panel">
-      <label>everything passive is drawn at
-        <span id="psl" style="color:var(--ink);font-weight:600">100%</span>
-        <button class="mini" id="psReset" style="float:right">reset</button></label>
-      <input type="range" id="ps" min="40" max="200" step="5" value="100" style="width:100%">
-      <div class="hint">one scale for the scenery, so props authored at different sizes still
-        agree with each other. Each object keeps its own relative size underneath.</div>
+      <h2 style="margin:0 0 9px;font-size:16px;letter-spacing:.02em;color:#4b3f63">Size <span style="font-weight:400;font-size:12.5px;color:#8a8296">&mdash; how big he is. Each object has its own size where you place it.</span></h2>
+      <!-- the scenery-wide scaler is gone: every object carries its own size, and a second
+           multiplier on top only made a wrong-looking chair ambiguous. Kept in the DOM at
+           100% because the export multiplies by it. -->
+      <span id="psl" hidden>100%</span>
+      <button id="psReset" hidden></button>
+      <input type="range" id="ps" min="40" max="200" step="5" value="100" hidden>
 
-      <label style="margin-top:10px">watching</label>
-      <select id="pace" title="how often bunbun decides to move. as shipped = the firmware's own numbers"
+      <label style="margin-top:10px">how big he is
+        <span id="msl" style="color:var(--ink);font-weight:600">&mdash;</span>
+        <span class="hint">one dial for everything he does &mdash; his moves and his
+          walking</span></label>
+      <input type="range" id="master" min="20" max="120" step="5" value="45" style="width:100%">
+      <!-- the separate travel dial is gone: the master above sets the walk too, so there is
+           one size and it cannot drift. The controls stay in the DOM, hidden, because the
+           master writes through them and the export reads the value. -->
+      <span id="tsl" hidden>100%</span>
+      <button id="tsReset" hidden></button>
+      <input type="range" id="ts" min="30" max="200" step="5" value="100" hidden>
+    </div>
+
+    <div class="panel">
+      <h2 style="margin:0 0 9px;font-size:16px;letter-spacing:.02em;color:#4b3f63">Just for watching <span style="font-weight:400;font-size:12.5px;color:#8a8296">&mdash; how fast the preview runs. None of this reaches the device.</span></h2>
+      <select id="pace" title="how often bunbun decides to move. normal = the same numbers the device uses"
               style="width:100%">
-        <option value="1" selected>bunbun: as shipped</option>
+        <option value="1" selected>bunbun: normal</option>
         <option value="3">bunbun: lively (3&times;)</option>
         <option value="6">bunbun: restless (6&times;)</option>
       </select>
@@ -166,22 +199,18 @@
           <option value="180">clock: day in 8 min</option>
         </select>
       </div>
+      <div class="row" style="margin-top:6px">
+        <button class="mini" id="lightOff" style="flex:1">lighting: on</button>
+      </div>
+      <div class="hint">lighting draws the room as the time of day makes it look. Turn it off to build in a flat, easy-to-see room &mdash; the device is unaffected either way.</div>
       <div class="hint">the same three the builder uses. Only <b>bunbun:</b> changes how he
         behaves; the other two change how fast you watch it.</div>
 
-      <label style="margin-top:10px">HIS SIZE, everywhere
-        <span id="msl" style="color:var(--ink);font-weight:600">&mdash;</span>
-        <span class="hint">one dial: every animation and the travelling between them</span></label>
-      <input type="range" id="master" min="20" max="120" step="5" value="45" style="width:100%">
-      <label style="margin-top:10px">he travels at
-        <span id="tsl" style="color:var(--ink);font-weight:600">100%</span>
-        <button class="mini" id="tsReset" style="float:right">reset</button></label>
-      <input type="range" id="ts" min="30" max="200" step="5" value="100" style="width:100%">
-      <div class="hint">walking and idling only. Your animations bring their own size from the
-        editor, so this never touches them &mdash; it is here because nobody authored the walk.</div>
+      
     </div>
 
     <div class="panel">
+      <h2 style="margin:0 0 9px;font-size:16px;letter-spacing:.02em;color:#4b3f63">This room <span style="font-weight:400;font-size:12.5px;color:#8a8296">&mdash; its name, which room it is, and what is in it</span></h2>
       <label>this scene is called
         <span class="hint">&mdash; the exported file is named after it, stamp attached</span></label>
       <input id="sceneName" placeholder="e.g. cozy morning" style="width:100%;padding:8px;
@@ -194,6 +223,7 @@
         <option value="kitchen">the kitchen &mdash; EAT comes here</option>
         <option value="bathroom">the bathroom &mdash; BATH comes here</option>
         <option value="work">work &mdash; the WORK button comes here</option>
+        <option value="outside">outside &mdash; he stays as long as he likes</option>
       </select>
       <div id="workLenRow" style="display:none;margin-top:6px">
         <label>work lasts <span id="wkl">one visit</span>
@@ -263,7 +293,7 @@
       </div>
 
       <label style="margin-top:10px">the ground
-        <button class="mini" id="lightOff" style="float:right">lighting: on</button>
+
         <span class="hint">&mdash; click round a shape, then its first corner again</span></label>
       <div class="row">
         <button class="mini zbtn" id="zFloor"
@@ -282,6 +312,7 @@
     </div>
 
     <div class="panel">
+      <h2 style="margin:0 0 9px;font-size:16px;letter-spacing:.02em;color:#4b3f63">What he can do here <span style="font-weight:400;font-size:12.5px;color:#8a8296">&mdash; his moves, and where each one may happen</span></h2>
       <label>animations in this room</label>
       <div id="anims"></div>
       <div id="ruleBox" style="display:none;margin-top:8px;padding-top:8px;
@@ -325,6 +356,7 @@
     </div>
 
     <div class="panel">
+      <h2 style="margin:0 0 9px;font-size:16px;letter-spacing:.02em;color:#4b3f63">The sky <span style="font-weight:400;font-size:12.5px;color:#8a8296">&mdash; time of day, weather, clouds and stars</span></h2>
       <label>time of day <span id="todl" style="color:var(--ink);font-weight:600">13:00</span>
         <button class="mini" id="lampM" style="float:right">lamps: auto</button></label>
       <input type="range" id="tod" min="0" max="1439" step="5" value="780" style="width:100%">
@@ -333,9 +365,9 @@
         <button class="mini" id="cl">clouds</button>
         <button class="mini" id="st" title="tiny stars twinkle in the sky shape after dark">stars</button>
         <select id="cst" style="flex:1">
-          <option value="shipped">shipped (3 sizes)</option><option value="wisps">wisps</option>
-          <option value="puffs">puffs</option><option value="bank">bank</option>
-          <option value="scatter">scatter</option>
+          <option value="shipped">the usual mix</option><option value="wisps">thin wisps</option>
+          <option value="puffs">fat puffs</option><option value="bank">one big bank</option>
+          <option value="scatter">scattered about</option>
         </select>
       </div>
       <div class="row" style="margin-top:6px">
@@ -351,6 +383,7 @@
     </div>
 
     <div class="panel">
+      <h2 style="margin:0 0 9px;font-size:16px;letter-spacing:.02em;color:#4b3f63">What the device gets <span style="font-weight:400;font-size:12.5px;color:#8a8296">&mdash; the exact scene your bunbun receives</span></h2>
       <label id="outToggle">what the device will be told</label>
       <pre id="out" style="max-height:none;overflow:auto"></pre>
     </div>
@@ -376,7 +409,8 @@
     ['room', holder('tod')],           // light & weather set the room's mood
     ['stage', canvasPanel],
     ['stage', holder('anims')],        // animations + where-rules, below the main viewer
-    ['stage', holder('pace')],         // watching: pace / tempo / clock + travel + passive
+    ['stage', holder('master')],       // his one size dial
+    ['stage', holder('pace')],         // watching: pace / tempo / clock / lighting
     ['pet',  holder('out')],           // the device JSON - long, so it gets the tall column
   ];
   for(const [k,p] of plan) if(p && !p.dataset.placed){ p.dataset.placed=1; cols[k].appendChild(p) }
@@ -434,10 +468,23 @@
 <script>/*ATTACH_DATA*/</script>
 <script>
 const SD=window.ATTACH_DATA;
+// which animal this world is FOR - the select when set, else whatever the
+// room's animations were drawn with
+function worldAnimalId(){
+  if(scene && scene.animal) return scene.animal;     // what the world was switched to
+  const el=document.getElementById('worldAnimal');
+  if(el && el.value) return el.value;                // mid-change, before it clears itself
+  try{ return (anims.find(a=>a.clip&&a.clip.includes(':'))||{}).clip.split(':')[0] }
+  catch(e){ return '' }
+}
 const $=id=>document.getElementById(id);
 const GAME={w:320,h:240,floor:200,z:3};
 const SCALE={baby:0.78*1.45, adult:1.00*1.45};
 const AFFORD=['sit','sleep','bathe','eat','surface','play'];
+// what each one says on its button - the value underneath is what the device reads, and it
+// never changes. "surface" in particular is not a word a nine-year-old has.
+const CAN_WORD={sit:'sit on', sleep:'sleep on', bathe:'bathe in', eat:'eat at',
+                surface:'put things on', play:'play with'};
 // One scale for everything passive. Props come from different generations at different sizes,
 // and tuning them one at a time is how a room drifts; this keeps their relative sizes and
 // moves them together.
@@ -474,7 +521,16 @@ let scene={room:'', objects:[], zones:[], character:{x:160,y:200,scalePercent:14
 // this room uses.
 let anims=[], asel=-1, tick=0, playing=true, lastT=0;
 
-const say=(m,bad)=>{ $('msg').textContent=m; $('msg').className=bad?'bad':''; };
+let _toastTimer=null;
+const say=(m,bad)=>{
+  $('msg').textContent=m; $('msg').className=bad?'bad':'';
+  let t=document.getElementById('toast');
+  if(!t){ t=document.createElement('div'); t.id='toast';
+    t.onclick=()=>t.classList.remove('show'); document.body.appendChild(t); }
+  t.textContent=m; t.className='show'+(bad?' bad':'');
+  clearTimeout(_toastTimer);
+  _toastTimer=setTimeout(()=>t.classList.remove('show'), bad?7000:4500);
+};
 const phaseOf=c=>/^Baby/i.test(c||'')?'baby':'adult';
 const ruleNeeds=a=>a.rule&&a.rule.needs;
 // Asset filenames are how the art was saved, not how a child would say it.
@@ -870,7 +926,9 @@ function drawChar(a, step, x, y, alpha, mark, clipOver){
 // ---- INTER-ROOM ACTION, exactly as the device does it ----------------------------
 // kitchen and bathroom are LEFT of the main room, work is RIGHT; a side room always
 // exits toward home, and a side-to-side trip goes THROUGH home. Same law as main.cpp.
-const ROLE_SIDE={kitchen:-1, bathroom:-1, work:+1};
+const ROLE_SIDE={kitchen:-1, bathroom:-1, work:+1, outside:+1};
+// rooms he simply STAYS in - no errand to finish, so nothing walks him home from them
+const ROLE_HOLDS={'':1, outside:1};
 const actOfAnim=a=>{
   if(a.actAs) return a.actAs;
   if(a.isWork) return 'work';
@@ -904,7 +962,26 @@ function roomFor(act){
 let crossing=false;
 // walk him off the edge, change the room, walk him in from the other side and on to
 // the middle, then do what he came for
+// how long he must remain in a side room before anything may pull him out (device: 10s)
+const ROOM_MIN_STAY=10000;
+let roomEnteredAt=0;
 async function crossTo(role, act){
+  if(crossing || role===roleKey()) return false;
+  // 1. THROUGH HOME. Kitchen to work is two journeys on the device, never one.
+  const from0=roleKey();
+  if(from0 && role && from0!==role){
+    await crossTo('', '');                 // home first, exactly as the firmware does
+    await new Promise(r=>setTimeout(r,350));
+  }
+  // 2. HE STAYS A WHILE. Leaving a side room early is the preview's invention, not his -
+  // and outside has no visit to be the length of, so it owes nothing.
+  if(roleKey() && !ROLE_HOLDS[roleKey()] && roomEnteredAt){
+    const owed=ROOM_MIN_STAY-(Date.now()-roomEnteredAt);
+    if(owed>0){
+      if(sim) sim.says=`he is still busy here`;
+      await new Promise(r=>setTimeout(r, Math.min(owed, ROOM_MIN_STAY)));
+    }
+  }
   if(crossing || role===roleKey()) return false;
   crossing=true;
   try{
@@ -936,6 +1013,7 @@ async function crossTo(role, act){
       sim.goal={x:mid.x,y:mid.y}; sim.tx=mid.x; sim.ty=mid.y;
       sim.face=(mid.x<inX?-1:1); sim.walkClip=walkClipFor(sim.a,sim.face);
       sim.says=`in the ${role||'main room'} now`;
+      roomEnteredAt = role ? Date.now() : 0;    // only side rooms hold him
       const t1=Date.now();
       while(sim && Math.hypot(sim.x-mid.x,sim.y-mid.y)>12 && Date.now()-t1<5000)
         await new Promise(r=>setTimeout(r,60));
@@ -1911,7 +1989,7 @@ function syncObj(){
   $('obhv').textContent=o.bulbY==null?'auto ('+bulbHeightOf(o)+')':o.bulbY;
   $('objCan').innerHTML=AFFORD.map(k=>`<button class="mini" data-can="${k}" style="${
     (o.can||[]).includes(k)?'background:var(--accent);color:#fff;border-color:var(--accent)':''}"
-    >${k}</button>`).join('');
+    >${CAN_WORD[k]||k}</button>`).join('');
   $('objCan').querySelectorAll('[data-can]').forEach(b=>b.onclick=()=>{
     const set=new Set(o.can||[]); const k=b.dataset.can;
     set.has(k)?set.delete(k):set.add(k); o.can=[...set]; syncObj(); draw() });
@@ -2069,7 +2147,10 @@ function draw(){
 
   // the things in the room, back to front
   const items=[...scene.objects].sort((a,b)=>(a.z==null?a.y:a.z)-(b.z==null?b.y:b.z));
+  // ONLY THE ONE YOU ARE HOLDING (Eli: "Wooden Chair O1" written across the chair). The id
+  // is a working label, so it belongs on the working object and nowhere else.
   const labelObj=o=>{ if(simOn||!showGhosts) return;   // editing aids, not scenery
+    if(scene.objects[osel]!==o) return;
     const {w,h}=sizeOf(o);
     ctx.font='700 '+(3.4*Z)+'px ui-sans-serif,system-ui'; ctx.textAlign='center';
     const t=nice(o.object)+' O'+(o.oid||'?');
@@ -2251,7 +2332,7 @@ function drawObjs(){
         >${o.locked?'\u{1F512}':'\u{1F513}'}</button
         ><span class="hint" style="font-weight:700;margin-right:4px">O${o.oid||'?'}</span>${nice(o.object)}
         ${(o.can||[]).length?`<span class="tag ok">${o.can.join(' / ')}</span>`
-                            :'<span class="hint">&mdash; nothing declared</span>'}</div>`).join('')
+                            :'<span class="hint">&mdash; he cannot use this yet</span>'}</div>`).join('')
     : '<div class="hint">nothing in the room yet \u2014 add something above, or import a scene</div>';
   if(!setIf('objs', objsHtml)) return;
   $('objs').querySelectorAll('[data-hide]').forEach(b=>b.onclick=e=>{
@@ -2298,15 +2379,47 @@ function drawAnims(){
     && !anims.some(a=>a.on && a.clip===c));
   const forceHtml = (anims.filter(a=>a.on).length || defEmotes.length)
     ? '<span class="hint" style="flex:0 0 auto;align-self:center">make him:</span>'+
-      anims.map((a,i)=>a.on?`<button class="mini" data-force="${i}">${a.name.length>18
-        ?a.name.slice(0,17)+'\u2026':a.name}</button>`:'').join('')
+      anims.map((a,i)=>{
+        if(!a.on) return '';
+        const act=actOfAnim(a)||'';
+        const room=({eat:1,bath:1,wash:1,toilet:1,work:1})[act];
+        const anywhere = (typeof isAnywhere==='function') ? isAnywhere(a) : false;
+        const tint = room ? ['#e3edf9','#7ea6d6']
+                   : anywhere ? ['#e9e3f7','#a68fd8']
+                   : ['#ddf0e3','#79bb92'];
+        const tip = room ? 'counts as '+act+' \u2014 belongs to a room'
+                  : anywhere ? (act ? 'counts as '+act+' \u2014 happens anywhere'
+                                    : 'happens anywhere he walks')
+                  : 'counts as '+act+' \u2014 needs a place here';
+        const nm = a.name.length>18 ? a.name.slice(0,17)+'\u2026' : a.name;
+        return '<button class="mini" data-force="'+i+'" title="'+tip+'" style="background:'+
+          tint[0]+';border-color:'+tint[1]+'">'+nm+'</button>';
+      }).join('')
     : '';
-  const defHtml = (forceHtml && defEmotes.length)
-    ? '<span class="hint" style="flex:0 0 auto;align-self:center;margin-left:8px" '+
-      'title="the stock clips stand in for emotions this scene has no animation for">'+
-      'defaults:</span>'+
-      defEmotes.map(c=>`<button class="mini" data-forcedef="${c}" style="opacity:.72">${
-        c.replace(/^Adult_/,'')}</button>`).join('')
+  // which of the stock clips is a FEELING (he wears it anywhere) and which is an ACTION
+  // (it has to happen somewhere)? The action ones map onto a counts-as the room may or may
+  // not offer, and that is exactly what decides whether pressing them can work.
+  // Pickup is deliberately absent: it needs nothing to happen on, so it sits with the
+  // any-time moves rather than being dimmed for lacking a thing it never wanted.
+  const DEF_ACT={Adult_Eat:'eat', Adult_Bathe:'bath', Adult_Sleep:'sleep',
+                 Adult_Sit:'sit'};
+  // which acts own a whole room on the device, and which just need a thing where he stands
+  const ROOM_ACT={eat:'the kitchen', bath:'the bathroom'};
+  const roomDoes=act=>anims.some(a=>a.on && actOfAnim(a)===act);
+  const defBtn=(c,tint,edge,dim,tip)=>
+    `<button class="mini" data-forcedef="${c}" title="${tip}" style="font-size:13px;`+
+    `background:${tint};border-color:${edge}${dim?';opacity:.45':''}">${
+      c.replace(/^Adult_/,'')}</button>`;
+  // only the ones that need nowhere to happen - a stand-in for a feeling is the real
+  // thing, a stand-in for an act is a guess at an animation the room already owns
+  const feels=defEmotes.filter(c=>!DEF_ACT[c]);
+  const defHtml = (forceHtml && feels.length)
+    ? '<span style="flex:0 0 100%;height:0"></span>'+
+      '<span class="hint" style="flex:0 0 auto;align-self:center" '+
+      'title="nothing needed - he does these wherever he is standing, so they always work">'+
+      '\u2665 any time:</span>'+
+      feels.map(c=>defBtn(c,'#e9e3f7','#a68fd8',false,
+        'a feeling - he can do this anywhere')).join('')
     : '';
   // ERRANDS ACROSS ROOMS - the same commands the device's own menu has, so a child can
   // watch the whole journey in the preview (Jon: "inter room action just like the game").
@@ -2316,7 +2429,7 @@ function drawAnims(){
       'title="the device\u2019s own buttons - he walks to whichever room does it">'+
       'send him to:</span>'+
       [['eat','\u{1F37D} eat'],['bath','\u{1F6C1} bath'],['toilet','\u{1F6BD} potty'],
-       ['work','\u{1F528} work'],['','\u{1F3E0} home']]
+       ['work','\u{1F528} work'],['@outside','\u{1F333} go outside'],['','\u{1F3E0} home']]
       .map(function(e){ return '<button class="mini" data-errand="'+e[0]+'">'+e[1]+'</button>' }).join('')
     : '';
   if(setIf('forceRow', forceHtml+defHtml+errHtml))
@@ -2324,8 +2437,8 @@ function drawAnims(){
     const a=anims[+b.dataset.force];
     const p=placesFor(a);
     if(p.kind==='needs'&&!p.spots.length)
-      return say(`nothing in the room lets him do "${a.name}" \u2014 give something the `+
-                 `affordance, pin an item, or bind an area`,true);
+      return say(`nothing in the room lets him do "${a.name}" \u2014 click a thing and press `+
+                 `that word in its own row of buttons, or tick it in the list`,true);
     // nearest place wins when there are several - you asked to WATCH it, not to wait
     let spot=null;
     if(p.kind==='needs'){ const fx=sim?sim.x:GAME.w/2, fy=sim?sim.y:GAME.floor;
@@ -2345,6 +2458,15 @@ function drawAnims(){
   $('forceRow').querySelectorAll('[data-errand]').forEach(b=>b.onclick=async()=>{
     const act=b.dataset.errand;
     if(!act){ if(!simOn) await $('preview').onclick(); await comeHome(); return }
+    // a PLACE, not an errand: nothing is done out there, he simply goes and stays
+    if(act[0]==='@'){
+      const role=act.slice(1);
+      if(!worldSlots[role] && roleKey()!==role)
+        return say(`there is no ${role} room yet \u2014 make one first`,true);
+      if(!simOn) await $('preview').onclick();
+      await crossTo(role, '');
+      return;
+    }
     await sendHimTo(act);
   });
   $('forceRow').querySelectorAll('[data-forcedef]').forEach(b=>b.onclick=async()=>{
@@ -2353,8 +2475,8 @@ function drawAnims(){
     await loadArtFor(a);
     const p=placesFor(a);
     if(p.kind==='needs'&&!p.spots.length)
-      return say(`nothing in the room lets him do "${a.name}" — give something the `+
-                 `affordance first`,true);
+      return say(`nothing in the room lets him do "${a.name}" — click a thing and press `+
+                 `that word in its own row of buttons first`,true);
     let spot=null;
     if(p.kind==='needs'){ const fx=sim?sim.x:GAME.w/2, fy=sim?sim.y:GAME.floor;
       spot=p.spots.slice().sort((q,r)=>Math.hypot(q.x-fx,q.y-fy)-Math.hypot(r.x-fx,r.y-fy))[0]; }
@@ -2368,12 +2490,17 @@ function drawAnims(){
     const good = p.kind==='anywhere' || p.spots.length>0;
     const where = p.kind==='anywhere' ? 'anywhere he walks'
       : (a.rule && (a.rule.onItem!=null||a.rule.onItems)
-          ? (p.spots.length ? `pinned to ${p.spots.length} thing${p.spots.length===1?'':'s'}`
-                            : 'pinned, but that thing is gone')
+          ? (p.spots.length
+              ? (p.spots.length===1 && p.spots[0] && p.spots[0].object
+                  ? `on the ${nice(p.spots[0].object)}`
+                  : `on ${p.spots.length} things you picked`)
+              : 'pinned, but that thing is gone')
         : a.rule && a.rule.inArea!=null
           ? (p.spots.length ? 'in the area you drew' : 'that area has no room to stand')
-        : (p.spots.length ? `${p.spots.length} place${p.spots.length===1?'':'s'} afford "${a.rule.needs}"`
-                          : `nothing here affords "${a.rule.needs}"`));
+        // "1 place afford \"eat\"" was the tool's own vocabulary, not a child's
+        : (p.spots.length
+            ? `${p.spots.length} place${p.spots.length===1?'':'s'} he can ${nice(a.rule.needs)}`
+            : `nothing here lets him ${nice(a.rule.needs)}`));
     return `<div class="anim ${i===asel?'sel':''} ${a.on?'':'off'}">
       <button class="mini" data-on="${i}" style="${a.on?
         'background:var(--accent);color:#fff;border-color:var(--accent)':'opacity:.55'}"
@@ -2411,12 +2538,13 @@ function drawAnims(){
         <option value="eat" ${a.actAs==='eat'?'selected':''}>eating</option>
         <option value="bath" ${a.actAs==='bath'?'selected':''}>bathing</option>
         <option value="sleep" ${a.actAs==='sleep'?'selected':''}>sleeping</option>
+        <option value="wake" ${a.actAs==='wake'?'selected':''}>waking up (when he restarts)</option>
         <option value="walk_e" ${a.actAs==='walk_e'?'selected':''}>how he walks (this way &rarr;)</option>
         <option value="walk_w" ${a.actAs==='walk_w'?'selected':''}>how he walks (&larr; that way)</option>
       </select>
       <span class="hint" style="flex:0 0 auto">s &middot; he says</span>
       <input data-txt="${i}" value="${(a.says||'').replace(/"/g,'&quot;')}"
-        placeholder="the ticker line (blank = stock)" maxlength="42"
+        placeholder="what he says while he does it" maxlength="42"
         style="flex:1;min-width:80px;padding:2px 5px;font:inherit;font-size:11px;border:1px solid var(--line);border-radius:5px;background:var(--bg);color:var(--ink)"></div>`}).join('')
     : '<div class="hint">add the animations you exported from the editor</div>';
   if(setIf('anims', animsHtml)){
@@ -2607,7 +2735,7 @@ function syncRule(){
   $('rNeeds').innerHTML=
     `<option value=""${ruleNeeds(a)?'':' selected'}>${ruleNeeds(a)?'— or pick another —':'— only somewhere specific —'}</option>`+
     AFFORD.map(k=>
-      `<option value="${k}"${ruleNeeds(a)===k?' selected':''}>only where something affords "${k}"</option>`).join('');
+      `<option value="${k}"${ruleNeeds(a)===k?' selected':''}>only where something lets him ${k}</option>`).join('');
   const p=placesFor(a);
   // If it is set to "anywhere" but the room holds something its own name matches, say so -
   // an animation called "sit" happening on bare floor beside an empty chair is almost always
@@ -2636,7 +2764,7 @@ function syncRule(){
   $('ruleWhy').innerHTML = p.kind==='anywhere'
     ? 'It will happen wherever he can stand, so it needs a walkable floor drawn.'+
       (couldUse.length?`<br><b>${couldUse.length} thing${couldUse.length===1?'':'s'} here `+
-        `afford${couldUse.length===1?'s':''} "${implied}"</b> — pick it from the list `+
+        `let${couldUse.length===1?'s':''} him ${implied}</b> — pick it from the list `+
         `below if this should happen there rather than anywhere.`:'')
     : (p.spots.length
         ? (()=>{ const sharing=anims.filter(x=>x.on&&ruleNeeds(x)===ruleNeeds(a));
@@ -2644,11 +2772,12 @@ function syncRule(){
                ? `${sharing.length} animations use "${ruleNeeds(a)}" here (${
                    sharing.map(x=>x.name).join(', ')}) — he picks between them. `
                : '' })()+
-          (p.spots.length===1 ? 'One place affords it: ' : `${p.spots.length} places afford it: `)+
+          (p.spots.length===1 ? 'One thing here lets him: ' : `${p.spots.length} things here let him: `)+
           p.spots.map(o=>`${nice(o.object)} at ${Math.round(o.x)}`).join(', ')+
           (p.spots.length>1 ? ' \u2014 he picks one each time.' : '')
-        : `Nothing in this room affords "${a.rule.needs}", so this animation can never play here. `+
-          `Mark an object with it in the editor, or let this happen anywhere.`);
+        : `Nothing in this room lets him ${a.rule.needs} yet, so this move can never happen `+
+          `here. Click a thing in the room, then press ${a.rule.needs} in its own row of `+
+          `buttons \u2014 or set this move to \u201canywhere he walks\u201d.`);
 }
 // The editor's own value travels with the animation, but 2% of a sprite drawn at a third size
 // is under a pixel - invisible, which reads as "its not breathing". Tunable where you watch it.
@@ -2694,10 +2823,23 @@ $('rNeeds').onchange=e=>{ const a=anims[asel]; if(!a)return;
 // which animal lives in this room: the namespace of any live animation's clip
 function roomAnimal(){
   const c=anims.find(a=>a.on&&a.clip&&a.clip.includes(':'));
-  return c ? c.clip.split(':')[0] : '';
+  // what the room's art actually is, and failing that what the world was switched to -
+  // a world can know its animal before a single namespaced animation exists in it
+  return c ? c.clip.split(':')[0] : ((scene && scene.animal) || '');
+}
+// bring an animal's clip across from the pack data the first time anyone asks for it. The
+// tool ships every animal complete; SD.clips is just the working set.
+function hydrateAnimalClip(ns, clip){
+  if(!ns || !clip) return false;
+  const k=ns+':'+clip;
+  if(SD.clips[k]) return true;
+  const ch=SD.characters && SD.characters[ns];
+  if(ch && ch.clips && ch.clips[clip]){ SD.clips[k]=ch.clips[clip]; return true; }
+  return false;
 }
 function defaultAnim(clip){
   if(!SD.clips[clip]) return null;
+  hydrateAnimalClip(roomAnimal(), clip);   // his own version, before we settle for idle
   const base=clip.replace(/^Adult_/,'').toLowerCase();
   // THE ROOM'S ANIMAL WEARS THE DEFAULTS ("when i hit defaults its not defaulting to
   // the animal i have but the capybara"): his own version of the clip when it
@@ -2844,6 +2986,81 @@ $('freshScene').onclick=()=>{
   location.reload();
 };
 $('impAnim').onclick=()=>$('fAnim').click();
+const BASE_MOVES=[
+  {c:'Adult_Eat',    t:'having a meal',        i:'\u{1F37D}', k:'do'},
+  {c:'Adult_Bathe',  t:'having a bath',        i:'\u{1F6C1}', k:'do'},
+  {c:'Adult_Sleep',  t:'going to sleep',       i:'\u{1F634}', k:'do'},
+  {c:'Adult_Sit',    t:'sitting down',         i:'\u{1FA91}', k:'do'},
+  {c:'Adult_Pickup', t:'picking something up', i:'\u{1F91A}', k:'do'},
+  {c:'Adult_Love',   t:'feeling happy',        i:'\u{1F970}', k:'feel'},
+  {c:'Adult_Bored',  t:'being bored',          i:'\u{1F611}', k:'feel'},
+  {c:'Adult_Tired',  t:'being sleepy',         i:'\u{1F971}', k:'feel'},
+  {c:'Adult_Hungry', t:'being hungry',         i:'\u{1F62B}', k:'feel'},
+  {c:'Adult_Angry',  t:'being grumpy',         i:'\u{1F620}', k:'feel'},
+];
+// the world's animal owns the move when that animal is installed, so a cat world eats
+// as a cat; otherwise the pack's own art, which the device swaps for whoever lives there
+function baseClipKey(c){
+  const ns=(worldAnimalId()||'').trim();
+  if(!ns) return c;
+  const k=ns+':'+c;
+  // the species may not have been registered yet if the animal was chosen before any
+  // animation existed - the art is in SD.characters either way
+  if(!SD.clips[k] && SD.characters && SD.characters[ns] && SD.characters[ns].clips[c])
+    SD.clips[k]=SD.characters[ns].clips[c];
+  return SD.clips[k] ? k : c;
+}
+async function addBaseMove(m){
+  const key=baseClipKey(m.c), cd=SD.clips[key];
+  if(!cd||!cd.frames||!cd.frames.length) return say('that move is not in this pack',true);
+  const dirs=cd.frames.map(f=>f&&f.dir);
+  const order = dirs.some(Boolean)
+    ? [{i: Math.max(0, dirs.indexOf('south'))}]     // a pose: one direction, never all eight
+    : cd.frames.map((_,i)=>({i}));                  // a real animation: all of it
+  const made=addAnim(m.t, {clip:key, order});
+  if(!made) return say('could not add that move',true);
+  made.fromBase=true;
+  await Promise.all(cd.frames.map((f,i)=>load(f.img,'clip|'+key+'|'+i)));
+  asel=anims.length-1; syncRule(); draw();
+  say(`"${m.t}" is in the room \u2014 he can do that now`);
+}
+function drawBaseRow(){
+  let host=document.getElementById('baseRow');
+  if(!host){ host=document.createElement('div'); host.id='baseRow';
+    host.style.cssText='display:flex;flex-wrap:wrap;gap:6px;align-items:center;'+
+      'margin-top:12px;background:var(--panel);border:1px solid var(--line);'+
+      'border-radius:10px;padding:13px';
+    const anchor=$('impAnim');
+    anchor.parentElement.insertAdjacentElement('afterend', host); }
+  if(host.dataset.built) return;
+  host.dataset.built='1';
+  // two groups, two colours, actions first - a thing he DOES needs somewhere to do it, and
+  // a way he FEELS does not, which is the single most useful distinction in this row
+  const grp=(kind,label,tint,edge)=>
+    `<span class="hint" style="flex:0 0 100%;margin:5px 0 1px">${label}</span>`+
+    BASE_MOVES.map((m,i)=>[m,i]).filter(x=>x[0].k===kind)
+      .map(x=>`<button class="mini" data-base="${x[1]}" style="font-size:13px;`+
+        `background:${tint};border-color:${edge}">${x[0].i} ${x[0].t}</button>`).join('');
+  host.innerHTML=
+    '<h2 style="flex:0 0 100%;margin:0 0 9px;font-size:16px;letter-spacing:.02em;'+
+    'color:#4b3f63">Add to Room <span style="font-weight:400;font-size:12.5px;'+
+    'color:#8a8296">&mdash; the moves he can do in here</span></h2>'+
+    '<div id="impSlot" style="flex:0 0 100%;margin-bottom:7px"></div>'+
+    '<span class="hint" style="flex:0 0 100%">or one he already knows \u2014 press it and it '+
+    'is in the room:</span>'+
+    grp('do','\u25B6 things he does \u2014 these need a place','#ddf0e3','#79bb92')+
+    grp('feel','\u2665 ways he feels \u2014 these happen anywhere','#e9e3f7','#a68fd8');
+  {const imp=document.getElementById('impAnim'), slot=host.querySelector('#impSlot');
+   if(imp && slot && imp.parentElement!==slot){ imp.textContent='\u2795 Add animations you made';
+     slot.appendChild(imp); }}
+  host.insertAdjacentHTML('beforeend',
+    '<a class="mini" href="attach_editor.html" target="_blank" '+
+    'style="font-size:13px;text-decoration:none">\u270F\uFE0F make your own \u2192</a>');
+  host.querySelectorAll('[data-base]').forEach(b=>
+    b.onclick=()=>addBaseMove(BASE_MOVES[+b.dataset.base]));
+}
+drawBaseRow();
+
 // THE MOVES SHELF: animations saved in Animation Creation (same browser) appear here as
 // big one-click buttons - no Downloads folder, no file picker, no timestamps. This is the
 // kid path; the file picker stays as the grown-up path. (Mila's most grown-up-dependent
@@ -2924,7 +3141,7 @@ $('fScene').onchange=async e=>{
   litCache.key='';
   say(`room "${room}", ${scene.objects.length} object(s), ${scene.zones.length} zone(s)`+
       (lamps?`, ${lamps} of them giving light`:'')+
-      (named?`, ${named} declaring what they afford`:' — nothing declares what it affords yet'));
+      (named?`, ${named} of them set up for him to use`:' \u2014 nothing here is set up for him to use yet'));
   draw();
 };
 
@@ -3121,24 +3338,51 @@ $('ts').oninput=e=>{ travelScale=+e.target.value/100;
 $('master').oninput=e=>{ const v=+e.target.value;
   travelScale=v/100; $('ts').value=v; $('tsl').textContent=v+'%';
   for(const a of anims){ a.stage=a.stage||{}; a.stage.scale=v; a.stage.authored=true; }
+  // ...AND EVERY OTHER ROOM. The rooms he is not standing in are parked as JSON in
+  // worldSlots; without this they keep whatever size they were last given and he grows or
+  // shrinks on the way through the door.
+  let rooms=0;
+  for(const k of Object.keys(worldSlots||{})){
+    try{
+      const q=JSON.parse(worldSlots[k]); if(!q) continue;
+      (q.anims||[]).forEach(a=>{ a.stage=a.stage||{}; a.stage.scale=v; a.stage.authored=true });
+      q.travelScale=v/100;
+      worldSlots[k]=JSON.stringify(q); rooms++;
+    }catch(err){}
+  }
   $('msl').textContent=v+'%';
+  if(rooms) say(`he is ${v}% everywhere now \u2014 this room and ${rooms} more`);
   drawAnims(); draw(); autosave(); };
 // show where the room currently sits: unanimous -> that number, mixed -> a dash
-(function(){ const vals=[...new Set(anims.map(a=>Math.round((a.stage&&a.stage.scale)||100)))];
-  if(vals.length===1 && Math.round(travelScale*100)===vals[0]){
-    $('master').value=vals[0]; $('msl').textContent=vals[0]+'%'; }
-  else $('msl').textContent='mixed'; })();
+(function(){ const vals=new Set(anims.map(a=>Math.round((a.stage&&a.stage.scale)||100)));
+  for(const k of Object.keys(worldSlots||{})){
+    try{ (JSON.parse(worldSlots[k]).anims||[])
+           .forEach(a=>vals.add(Math.round((a.stage&&a.stage.scale)||100))) }catch(e){}
+  }
+  const v=[...vals];
+  if(v.length===1 && Math.round(travelScale*100)===v[0]){
+    $('master').value=v[0]; $('msl').textContent=v[0]+'%'; }
+  else $('msl').textContent = v.length>1 ? 'different in each room' : 'mixed'; })();
 $('tsReset').onclick=()=>{ travelScale=1; $('ts').value=100; $('tsl').textContent='100%'; draw() };
 $('tod').oninput=e=>{ todMin=+e.target.value;
   $('todl').textContent=hhmm(todMin); litCache.key=''; draw() };
 $('lampM').onclick=()=>{ lampMode=lampMode==='auto'?'on':lampMode==='on'?'off':'auto';
   $('lampM').textContent='lamps: '+lampMode; litCache.key=''; draw() };
+// weather with nowhere to fall is nothing at all - say so at the moment it happens
+function needSky(what){
+  if((scene.zones||[]).some(z=>z.kind==='sky')) return;
+  say(`${what} can only show inside a sky box \u2014 press + sky box and draw one over the `+
+      `top of the room`, true);
+}
 $('rn').onclick=()=>{ raining=!raining; if(raining)weatherInit(scene.room);
-  $('rn').classList.toggle('pri',raining); litCache.key=''; draw() };
+  $('rn').classList.toggle('pri',raining); litCache.key=''; draw();
+  if(raining) needSky('rain') };
 $('cl').onclick=()=>{ clouding=!clouding; if(clouding)weatherInit(scene.room);
-  $('cl').classList.toggle('pri',clouding); draw() };
+  $('cl').classList.toggle('pri',clouding); draw();
+  if(clouding) needSky('clouds') };
 $('st').onclick=()=>{ starsOn=!starsOn; if(starsOn)weatherInit(scene.room);
-  $('st').classList.toggle('pri',starsOn); draw() };
+  $('st').classList.toggle('pri',starsOn); draw();
+  if(starsOn) needSky('stars') };
 $('stn').oninput=e=>{ starN=+e.target.value; $('stnl').textContent=starN;
   weatherInit(scene.room); draw() };
 $('cst').onchange=e=>{ cloudStyle=e.target.value; rebuildClouds(); weatherInit(scene.room); draw() };
@@ -3549,6 +3793,64 @@ async function buildPortPayload(setB){
                                ...(act==='idle'?{aw:1}:{})});
       }
     }
+    // 2c. THE ANIMAL RIDES IN THE PACKAGE TOO. Folder names and frame counts follow
+    // tools/mkspecies.py exactly - they are dictated by the firmware's ANIMS[] table, not
+    // chosen here, so a mismatch would be silent and invisible.
+    {
+      const want=(scene.animal||worldAnimalId()||'').trim();
+      const CH = want && SD.characters && SD.characters[want];
+      if(CH && CH.clips){
+        const SPEC=[
+          ['idle-anim',5,'Adult_Idle','south'], ['adult-idle-n',1,'Adult_Idle','north'],
+          ['walk-west/anim',8,'Adult_Walk_West',null], ['walk-east/anim',8,'Adult_Walk_East',null],
+          ['jump/anim',5,'Adult_Idle','south'],
+          ['eat/anim',5,'Adult_Eat',null], ['bath/anim',5,'Adult_Bathe',null],
+          ['sleep/anim',5,'Adult_Sleep','south'],
+          ['tired-anim',5,'Adult_Tired',null], ['bored-anim',5,'Adult_Bored',null],
+          ['hungry-anim',5,'Adult_Hungry',null], ['sick-anim',5,'Adult_Sick',null],
+          ['angry-anim',5,'Adult_Angry',null], ['love-anim',5,'Adult_Love',null],
+          ['play/anim',9,'Adult_Love',null], ['adult-cuddle',9,'Adult_Love',null],
+        ];
+        // 50% WHEN NOBODY SAID (Jon). Falling back to 100 baked the animal at the full
+        // 96x136 cell, and on the device a croc filled the room wall to wall. An authored
+        // size still wins - this is only the answer when the world never gave one.
+        const kitScale2=(on.find(x=>x.stage&&x.stage.authored&&x.stage.scale)||{stage:{}}).stage.scale||50;
+        let made=0;
+        for(const [folder,count,clipName,dir] of SPEC){
+          const cd=CH.clips[clipName];
+          if(!cd||!cd.frames||!cd.frames.length) continue;
+          // a POSE is one drawing in eight compass rotations - take the named direction and
+          // hold it. Playing all eight is the spinning.
+          const dirs=cd.frames.map(f=>f&&f.dir);
+          let idx;
+          if(dir && dirs.some(Boolean)){
+            const d0=dirs.indexOf(dir);
+            idx=Array.from({length:count},()=>({i:Math.max(0,d0)}));
+          } else {
+            idx=Array.from({length:count},(_,i)=>({i:i%cd.frames.length}));
+          }
+          const ka={clip:want+':'+clipName, order:idx, layers:[],
+                    character:{hold:1}, stage:{scale:kitScale2, authored:true}};
+          if(!SD.clips[ka.clip]) SD.clips[ka.clip]=cd;   // so loadArtFor/bakeStep can see it
+          setB(`packing the ${want}: ${folder}\u2026`);
+          await loadArtFor(ka);
+          for(let s3=0;s3<idx.length;s3++){
+            const cvC=await bakeStep(ka, s3, {K:1, canvas:true});
+            if(!cvC) continue;
+            const r2=Math.min(1, Math.max(0.15, kitScale2/100));
+            const w2=Math.max(1,Math.round(96*r2)), h2=Math.max(1,Math.round(136*r2));
+            const hv2=document.createElement('canvas'); hv2.width=96; hv2.height=136;
+            const hg2=hv2.getContext('2d',{willReadFrequently:true});
+            hg2.imageSmoothingEnabled=false;
+            hg2.drawImage(cvC, Math.round((96-w2)/2), Math.round(130-130*r2), w2, h2);
+            const e2=PakLib.encodeSprite(hg2.getImageData(0,0,96,136));
+            e2.name=`${want}/${folder}/${s3}`;
+            if(!newEntries.some(x=>x.name===e2.name)){ newEntries.push(e2); made++; }
+          }
+        }
+        if(made) say(`the ${want} rides along - ${made} pieces, so nothing falls back to another animal`);
+      }
+    }
     // 3. object art: the SCENE's art is canon for the scene's names - a redrawn item
     // replaces the pak entry of the same name, so updates actually reach the shelf
     for(const o of scene.objects.filter(x=>!x.hidden)){
@@ -3591,6 +3893,7 @@ function switchClip(clip, id){
 }
 async function switchWorldAnimal(id){
   if(!id || !SD.characters || !SD.characters[id]) return;
+  scene.animal=id;                    // the world remembers whose it is
   // the whole species registers under its namespace once - the travel kit, the
   // defaults, and every future lookup come along for free
   for(const c of Object.keys(SD.characters[id].clips))
@@ -3627,6 +3930,8 @@ function freshSlot(role){
   const room = role==='kitchen'  ? (SD.rooms['kitchen-bare']?'kitchen-bare':'kitchen')
              : role==='bathroom' ? (SD.rooms['washroom']?'washroom':Object.keys(SD.rooms)[0])
              : role==='work'     ? (SD.rooms['construction']?'construction':Object.keys(SD.rooms)[0])
+             : role==='outside'  ? (SD.rooms['meadow']?'meadow'
+                                   :SD.rooms['garden']?'garden':Object.keys(SD.rooms)[0])
              : (SD.rooms['farmhouse']?'farmhouse':Object.keys(SD.rooms)[0]);
   return {v:1, scene:{room, role:role||undefined, objects:[], zones:[],
                       character:{x:160,y:200,scalePercent:145}},
@@ -4310,6 +4615,9 @@ async function restore(raw){
 }
 
 (async()=>{
+  // the animal list is filled on EVERY load, not only when a saved session is restored -
+  // a new child used to get an empty dropdown and no way to change animal at all
+  try{ animalOptions() }catch(e){}
   // READ FIRST. draw() autosaves, and boot's own draw would otherwise wipe the save before
   // this line ever looked at it - the exact bug the editor hit.
   let raw=null, failed=false;
@@ -4375,36 +4683,262 @@ async function restore(raw){
   const $c=id=>document.getElementById(id);
   // Each step: what to say, what to point at, and how to KNOW the child did it.
   const STEPS=[
-    {t:'Pick where he lives', el:'room',
-     b:'Every bunbun needs a room. Open this list and pick one you like \u2014 the picture '+
-       'behind him changes right away. Happy with this one? Press <b>next</b>.',
-     // A ROOM IS ALWAYS PRE-PICKED (rehearsal M12): waiting for a CHANGE meant a child
-     // who liked the first room sat on step 1 for ever. Any touch of the list counts,
-     // and 'next' always works.
+    // ============================================================ YOUR FIRST ROOM
+    {ch:'Your first room', t:'Pick where he lives', el:'room',
+     b:'Every bunbun needs a room. This list lives under <b>This room</b>, on the left. '+
+       'Open it and pick one you like \u2014 the picture behind him changes right away.',
      done:()=>scene.room!==coachRoom0||coachTouchedRoom},
-    {t:'Put something in it', el:'addBtn',
-     b:'Choose a thing from the little list, then press <b>+ add</b>. A bed, a tub, a rug, '+
-       'a lamp \u2014 put in as many as you want. Drag them where you like.',
+    {ch:'Your first room', t:'Give him a chair', el:'addSel',
+     b:'Under <b>This room</b> there is a list called <b>put something in it</b>. Find a '+
+       '<b>chair</b> in it, then press <b>+ add</b> next to it. Drag it where you want. '+
+       'Beds, rugs, lamps and tubs all arrive this way.',
      done:()=>(scene.objects||[]).length>0},
-    {t:'Draw where he can walk', el:'zFloor',
-     b:'Press <b>+ walkable</b>, then click around the floor to draw a shape. Click your '+
-       'first dot again to finish. Green means "you may walk here".',
+    {ch:'Your first room', t:'Draw where he can walk', el:'zFloor',
+     b:'Press <b>+ walkable</b>, then click round the floor to draw a shape. Click your '+
+       'first dot again to finish. Green means \u201cyou may walk here\u201d \u2014 without '+
+       'it he only shuffles along one line.',
      done:()=>(scene.zones||[]).some(z=>z.kind==='floor'||z.kind==='walk'||!z.kind)},
-    {t:'Bring in a move', el:'impAnim',
-     b:'The moves you made in Animation Creation come in here. Press <b>Add animations</b> '+
-       'and pick one \u2014 or press it and choose one off the shelf.',
+    {ch:'Your first room', t:'Somewhere he may not stop', el:'zKeep',
+     b:'Press <b>+ keep out</b> and draw round something \u2014 the fire, a puddle. '+
+       '<b>It is not a wall.</b> He still walks through it; he just never stops there.',
+     done:()=>(scene.zones||[]).some(z=>z.kind==='keepout')},
+    {ch:'Your first room', t:'Teach him to sit', el:'baseRow',
+     b:'Under <b>Add to Room</b> are moves he <b>already knows</b> \u2014 no drawing '+
+       'needed. Press <b>\u{1FA91} sitting down</b>. Grab <b>\u{1F37D} having a meal</b> too.',
      done:()=>anims.length>0},
-    {t:'Watch him live in it', el:'preview',
-     b:'Press <b>Act it out</b>. He starts walking around your room and doing your moves, '+
-       'exactly like he will on the real bunbun.',
+    // THE ORDER IS THE FIX (Eli: "where's the ghost? there isn't one"). The ghost is only
+    // drawn once the move has somewhere to happen, so the old tour demanded the effect one
+    // step before it taught the cause. Tell him the chair first.
+    {ch:'Your first room', t:'Tell it which chair', el:'rPin',
+     b:'A move needs somewhere to happen. Under <b>What he can do here</b>, tick your '+
+       'chair in <b>or tick the exact items</b>. Tick two chairs and he picks either one.',
+     done:()=>anims.some(a=>a.rule&&((a.rule.onItems&&a.rule.onItems.length)||a.rule.onItem!=null))},
+    {ch:'Your first room', t:'Put him on the chair', el:'view',
+     b:'Now a faint bunbun appears \u2014 that is the <b>ghost</b>, and it shows where the '+
+       'move happens. <b>Drag it onto the chair.</b> No ghost? Press <b>Ghosts: on</b> at '+
+       'the top.',
+     done:()=>false},
+    {ch:'Your first room', t:'Get his size right', el:'ascale',
+     b:'Slide <b>drawn at</b> until he looks right on that chair \u2014 not floating above '+
+       'it, not sunk into it.',
+     done:()=>{ try{ return +$('ascale').value!==100 }catch(e){ return false } }},
+    {ch:'Your first room', t:'Say how long it lasts', el:'anims',
+     b:'Every move has a little <b>plays</b> box \u2014 that is <b>seconds</b>. Type 5 and '+
+       'he does it for five. Leave it blank and he decides: twice through, then a rest.',
+     done:()=>anims.some(a=>+a.dur>0)},
+    {ch:'Your first room', t:'What the move counts as', el:'anims',
+     b:'Each move has a <b>counts as</b> list. That is the pet\u2019s <i>reason</i>: pick '+
+       '<b>eating</b> and a hungry bunbun will walk here by himself. Leave it on '+
+       '<b>the clip</b> and it is just something nice he does.',
+     done:()=>false},
+    {ch:'Your first room', t:'Watch him live in it', el:'preview',
+     b:'Press <b>Act it out</b>. He walks about your room and does your moves, exactly as '+
+       'he will on the real bunbun. Press it again to stop.',
      done:()=>typeof simOn!=='undefined'&&simOn},
-    {t:'Send it to your bunbun', el:'exportPkg',
-     b:'Press <b>\u{1F4E6} save a bunbun package</b> \u2014 that one file holds your whole '+
-       'world. Then open your bunbun\u2019s own page (<b>http://bunbun-XXXX.local/build</b>) '+
-       'and give it the file. That is it!',
+
+    // ============================================================ THE WHOLE HOUSE
+    {ch:'The whole house', t:'He has five rooms', el:'sceneRole',
+     b:'Under <b>This room</b>, this list says <i>which room this is</i>: <b>home</b>, the '+
+       '<b>kitchen</b>, the <b>bathroom</b>, <b>work</b> \u2014 and <b>outside</b>. Switch '+
+       'it and the room you left is kept safe.',
+     done:()=>{ try{ return Object.keys(worldSlots||{}).length>1 }catch(e){ return false } }},
+    {ch:'The whole house', t:'Outside is a real room', el:'sceneRole',
+     b:'<b>outside</b> is the one place with nothing to do \u2014 so he stays as long as he '+
+       'likes. He leaves home by the <b>right</b> and walks in from the <b>left</b>. On the '+
+       'device it is the blue <b>GO OUTSIDE</b> button on the PLAY screen.',
+     done:()=>false},
+    {ch:'The whole house', t:'The map of your house', el:'homeMapBtn',
+     b:'That little <b>\u{1F5FA} map</b> button on the room picture opens all five rooms at '+
+       'once. Click any one to jump straight to it. Kitchen and bathroom sit left, work and '+
+       'outside sit right \u2014 the same way he walks.',
+     done:()=>false},
+    {ch:'The whole house', t:'Put a potty in the bathroom', el:'addBtn',
+     b:'Add a <b>toilet</b>, and a bath if you fancy. Draw its floor first, so he has '+
+       'somewhere to stand, then give the room a move the same way as before.',
+     done:()=>(scene.objects||[]).some(o=>/toilet|potty|loo|tub|bath/i.test(o.object||''))},
+    {ch:'The whole house', t:'How long a job lasts', el:'wk',
+     b:'In the <b>work</b> room only, <b>This room</b> grows one more slider: how long a day '+
+       'at work lasts. Slide it and he stays at the job that long before coming home.',
+     done:()=>false},
+    {ch:'The whole house', t:'Which animal he is', el:'worldAnimal',
+     b:'Still under <b>This room</b>: <b>animal</b>. Pick one and every move swaps to that '+
+       'creature \u2014 rooms, objects and rules all stay. This is what makes him a penguin '+
+       'instead of a bunny.',
+     done:()=>false},
+
+    // ============================================================ THINGS IN THE ROOM
+    {ch:'Things in the room', t:'Click a thing you placed', el:'addBtn',
+     b:'Click any object in the room. A whole panel of buttons appears under '+
+       '<b>This room</b> \u2014 they all belong to <i>that one thing</i>. Nothing here '+
+       'changes the pet.',
+     done:()=>false},
+    {ch:'Things in the room', t:'Its size, turn and depth', el:'osz',
+     b:'<b>size</b> makes it bigger or smaller. <b>turn</b> tips it over. <b>depth</b> says '+
+       'how far back it stands \u2014 leave it on <b>auto</b> and the room works it out.',
+     done:()=>false},
+    {ch:'Things in the room', t:'In front, or behind', el:'oBack',
+     b:'<b>send back</b> and <b>bring front</b> decide what covers what. Put a rug '+
+       '<i>behind</i> a chair and the chair sits on it. <b>fade</b> makes a thing '+
+       'see-through, for glass and windows.',
+     done:()=>false},
+    {ch:'Things in the room', t:'Flip it, walk over it, light it', el:'oflip',
+     b:'<b>flip</b> turns it to face the other way. <b>walk over</b> lets him stand on top '+
+       'of it, like a rug. <b>light</b> turns it into a lamp \u2014 then <b>brightness</b>, '+
+       '<b>spread</b> and <b>bulb height</b> appear to shape the glow.',
+     done:()=>false},
+    {ch:'Things in the room', t:'What this thing is FOR', el:'oPower',
+     b:'The most important row: <b>sit on \u00b7 sleep on \u00b7 bathe in \u00b7 eat at '+
+       '\u00b7 put things on \u00b7 play with</b>. Press <b>sit on</b> for a chair and he '+
+       'can sit there now. '+
+       'If a move says it has nowhere to happen, this row is the fix.',
+     done:()=>false},
+    {ch:'Things in the room', t:'Hide it, lock it, bin it', el:'objDel',
+     b:'The <b>\u{1F441}</b> eye hides a thing without deleting it. The <b>\u{1F512}</b> lock '+
+       'stops you dragging it by accident. <b>remove</b> takes it out for good. Arrow keys '+
+       'nudge a picked thing one pixel at a time.',
+     done:()=>false},
+
+    // ============================================================ THE GROUND
+    {ch:'The ground', t:'Four kinds of shape', el:'zSpot',
+     b:'<b>+ walkable</b> is floor. <b>+ keep out</b> is \u201cpass, but never stop\u201d. '+
+       '<b>+ activity area</b> is a patch you can tie a move to \u2014 a corner for '+
+       'sleeping. <b>+ sky box</b> is next, and it matters.',
+     done:()=>false},
+    {ch:'The ground', t:'Weather needs a sky box', el:'zSky',
+     b:'Rain, clouds and stars only appear <b>inside a sky box</b>. Draw one over your '+
+       'window or the top of the room \u2014 otherwise you press <b>rain</b> and nothing '+
+       'happens at all, and it looks broken.',
+     done:()=>false},
+    {ch:'The ground', t:'Finishing and tidying', el:'zClose',
+     b:'<b>finish</b> closes the shape you are drawing (so does clicking your first dot). '+
+       '<b>show/hide all</b> gets the coloured shapes out of the way. <b>remove</b> deletes '+
+       'the one you picked.',
+     done:()=>false},
+    {ch:'The ground', t:'The list of shapes', el:'zShowAll',
+     b:'Each shape gets a row: <b>on</b> turns it off without losing it, the '+
+       '<b>\u{1F441}</b> hides it, the <b>\u270F\uFE0F</b> lets you move its dots, '+
+       '<b>4 pts</b> is how many corners it has, and <b>\u00d7</b> deletes it.',
+     done:()=>false},
+
+    // ============================================================ WHAT HE CAN DO HERE
+    {ch:'What he can do here', t:'This is the moves panel', el:'anims',
+     b:'<b>What he can do here</b> holds every move in this room, with a row each. '+
+       '<b>on</b> switches one off, <b>\u{1F441}</b> hides its ghost, <b>\u{1F512}</b> locks '+
+       'where you put it.',
+     done:()=>false},
+    {ch:'What he can do here', t:'Where a move may happen', el:'rNeeds',
+     b:'<b>anywhere he walks</b> means he does it on the spot. The list next to it ties it '+
+       'to a <i>kind</i> of thing \u2014 any chair, any bed. <b>or tick the exact items</b> '+
+       'picks the very ones you mean.',
+     done:()=>false},
+    {ch:'What he can do here', t:'Or tie it to a patch of floor', el:'rArea',
+     b:'This list ties a move to an <b>activity area</b> you drew on the ground \u2014 so '+
+       '\u201chaving a nap\u201d can belong to the rug rather than to any object at all.',
+     done:()=>false},
+    {ch:'What he can do here', t:'Where he stands to do it', el:'apFront',
+     b:'<b>in front of it</b> and <b>behind it</b> put him on one side of the thing. '+
+       '<b>centre</b> puts the ghost back. <b>use as his idle</b> makes this the move he '+
+       'does when nothing else is going on.',
+     done:()=>false},
+    {ch:'What he can do here', t:'Make it feel alive', el:'abr',
+     b:'<b>breathing</b> gives a still picture a gentle in-and-out. <b>every N frames</b> is '+
+       'how fast the pictures change \u2014 small number, quick move.',
+     done:()=>false},
+    {ch:'What he can do here', t:'Give him something to say', el:'anims',
+     b:'<b>\u{1F50A} he says</b> is the little line that scrolls along the bottom of the '+
+       'device while he does the move. Leave it empty and he uses his own words.',
+     done:()=>false},
+    {ch:'What he can do here', t:'The mood buttons', el:'baseRow',
+     b:'<b>make him:</b> tries a move right now so you can see it. The '+
+       '<b>\u2665 any time</b> row is feelings \u2014 happy, bored, sleepy \u2014 and those '+
+       'work anywhere, because a feeling needs nothing to sit on.',
+     done:()=>false},
+    {ch:'What he can do here', t:'Send him somewhere', el:'baseRow',
+     b:'<b>send him to:</b> walks him off to another room \u2014 \u{1F37D} eat, \u{1F6C1} '+
+       'bath, \u{1F6BD} potty, \u{1F528} work, \u{1F333} go outside, \u{1F3E0} home. Exactly '+
+       'what the buttons on the real device do.',
+     done:()=>false},
+    {ch:'What he can do here', t:'Bring in one you drew', el:'impAnim',
+     b:'<b>\u2795 Add animations you made</b> loads a move from <b>Animation Creation</b> '+
+       '\u2014 the other page, where you draw your own. '+
+       '<a href="attach_editor.html" target="_blank"><b>Open it \u2192</b></a>',
+     done:()=>false},
+
+    // ============================================================ ENVIRONMENT
+    {ch:'The sky', t:'The sky panel', el:'tod',
+     b:'<b>The sky</b> panel is the weather and the light. <b>time of day</b> slides from morning '+
+       'to the middle of the night. It only changes what <i>you</i> see here \u2014 the real '+
+       'bunbun keeps its own clock.',
+     done:()=>{ try{ return +$('tod').value!==780 }catch(e){ return false } }},
+    {ch:'The sky', t:'Rain, clouds and stars', el:'rn',
+     b:'<b>rain</b>, <b>clouds</b> and <b>stars</b> switch the weather on. Remember: they '+
+       'only show up inside a <b>sky box</b>. No sky box, no weather.',
+     done:()=>false},
+    {ch:'The sky', t:'What sort of clouds', el:'cst',
+     b:'This list changes the shape of them \u2014 thin <b>wisps</b>, fat <b>puffs</b>, a '+
+       'whole <b>bank</b> of them. <b>clouds</b> and <b>stars</b> underneath say how many.',
+     done:()=>false},
+    {ch:'The sky', t:'Lamps and light', el:'lampM',
+     b:'<b>lamps: auto</b> lets them come on by themselves at dusk; press it to force them '+
+       'on or off. <b>light size</b> makes every glow in the room bigger or smaller.',
+     done:()=>false},
+
+    // ============================================================ SIZE AND WATCHING
+    {ch:'Size and Watching', t:'How big he is', el:'master',
+     b:'The <b>Size</b> panel has one slider that matters: <b>how big he is</b>. It sets the '+
+       'pet for this room. If he looks like a giant in one room and normal in another, this '+
+       'is why \u2014 give every room the same number.',
+     done:()=>false},
+    {ch:'Size and Watching', t:'Watching is only for you', el:'pace',
+     b:'Everything in <b>Just for watching</b> changes how the <i>preview</i> runs and '+
+       '<b>none of it reaches the device</b>. <b>bunbun</b> makes him restless so you do not '+
+       'have to wait about.',
+     done:()=>false},
+    {ch:'Size and Watching', t:'Speed up time', el:'day',
+     b:'<b>clock</b> squeezes a whole day into a few minutes, so you can watch morning turn '+
+       'to night. The number next to it fast-forwards everything. <b>lighting</b> turns the '+
+       'shading off if it is in your way.',
+     done:()=>false},
+
+    // ============================================================ SAVING AND SENDING
+    {ch:'Saving and sending', t:'Give your world a name', el:'sceneName',
+     b:'Under <b>This room</b>, type a <b>name</b> — anything you like. It goes on the '+
+       'file you save, so you can find it again tomorrow. This is the step everybody skips '+
+       'and then wishes they had not.',
+     done:()=>((($('sceneName')&&$('sceneName').value)||'').trim().length>0)},
+    {ch:'Saving and sending', t:'Save your work', el:'saveScene',
+     b:'<b>\u{1F4BE} Save scene</b> puts <i>every room</i> in one file on your computer. '+
+       '<b>\u{1F4C1} save room</b> saves just the one you are looking at. '+
+       '<b>\u{1F4C2} Open scene</b> brings it all back.',
+     done:()=>false},
+    {ch:'Saving and sending', t:'Careful with this one', el:'freshScene',
+     b:'<b>\u2728 start fresh</b> empties the room and starts again. It sounds friendly and '+
+       'it is not \u2014 save first. <b>\u21b6</b> and <b>\u21b7</b> undo and redo if you '+
+       'catch it quickly.',
+     done:()=>false},
+    {ch:'Saving and sending', t:'Send it to your bunbun', el:'exportPkg',
+     b:'<b>\u{1F4E6} save a bunbun package</b> \u2014 one file with your whole world in it. '+
+       'Open your bunbun\u2019s page (<b>http://bunbun-XXXX.local/build</b>) and give it that '+
+       'file. A green message tells you it worked.',
+     done:()=>false},
+    {ch:'Saving and sending', t:'The other two exports', el:'exp',
+     b:'The <b>What the device gets</b> panel lists what is about to be sent. '+
+       '<b>Export for the device</b> and <b>Export everything</b> are for grown-ups fixing '+
+       'things \u2014 the raw pieces, not a world. If you are not sure, you want '+
+       '<b>\u{1F4E6} save a bunbun package</b>.',
+     done:()=>false},
+    {ch:'Saving and sending', t:'Seeing it as he sees it', el:'gvBtn',
+     b:'<b>Game view</b> shows the room at the device\u2019s own size. <b>Ghosts</b> hides '+
+       'the faint bunbuns, <b>Circles</b> hides the coloured rings, and '+
+       '<b>\u2759\u2759 running</b> pauses everything so you can look properly.',
+     done:()=>false},
+    {ch:'Saving and sending', t:'That is all of it', el:'tourBtn',
+     b:'Every button, every slider, every heading \u2014 you have seen them all now. Press '+
+       '<b>\u{1F393} Show me how</b> any time and pick whichever bit you want again.',
      done:()=>false},
   ];
-  let at=-1, timer=null, pointed=null;
+
+  let at=-1, timer=null, pointed=null, advTimer=null;
   const coachRoom0=(typeof scene!=='undefined'&&scene)?scene.room:null;
   let coachTouchedRoom=false;
   { const r=document.getElementById('room');
@@ -4414,13 +4948,23 @@ async function restore(raw){
     if(pointed) pointed.classList.remove('coachPoint');
     pointed=id?document.getElementById(id):null;
     if(pointed){ pointed.classList.add('coachPoint');
+      let par=pointed.parentElement;
+      while(par && par!==document.body){
+        const st2=getComputedStyle(par);
+        if(/auto|scroll/.test(st2.overflowY) && par.scrollHeight>par.clientHeight){
+          par.scrollTop = Math.max(0, pointed.offsetTop - par.clientHeight/2); break; }
+        par=par.parentElement;
+      }
       pointed.scrollIntoView({block:'center',behavior:'smooth'}); }
   }
   function show(i){
     at=i;
     if(i>=STEPS.length){ finish(true); return }
     const st=STEPS[i];
-    $c('coachN').textContent=`step ${i+1} of ${STEPS.length}`;
+    const chn=st.ch||'', first=STEPS.findIndex(x=>x.ch===chn),
+          nInCh=STEPS.filter(x=>x.ch===chn).length;
+    $c('coachN').textContent=chn ? `${chn} \u00b7 ${i-first+1} of ${nInCh}`
+                                 : `step ${i+1} of ${STEPS.length}`;
     $c('coachT').textContent=st.t;
     $c('coachB').innerHTML=st.b;
     $c('coachDone').textContent='';
@@ -4430,11 +4974,14 @@ async function restore(raw){
     $c('coachOpen').style.display='block';
     point(st.el);
     clearInterval(timer);
+    clearTimeout(advTimer); advTimer=null;   // only ever ONE advance in flight
+    let already=false; try{ already=!!st.done() }catch(e){}
+    if(already){ $c('coachDone').textContent='\u2705'; return; }   // read it, then press next
     timer=setInterval(()=>{
       let ok=false; try{ ok=!!st.done() }catch(e){}
       if(ok && at===i){ $c('coachDone').textContent='\u2705';
         clearInterval(timer);
-        setTimeout(()=>{ if(at===i) show(i+1) }, 900); }
+        advTimer=setTimeout(()=>{ advTimer=null; if(at===i) show(i+1) }, 900); }
     }, 500);
   }
   function finish(done){
@@ -4442,11 +4989,36 @@ async function restore(raw){
     $c('coachCard').style.display='none';
     $c('coachOpen').style.display='block';
     try{ localStorage.setItem(KEY,'1') }catch(e){}
-    if(done) say('that is the whole thing \u2014 press ? any time you want the steps back');
+    if(done) say('that is the whole thing \u2014 press \u{1F393} Show me how any time');
   }
-  $c('coachNext').onclick=()=>show(at+1);
+  // next moves exactly one step from the card ON SCREEN, and cancels any advance the
+  // tour had already decided on - pressing next used to land on an already-advanced
+  // card and skip two, which at step 4 closed the tour outright
+  $c('coachNext').onclick=()=>{ clearTimeout(advTimer); advTimer=null;
+    if(at<0) { show(0); return; }
+    show(Math.min(at+1, STEPS.length)); };
   $c('coachSkip').onclick=()=>finish(false);
-  $c('coachOpen').onclick=()=>show(0);
+  // pick a chapter rather than restarting from the beginning
+  function chapterMenu(){
+    const seen=[]; STEPS.forEach((st,i)=>{ if(st.ch && !seen.some(x=>x.ch===st.ch))
+      seen.push({ch:st.ch, at:i}); });
+    $c('coachN').textContent='what would you like?';
+    $c('coachT').textContent='Show me how';
+    $c('coachB').innerHTML='<div style="display:flex;flex-direction:column;gap:5px">'+
+      seen.map(x=>'<button data-goto="'+x.at+'" style="text-align:left">'+x.ch+'</button>').join('')+
+      '</div>';
+    $c('coachDone').textContent='';
+    $c('coachCard').style.display='block';
+    $c('coachB').querySelectorAll('[data-goto]').forEach(b=>{
+      b.onclick=()=>show(+b.dataset.goto); });
+    point(null);
+  }
+  // BOTH DOORS LEAD TO THE MENU. A child who comes back is not starting again - they are
+  // stuck on one control, and the menu is the shortest way to it. The first visit still
+  // runs the spine straight through (below).
+  $c('coachOpen').onclick=chapterMenu;
+  {const tb=document.getElementById('tourBtn');
+   if(tb) tb.onclick=()=>{ chapterMenu(); window.scrollTo({top:0,behavior:'smooth'}); };}
   // first visit only: a room nobody has touched yet
   let seen=false; try{ seen=!!localStorage.getItem(KEY) }catch(e){}
   const untouched=!(scene.objects||[]).length && !anims.length;
@@ -4459,9 +5031,11 @@ async function restore(raw){
      top-left, bathroom bottom-left, the main room in the middle, work to the right -
      with a dot that is really him, moving where he really is. -->
 <style>
-  #homeMapBtn{position:absolute;z-index:60;width:34px;height:34px;
-    border-radius:50%;border:2px solid var(--accent);background:rgba(255,255,255,.92);
-    font-size:16px;cursor:pointer;box-shadow:0 3px 10px rgba(0,0,0,.25);padding:0}
+  #homeMapBtn{position:absolute;z-index:60;height:34px;
+    border-radius:17px;border:2px solid var(--accent);background:rgba(255,255,255,.92);
+    font-size:14px;font-weight:700;color:var(--accent);cursor:pointer;
+    box-shadow:0 3px 10px rgba(0,0,0,.25);padding:0 11px;white-space:nowrap;
+    font-family:inherit;letter-spacing:.01em}
   /* a HUD, not a panel: no card, no white - just the rooms floating over the world */
   #homeMap{position:absolute;z-index:59;background:transparent;border:0;padding:0;
     box-shadow:none;display:none;pointer-events:none}
@@ -4470,10 +5044,11 @@ async function restore(raw){
   /* the page styles its big canvas globally; the map's needs its own size back */
   #homeMap{width:258px}
   #homeMapC{width:252px !important;height:232px !important;display:block;max-width:none !important;
+    touch-action:manipulation;pointer-events:auto;cursor:pointer;
     background:transparent;border:0;border-radius:0;box-shadow:none;image-rendering:pixelated;
     padding:0;margin:0}
 </style>
-<button id="homeMapBtn" title="his whole home, and where he is in it">&#128506;</button>
+<button id="homeMapBtn" title="his whole home, and where he is in it">&#128506; rooms</button>
 <div id="homeMap"><canvas id="homeMapC" width="252" height="232"></canvas></div>
 <script>
 (function(){
@@ -4485,7 +5060,8 @@ async function restore(raw){
     {role:'kitchen',  label:'kitchen',  c:0, r:0},
     {role:'bathroom', label:'bathroom', c:0, r:2},
     {role:'',         label:'home',     c:1, r:1},
-    {role:'work',     label:'work',     c:2, r:1},
+    {role:'outside',  label:'outside',  c:2, r:0},
+    {role:'work',     label:'work',     c:2, r:2},
   ];
   const W=78, H=58, GAP=8, NAME=12, OX=6, OY=4;
   const cellX=c=>OX+c*(W+GAP);
@@ -4500,6 +5076,36 @@ async function restore(raw){
     }catch(e){ return null }
   }
   function exists(role){ return role===roleKey() || worldSlots[role]!=null }
+  // TAP A ROOM TO WORK ON IT. The map was a picture; a child pointing at the kitchen
+  // expects to get the kitchen.
+  cv.style.cursor='pointer';
+  cv.title='tap a room to work on it';
+  function cellAt(ev){
+    const r=cv.getBoundingClientRect();
+    const x=(ev.clientX-r.left)/r.width*cv.width;
+    const y=(ev.clientY-r.top)/r.height*cv.height;
+    return CELLS.find(c=> x>=cellX(c.c) && x<=cellX(c.c)+W
+                       && y>=cellY(c.r) && y<=cellY(c.r)+H);
+  }
+  cv.addEventListener('pointermove', ev=>{
+    const c=cellAt(ev);
+    cv.style.cursor = (c && c.role!==roleKey()) ? 'pointer' : 'default';
+  });
+  // EXACTLY the dropdown below, not a journey (Jon: "I want it to be the same as selecting
+  // the room in the drop down below"). It drives the real <select> rather than copying what
+  // that does, so the map cannot drift away from it later - one behaviour, one place.
+  function tapRoom(ev){
+    const c=cellAt(ev);
+    if(!c) return;
+    if(c.role===roleKey()) return;              // already working on that one
+    const sel=$('sceneRole');
+    if(!sel) return;
+    sel.value=c.role||'';
+    sel.dispatchEvent(new Event('change',{bubbles:true}));
+  }
+  // click, not pointerdown: a finger that moves a pixel is still a tap, and this is a
+  // selection rather than a drag
+  cv.addEventListener('click', tapRoom);
   const asked=new Set();
   function thumb(rn){                          // that room's own picture, fetched once
     if(!rn) return null;
@@ -4547,10 +5153,19 @@ async function restore(raw){
     for(const cell of CELLS){
       if(cell.role==='' || !exists(cell.role)) continue;
       const x=cellX(cell.c), y=cellY(cell.r);
+      const cx=x+W/2, cy=y+H/2;
+      const dx=cx-mx, dy=cy-my;
+      // where the segment leaves a box of W x H centred on either end
+      const edge=(ddx,ddy)=>Math.min(
+        Math.abs(ddx)>0.001 ? (W/2)/Math.abs(ddx) : Infinity,
+        Math.abs(ddy)>0.001 ? (H/2)/Math.abs(ddy) : Infinity);
+      const t0=edge(dx,dy), t1=1-edge(dx,dy);
+      if(t1<=t0) continue;                       // the boxes touch: no hall to draw
+      const ax=mx+dx*t0, ay=my+dy*t0, bx=mx+dx*t1, by=my+dy*t1;
       g.strokeStyle='rgba(255,255,255,.5)'; g.lineWidth=5; g.lineCap='round';
-      g.beginPath(); g.moveTo(x+W/2,y+H/2); g.lineTo(mx,my); g.stroke();
+      g.beginPath(); g.moveTo(ax,ay); g.lineTo(bx,by); g.stroke();
       g.strokeStyle='rgba(138,110,230,.75)'; g.lineWidth=2.5;
-      g.beginPath(); g.moveTo(x+W/2,y+H/2); g.lineTo(mx,my); g.stroke();
+      g.beginPath(); g.moveTo(ax,ay); g.lineTo(bx,by); g.stroke();
     }
     for(const cell of CELLS){
       const x=cellX(cell.c), y=cellY(cell.r);

@@ -1617,7 +1617,7 @@ static const char *phaseRoom() {
   // a scene may bring its own room; the pet's phase decides only when it does not
   const char *sr = sceneRoom();
   if (sr && pakFind(sr)) return sr;
-  if (S.phase == PH_BABY) return "rooms/room-baby";
+  if (S.phase == PH_BABY && pakFind("rooms/room-baby")) return "rooms/room-baby";
   if (S.phase == PH_TEEN && pakFind("rooms/room-teen")) return "rooms/room-teen";
   return "rooms/room-adult";
 }
@@ -1829,7 +1829,7 @@ static void freshState() {
   g_namePainted = false;
   memset(&S, 0, sizeof(S));
   S.magic = SAVE_MAGIC; S.version = SAVE_VERSION;
-  S.stage = STAGE_EGG; S.phase = PH_BABY;
+  S.stage = STAGE_EGG; S.phase = PH_ADULT;   // there is only one age now
   S.food = S.fun = S.clean = S.energy = S.health = S.disc = 100;
   S.lights = 1; S.x = 160; S.y = FLOOR_Y;
   g_fx = 160; g_fy = FLOOR_Y;
@@ -1986,8 +1986,10 @@ extern "C" void bunbun_send_away(void) {
 // bunbun_set_age_min above: a rare, deliberate act, and the write is a single byte.
 extern "C" int bunbun_set_species(const char *id) {
   for (int i = 0; i < CHARACTERS_N; i++) {
-    const char *cid = CHARACTERS[i].id[0] ? CHARACTERS[i].id : "bunny";
-    if (!strcasecmp(cid, id)) {
+    // THE BASE PACK HAS NO NAME TO BE SUMMONED BY. It used to answer to "bunny" from
+    // index 0, which shadowed the real bunny pack forever.
+    if (!CHARACTERS[i].id[0]) continue;
+    if (!strcasecmp(CHARACTERS[i].id, id)) {
       if (S.species_idx != (uint8_t)i) {
         S.species_idx = (uint8_t)i;
         saveState();
@@ -2003,7 +2005,9 @@ extern "C" int bunbun_set_species(const char *id) {
 }
 extern "C" const char *bunbun_species_id(void) {
   int i = (S.species_idx < CHARACTERS_N) ? S.species_idx : 0;
-  return CHARACTERS[i].id[0] ? CHARACTERS[i].id : "bunny";
+  // and it reports itself honestly, so /api/system/info can tell the old rabbit from the
+  // new bunny - they are not the same animal and calling both "bunny" hid the difference
+  return CHARACTERS[i].id[0] ? CHARACTERS[i].id : "base";
 }
 
 extern "C" void bunbun_set_age_min(int m) {
@@ -2177,10 +2181,18 @@ static uint8_t  g_whyDoor = 0;       // the reason that started this crossing
 static uint32_t g_visitHomeAt = 0;   // a fruitless side-room visit walks home at this time
 static uint32_t g_roomMinStay = 0;   // Jon: "at least 10 seconds" in a side room, whatever happens
 static uint32_t g_workNextAt = 0;    // the stroll between work reps ends, and the next one starts
+static uint32_t g_wakeUntil  = 0;    // 1 = play the child's waking-up animation as soon as we can
+static uint32_t g_outWishAt  = 0;    // when he next mentions that he fancies the garden
+// WHAT HE DID WHEN HE WOKE UP, kept because it cannot be watched. The web server comes up
+// long after the screen does - by the first HTTP answer he has already walked somewhere and
+// sat down - so the restart animation is over before any probe can see it. This latch is the
+// only way to ask the device what happened at boot.
+static char g_wakeDid[24] = "not yet";
 static bool     g_actIsWork  = false;   // the running startAction() is a work performance
 static int8_t   g_workReps   = 0;       // visit mode: work performances still owed (-1 = a wk session governs)
 static uint8_t  g_doorRole = 0;
 static char     g_doorAct[8] = "";
+static bool     g_outPending = false;   // "and then outside" - the second leg of a trip home
 static uint32_t g_workUntil = 0;     // the scene work session deadline; 0 = no session
 // HIS WORK METER GOES UP AT WORK (Jon: "his work meter should go up while he is at
 // work its not doing that") - only the retired farm script ever paid discipline. A
@@ -2215,7 +2227,8 @@ struct Because {
 static Because g_why[4];
 static uint8_t g_whyN = 0;          // how many are real
 static uint8_t g_whyAt = 0;         // next slot
-static const char *ROOM_WORD[4] = {"the main room", "the kitchen", "the bathroom", "work"};
+static const char *ROOM_WORD[SCENE_ROLE_N] = {"the main room", "the kitchen",
+                                              "the bathroom", "work", "outside"};
 static void say(const char *t);
 static void whyNote(uint8_t cause, const char *act, const char *meter) {
   Because &b = g_why[g_whyAt];
@@ -2228,7 +2241,7 @@ static void whyNote(uint8_t cause, const char *act, const char *meter) {
   g_whyAt = (uint8_t)((g_whyAt + 1) % 4);
   if (g_whyN < 4) g_whyN++;
   // THE ONE THAT MUST BE HEARD, not merely available if asked
-  if (cause == WHY_BLOCKED && g_scOK) {
+  if (cause == WHY_BLOCKED) {          // 1.5: no scene at all is the LOUDEST case, not the quietest
     static uint32_t lastBlk = 0;
     if (millis() - lastBlk > 15000) {
       lastBlk = millis();
@@ -2249,7 +2262,7 @@ static Because *whyLast() { return g_whyN ? &g_why[(g_whyAt + 3) % 4] : nullptr;
 static const char *whySentence(char *buf, size_t n) {
   Because *b = whyLast();
   if (!b || !b->cause) { snprintf(buf, n, "I am just being me"); return buf; }
-  const char *room = (b->roomTo < 4) ? ROOM_WORD[b->roomTo] : "";
+  const char *room = (b->roomTo < SCENE_ROLE_N) ? ROOM_WORD[b->roomTo] : "";
   const bool moved = (b->roomTo != b->roomFrom);
   switch (b->cause) {
     case WHY_METER:
@@ -2261,12 +2274,16 @@ static const char *whySentence(char *buf, size_t n) {
       else snprintf(buf, n, "I was feeling %s", b->meter);
       break;
     case WHY_BUTTON:
-      if (moved) snprintf(buf, n, "you asked me to, so I went to %s", room);
+      if (moved && b->roomTo == SCENE_ROLE_OUTSIDE) snprintf(buf, n, "you asked me to, so I came outside");
+      else if (moved && b->roomFrom == SCENE_ROLE_OUTSIDE && b->roomTo == SCENE_ROLE_MAIN)
+        snprintf(buf, n, "you asked me to, so I came back inside");
+      else if (moved) snprintf(buf, n, "you asked me to, so I went to %s", room);
       else       snprintf(buf, n, "you asked me to!");
       break;
     case WHY_ROLL:     snprintf(buf, n, "I really needed the potty"); break;
     case WHY_SCHEDULE:
-      if (!strcmp(b->act, "sleep")) snprintf(buf, n, "it is night time, so I am off to bed");
+      if (!strcmp(b->act, "wake"))  snprintf(buf, n, "I just woke up!");
+      else if (!strcmp(b->act, "sleep")) snprintf(buf, n, "it is night time, so I am off to bed");
       else if (moved)               snprintf(buf, n, "it was time for %s", room);
       else                          snprintf(buf, n, "it was time to get on with it");
       break;
@@ -2316,20 +2333,39 @@ static void whyFor(uint8_t cause, const char *meter) {
 }
 
 static bool sceneErrandTo(const char *act);
+// WHICH SIDE OF THE MAIN ROOM. Jon: "kitchen and bathroom are off the left of the main
+// room screen, work is off to the right" - and outside joins work on the right.
+static inline bool roleRightOfMain(uint8_t r) {
+  return r == SCENE_ROLE_WORK || r == SCENE_ROLE_OUTSIDE;
+}
 static bool sceneDoorTo(uint8_t tgt, const char *act) {
+  // A ROOM CHANGE OUTRANKS THE ROUTINE, exactly as an errand does (Jon: "when he's on the
+  // potty and I hit home he sits walking on the side of the room for a bit"). sceneErrandTo
+  // has always cleared g_pottySeq for this reason; this door did not. So sending him home
+  // mid-potty left the sequence standing, and the moment his current action ended the
+  // routine fired its hand-wash errand INTO the home trip - two owners, two targets, and a
+  // pet treading water by the door until one of them timed out.
+  // The routine's own legs hold g_pottyLock while they dispatch, so they are untouched.
+  if (!g_pottyLock) g_pottySeq = 0;
   // no side-to-side teleports: work to kitchen goes THROUGH the main room. The act
   // rides along; the errand re-runs at main's middle and routes the second leg.
   if (g_scCurRole != SCENE_ROLE_MAIN && tgt != SCENE_ROLE_MAIN) tgt = SCENE_ROLE_MAIN;
+  // A DOOR WITH NO ERRAND BEHIND IT still has a reason (outside is a place, not an act).
+  // Without this the pet cited his last errand from wherever he had since been taken.
+  if (g_whyNext && (!act || !act[0])) {
+    whyNote(g_whyNext, "", g_whyNextMeter);
+    { Because *b = whyLast(); if (b) b->roomTo = tgt; }
+    g_whyNext = WHY_NONE; g_whyNextMeter[0] = 0;
+  }
   g_performBehind = false; g_settleUntil = 0; g_watching = false;
   // kitchen is left of the main room; bathroom and work are right. Leaving a side room
   // always heads back toward the main room's side.
   // Jon: "kitchen and bathroom are off the left of the main room screen, work is off
   // to the right"
-  bool exitLeft;
-  if (g_scCurRole == SCENE_ROLE_MAIN)
-    exitLeft = (tgt == SCENE_ROLE_KITCHEN || tgt == SCENE_ROLE_BATH);
-  else
-    exitLeft = (g_scCurRole == SCENE_ROLE_WORK);   // side rooms exit toward the main room
+  // leaving home, head for the target's side; leaving a side room, head back the way
+  // he came - which is the mirror of the side that room sits on
+  bool exitLeft = (g_scCurRole == SCENE_ROLE_MAIN) ? !roleRightOfMain(tgt)
+                                                   :  roleRightOfMain(g_scCurRole);
   // ROOM SPACE, not panel space: the builder's rooms are 320 wide (SCENE_W is the
   // 240px panel the room is drawn onto at 0.75). The doors live at the room's edges.
   const int ROOMSPACE_W = 320;
@@ -2368,18 +2404,29 @@ extern "C" void bunbun_brain_snapshot(char *buf, int len) {
     "\"visit\":%d,\"door\":%d,\"action\":%d,\"settle_ms\":%ld,"
     "\"x\":%d,\"y\":%d,\"anim\":\"%s\",\"potty\":%d,\"work\":%d,"
     "\"food\":%d,\"fun\":%d,\"energy\":%d,\"clean\":%d,"
-    "\"floorN\":%d,\"props\":%d,\"anims\":%d,\"sick\":%d}",
+    "\"floorN\":%d,\"props\":%d,\"anims\":%d,\"sick\":%d,"
+    "\"worldAnimal\":\"%s\",\"petAnimal\":\"%s\",\"wake\":\"%s\"}",
     (int)g_scCurRole,
-    (g_scRoleAvail[0]?1:0)|(g_scRoleAvail[1]?2:0)|(g_scRoleAvail[2]?4:0)|(g_scRoleAvail[3]?8:0),
+    (g_scRoleAvail[0]?1:0)|(g_scRoleAvail[1]?2:0)|(g_scRoleAvail[2]?4:0)|(g_scRoleAvail[3]?8:0)|
+    (g_scRoleAvail[4]?16:0),
     S.lights?1:0, g_tx, g_ty, (int)g_visit, (int)g_doorTrip, g_action?1:0,
     (long)(millis()<g_settleUntil ? (g_settleUntil-millis()) : 0),
     (int)S.x, (int)S.y, g_anim?g_anim->key:"?", (int)g_pottySeq, g_workUntil?1:0,
     (int)S.food, (int)S.fun, (int)S.energy, (int)S.clean,
-    (int)g_scFloorN, (int)g_scPropN, (int)g_scAnimN, (int)S.sick);
+    (int)g_scFloorN, (int)g_scPropN, (int)g_scAnimN, (int)S.sick,
+    g_scAnimal,
+    (S.species_idx < CHARACTERS_N && CHARACTERS[S.species_idx].id)
+      ? CHARACTERS[S.species_idx].id : "",
+    g_wakeDid);
 }
 // /api/debug/act - the remote lever the door-walk tests (and future layers) need.
 // Set from the web task, consumed on the game task the next tick.
 static char g_dbgAct[8] = "";
+// A panel can only be opened by a finger, which makes every screen past the room
+// invisible from a bench. Set here, consumed by the UI task - drawing from the HTTP
+// task would race the renderer for the glass.
+static volatile bool g_dbgOpenPlay = false;
+static volatile bool g_dbgOutside = false;
 extern "C" void bunbun_debug_act(const char *a) {
   // stat pokes apply IMMEDIATELY (the queued version raced the next meal - "it says
   // he is full"); everything that moves him still goes through think()'s consumption
@@ -2388,6 +2435,10 @@ extern "C" void bunbun_debug_act(const char *a) {
   // was swallowed with ok:true and nothing happened, with no route to the MEDS button.
   if (a && !strcmp(a, "meds")) { S.sick = 0; S.health = min(100.0f, S.health + 35); return; }
   if (a && !strcmp(a, "wake")) { S.lights = 1; g_sleepPending = 0; g_nightSleep = false; return; }
+  if (a && !strcmp(a, "treats")) { g_treatsOutMs = millis(); return; }   // brings him home
+  if (a && !strcmp(a, "lights")) { S.lights = S.lights ? 0 : 1; return; }
+  if (a && !strcmp(a, "play")) { g_dbgOpenPlay = true; return; }   // open the PLAY shelf
+  if (a && !strcmp(a, "out"))  { g_dbgOutside = true; return; }   // the row, without a finger
   strncpy(g_dbgAct, a ? a : "", sizeof(g_dbgAct) - 1);
   g_dbgAct[sizeof(g_dbgAct) - 1] = 0;
 }
@@ -2979,6 +3030,86 @@ static void think(float dt) {
   // The job drives his position and animation itself, so ordinary behaviour must stand down
   // for the duration — otherwise setAnim() runs every frame and the sequence never shows.
   if (g_workStage) return;
+  // A COMMAND IS NEVER SWALLOWED IN SILENCE (rehearsal M10/0.3). The act used to be
+  // consumed far below, downstream of the away, lights-out and sick gates, so on a
+  // poorly or absent pet it was set and never cleared - and the lights-out branch is
+  // guarded on !g_dbgAct[0], which locked bedtime for good while every request still
+  // answered ok:true. Anything that cannot be done is answered here and cleared.
+  if (g_dbgAct[0]) {
+    if (bunAway()) {
+      g_dbgAct[0] = 0;
+      say("bunbun is not home right now - put treats out and he will come back");
+    } else if (S.sick) {
+      g_dbgAct[0] = 0;
+      say("bunbun is too poorly for that - he needs medicine first");
+    }
+  }
+  // AND THE DEVICE SAYS WHOSE WORLD THIS IS (rehearsal M5+M11). A world made for one
+  // animal, worn by another, used to be admitted only by a line on the import page that
+  // scrolled away seconds later. Now the device itself says it - once a minute at most,
+  // and only while the mismatch stands, so it stops the moment the right animal arrives.
+  if (g_scAnimal[0]) {
+    const int ci = (S.species_idx < CHARACTERS_N) ? S.species_idx : 0;
+    const char *mine = CHARACTERS[ci].id ? CHARACTERS[ci].id : "";
+    if (strcmp(g_scAnimal, mine) != 0) {
+      static uint32_t saidMix = 0;
+      if (!saidMix || millis() - saidMix > 60000) {
+        saidMix = millis();
+        char line[96];
+        snprintf(line, sizeof(line),
+                 "this world was made for the %s - give bunbun the %s so he fits in it",
+                 g_scAnimal, g_scAnimal);
+        say(line);
+      }
+    }
+  }
+  // HELLO AGAIN. The waking-up animation the child authored, once, on the first tick
+  // where a scene is loaded and nothing else owns him. No mark needed - it happens
+  // where he stands, in the middle of his own room.
+  if (g_wakeUntil == 1) {
+    // while it is still waiting, the latch shows WHY it is waiting - the moment is far too
+    // early to watch over HTTP, so a gate that never opens has to explain itself
+    snprintf(g_wakeDid, sizeof(g_wakeDid), "gate o%d a%d v%d d%d",
+             g_scOK ? 1 : 0, g_action ? 1 : 0, (int)g_visit, (int)g_doorTrip);
+  }
+  if (g_wakeUntil == 1 && g_scOK && !g_action && g_visit < 0 && !g_doorTrip) {
+    g_wakeUntil = 0;
+    const char *k = sceneActAnim("wake");
+    snprintf(g_wakeDid, sizeof(g_wakeDid), "%s", k ? k : "none-idled");
+    if (k) {
+      const AnimDef *ad = findAnim(k);
+      float secs = 2.0f * (ad->frames / (ad->fps > 0.1f ? ad->fps : 7.0f)) + 1.0f;
+      for (int i = 0; i < g_scAnimN; i++)
+        if (!strcmp(g_scAnim[i].key, k) && g_scAnim[i].dur > 0.1f) { secs = g_scAnim[i].dur; break; }
+      whyNote(WHY_SCHEDULE, "wake", "");
+      startAction(k, secs);
+      return;
+    }
+    // no waking-up animation authored: the ordinary idle, which is what he always did
+  }
+  // HE ASKS TO GO OUT. Outside holds him but has no act to summon him, so without this the
+  // room could only ever be reached by a grown-up pressing a button - the pet would never
+  // once express a preference about the one place he is free to linger.
+  if (g_scRoleAvail[SCENE_ROLE_OUTSIDE] && S.lights && !S.sick && !g_action &&
+      !g_doorTrip && g_visit < 0 && g_pottySeq == 0 && !g_sleepPending &&
+      sceneRoomHolds(g_scCurRole) && g_scCurRole != SCENE_ROLE_OUTSIDE) {
+    if (!g_outWishAt) g_outWishAt = millis() + 90000 + esp_random() % 120000;
+    else if (millis() >= g_outWishAt) {
+      g_outWishAt = millis() + 180000 + esp_random() % 180000;
+      char line[64];
+      snprintf(line, sizeof(line), "%s wants to go outside", petName());
+      say(line);
+    }
+  }
+  // the child hears about a room that was too big to load (rehearsal S7)
+  if (g_scTooBig) {
+    static uint32_t saidBig = 0;
+    if (!saidBig || millis() - saidBig > 60000) {
+      saidBig = millis();
+      say("that room is too big for bunbun - take a few things out and send it again");
+    }
+    g_scTooBig = false;
+  }
   // A RUNNING action gets the stage even during dance mode — this is what lets a mid-party
   // cuddle actually show its animation instead of being overwritten by danceStep every frame.
   // danceBegin() clears stale actions when the party starts, so the only actions that reach
@@ -3004,16 +3135,7 @@ static void think(float dt) {
         g_pottySeq = 0;
       }
       if (g_workUntil || g_workReps > 0) {
-        // the child hears about a room that was too big to load (rehearsal S7)
-  if (g_scTooBig) {
-    static uint32_t saidBig = 0;
-    if (!saidBig || millis() - saidBig > 60000) {
-      saidBig = millis();
-      say("that room is too big for bunbun - take a few things out and send it again");
-    }
-    g_scTooBig = false;
-  }
-  if (g_dbgAct[0]) { g_workUntil = 0; g_workReps = 0; }  // a command outranks work
+        if (g_dbgAct[0]) { g_workUntil = 0; g_workReps = 0; }  // a command outranks work
         else if ((g_workUntil ? millis() < g_workUntil : g_workReps > 0) &&
             (sceneActMark("work") >= 0 || sceneActAnim("work"))) {
           // HE WALKS HIS ROUNDS (Jon: "shouldnt he walk around?"): back-to-back reps of
@@ -3025,7 +3147,9 @@ static void think(float dt) {
         }
         if (g_workUntil) { g_workUntil = 0; say("work is all done!"); }
       }
-      if (g_scCurRole != SCENE_ROLE_MAIN && !g_doorTrip) {
+      // outside holds him like home does: no errand is over, so there is nothing to walk
+      // back from. Only a command for another room, or the potty, takes him out of it.
+      if (!sceneRoomHolds(g_scCurRole) && !g_doorTrip) {
         if (millis() < g_roomMinStay) {          // the visit's minimum stay first
           if (!g_visitHomeAt) g_visitHomeAt = g_roomMinStay;
           g_wanderT = 2.0f;
@@ -3058,7 +3182,7 @@ static void think(float dt) {
       // lights-out used to bed him wherever it caught him. If the room has a sleep
       // spot and he is not on it, he walks there first; sleep takes him on arrival.
       {
-        int sm = sceneActMark("sleep");
+        int sm = S.sick ? -1 : sceneActMark("sleep");   // 0.2: not while poorly
         if (sm >= 0) {
           const int dx = g_scBun[sm].x - (int)g_fx, dy = g_scBun[sm].y - (int)g_fy;
           whyFor(WHY_SCHEDULE, "energy");
@@ -3277,8 +3401,9 @@ static void think(float dt) {
       }
       if (g_workUntil) { g_workUntil = 0; say("work is all done!"); }
     }
-    // an act in another room is over: walk home - after the visit's minimum stay
-    if (g_scCurRole != SCENE_ROLE_MAIN && !g_doorTrip) {
+    // an act in another room is over: walk home - after the visit's minimum stay. Outside
+    // is not an errand, so he stays there as long as he likes.
+    if (!sceneRoomHolds(g_scCurRole) && !g_doorTrip) {
       if (millis() < g_roomMinStay) {
         if (!g_visitHomeAt) g_visitHomeAt = g_roomMinStay;
         g_wanderT = 2.0f;
@@ -3301,7 +3426,7 @@ static void think(float dt) {
   // stay served - he walks home. The action-end and settle-end paths already do
   // this, but a stay that ends in a wander had NO exit; this tick is the guarantee
   // that no state whatsoever can strand him in a side room.
-  if (g_scCurRole != SCENE_ROLE_MAIN && !g_doorTrip && g_visit < 0 && g_tx < 0 &&
+  if (!sceneRoomHolds(g_scCurRole) && !g_doorTrip && g_visit < 0 && g_tx < 0 &&
       !g_action && !g_workUntil && g_workReps <= 0 && !g_sleepPending &&
       g_pottySeq == 0 && millis() >= g_roomMinStay) {
     sceneDoorTo(SCENE_ROLE_MAIN, "");
@@ -3408,7 +3533,7 @@ static void think(float dt) {
       // A VISIT IS A VISIT (Jon: "when he goes to work or kitchen, he needs to stay in
       // there for at least 10 seconds"): even a 3-second meal keeps him in the room a
       // human-visible while before the walk home.
-      g_roomMinStay = (g_scCurRole != SCENE_ROLE_MAIN) ? millis() + 10000 + esp_random() % 4000 : 0;
+      g_roomMinStay = !sceneRoomHolds(g_scCurRole) ? millis() + 10000 + esp_random() % 4000 : 0;
       // THROUGH THE MIDDLE (Jon: "when he transitions from room to room he needs to
       // go to the middle of each room and then do the action. the same for coming
       // back"): entering at the edge, he first walks to the room's middle - the act
@@ -3453,7 +3578,14 @@ static void think(float dt) {
           g_visitHomeAt = millis() + 20000 + esp_random() % 15000;
           g_wanderT = 3.0f;
         }
+      } else if (g_outPending && g_scCurRole == SCENE_ROLE_MAIN) {
+        // he came home only to carry on outside: the second leg, from the middle, so it
+        // reads as walking through the house and out rather than a teleport at the door
+        g_outPending = false;
+        whyFor(WHY_BUTTON, "");
+        sceneDoorTo(SCENE_ROLE_OUTSIDE, "");
       } else {
+        g_outPending = false;
         g_wanderT = 6.0f;                    // home again, back to his own rhythm
       }
       return;
@@ -3759,7 +3891,7 @@ static void simulate(float dt) {
   if (S.stage == STAGE_HATCHING && g_animT >= 5.0f) {
     S.stage = STAGE_ALIVE; S.ageMs = 0;
     S.x = 160; S.y = FLOOR_Y; g_fx = 160; g_fy = FLOOR_Y;
-    g_anim = findAnim("baby_sit"); g_animT = 0;
+    g_anim = findAnim("idle"); g_animT = 0;   // baby-sit art no longer exists anywhere
     sfxHatch();
     say("bunbun hatched!");
     saveState();
@@ -3780,7 +3912,8 @@ static void simulate(float dt) {
     // own - buttons only.
     if (g_scRoleAvail[SCENE_ROLE_BATH]) {
       if (!g_action && !g_doorTrip && !g_sleepPending && g_visit < 0 && g_tx < 0 &&
-          g_scCurRole == SCENE_ROLE_MAIN) {
+          !S.sick &&                       // a poorly pet is not sent on errands (0.2)
+          sceneRoomHolds(g_scCurRole)) {   // from home OR outside: both are places he lingers
         g_poopDue = 0;
         Serial.println("nature calls: off to the bathroom");
         g_pottySeq = 1;
@@ -4298,6 +4431,10 @@ static void updateWork(float dt) {
 // the two places a care verb succeeds; every refusal path returns before them.
 static bool g_menuActed = false;
 
+// the care gate refused, but there was still a door to open: the games are drawn
+// unavailable and say so when tapped, and only the outdoors is live
+static bool g_gamesLocked = false;
+static bool outsideRowOn();          // the shelf itself is defined much further down
 static void runMenu(int i) {
   g_menuActed = false;
   // Refuse everything while paused, and SAY so. Paused froze the animation clock and think(),
@@ -4404,9 +4541,11 @@ static void runMenu(int i) {
       // Jon 8/11: no games until the pet is reasonably cared for - play is
       // earned, not the escape from a hungry/dirty/sick bunny. Fun is the
       // one meter NOT gated (it is what play refills).
-      if (S.sick || S.food < 35 || S.clean < 35 || S.energy < 30 || g_love < 30) {
+      g_gamesLocked = (S.sick || S.food < 35 || S.clean < 35 || S.energy < 30 || g_love < 30);
+      if (g_gamesLocked && !outsideRowOn()) {
         sfxNo(); say("take care of bunbun first, then play"); return;
       }
+      if (g_gamesLocked) say("take care of bunbun first, then play");
       g_gameRoster = true; drawGameRoster(); return;
     case 2: if (sceneActive() && !sceneCanDo("bath") && !sceneCanDo("wash")) {
               sfxNo(); whyNote(WHY_BLOCKED, "bath", "");
@@ -10340,6 +10479,16 @@ static void tttSparkles() {
 // Rows 44 / 84 / 124 / 164 / 204 / 244, last one bottoming at 279; the hint line sits at
 // 296 and ends at 304, 16px clear of the panel's bottom edge.
 static const int GR_X = 16, GR_W = 208, GR_H = 36, GR_TOP = 44, GR_GAP = 4;
+// GO OUTSIDE rides at the top of the play shelf (Jon), in its own light blue so it never
+// reads as one of the games. It only exists when there is an outside room to go to, and it
+// says the opposite thing when he is already out there.
+static const int GR_OUT_H = 28;
+static const uint16_t C_OUTSIDE = 0xAEDF;        // light blue, unlike any game row
+static bool outsideRowOn();                      // defined once the roles are known
+static void outsideToggle();                     // what the row does, finger or bench
+static inline int grGamesTop() { return outsideRowOn() ? GR_TOP + GR_OUT_H + GR_GAP : GR_TOP; }
+static inline int grGap()      { return outsideRowOn() ? 2 : GR_GAP; }
+static inline int grRowH()     { return outsideRowOn() ? 34 : GR_H; }
 struct GameEntry { const char *label; bool ready; };
 static const GameEntry GAME_ROSTER[] = {
     {"TIC-TAC-TOE", true},
@@ -10526,23 +10675,53 @@ static bool titleBarBackHit(int x, int y) {
 #include "burrow.h"    // Burrow Blocks
 #include "crossing.h"  // Carrot Crossing
 
+bool outsideRowOn() { return g_scRoleAvail[SCENE_ROLE_OUTSIDE]; }
+// What the light-blue row does. STOP WHAT HE IS DOING (Jon): a destination outranks
+// whatever he had decided for himself, exactly as a room's act does. From a side room it
+// is two journeys, because a door only ever leads home.
+static void outsideToggle() {
+  g_action = false; g_tx = g_ty = -1; g_visit = -1;
+  g_settleUntil = 0; g_wanderT = 0;
+  g_workUntil = 0; g_workReps = 0; g_workNextAt = 0;
+  whyFor(WHY_BUTTON, "");
+  if (g_scCurRole == SCENE_ROLE_OUTSIDE) {
+    g_outPending = false;
+    sceneDoorTo(SCENE_ROLE_MAIN, "");
+    say("coming back inside");
+  } else if (g_scCurRole == SCENE_ROLE_MAIN) {
+    g_outPending = false;
+    sceneDoorTo(SCENE_ROLE_OUTSIDE, "");
+  } else {
+    g_outPending = true;                  // home first; the arrival carries on outside
+    sceneDoorTo(SCENE_ROLE_MAIN, "");
+  }
+}
 static void drawGameRoster() {
   tft.fillScreen(C_BONE);
-  drawTitleBar("GAMES", "\x1B ROOM", nullptr, 510);
+  drawTitleBar("PLAY", "\x1B ROOM", nullptr, 510);
+  if (outsideRowOn()) {
+    const bool out = (g_scCurRole == SCENE_ROLE_OUTSIDE);
+    tft.fillRoundRect(GR_X, GR_TOP, GR_W, GR_OUT_H, 7, C_OUTSIDE);
+    tft.drawRoundRect(GR_X, GR_TOP, GR_W, GR_OUT_H, 7, C_INK);
+    tft.setTextColor(C_INK, C_OUTSIDE);
+    tft.drawString(out ? "COME HOME" : "GO OUTSIDE", GR_X + 4, GR_TOP + 7, 2);
+  }
   for (int i = 0; i < GAME_ROSTER_N; i++) {
-    int y = GR_TOP + i * (GR_H + GR_GAP);
-    uint16_t bg = GAME_ROSTER[i].ready ? C_ORANGE : C_PAPER;
-    tft.fillRoundRect(GR_X, y, GR_W, GR_H, 7, bg);
-    tft.drawRoundRect(GR_X, y, GR_W, GR_H, 7, C_INK);
-    tft.setTextColor(GAME_ROSTER[i].ready ? C_PAPER : C_INK_SOFT, bg);
+    int y = grGamesTop() + i * (grRowH() + grGap());
+    const bool live = GAME_ROSTER[i].ready && !g_gamesLocked;
+    uint16_t bg = live ? C_ORANGE : C_PAPER;
+    tft.fillRoundRect(GR_X, y, GR_W, grRowH(), 7, bg);
+    tft.drawRoundRect(GR_X, y, GR_W, grRowH(), 7, C_INK);
+    tft.setTextColor(live ? C_PAPER : C_INK_SOFT, bg);
     tft.drawString(GAME_ROSTER[i].label, GR_X + 4, y + 10, 2);
     // The right column. Every one of these numbers was already sitting in RAM at boot; the
     // shelf just never said them, so a kid's best run lived only inside the game that owned
     // it. Tic-tac-toe counts WINS rather than points, and says so — a "best" on a game with
     // no score would be a lie in a column the whole point of which is honesty.
-    tft.setTextColor(GAME_ROSTER[i].ready ? C_PAPER : C_INK_SOFT, bg);
+    tft.setTextColor(live ? C_PAPER : C_INK_SOFT, bg);
     char r[16] = "";
     if (!GAME_ROSTER[i].ready)  strcpy(r, "soon");
+    else if (g_gamesLocked)     strcpy(r, "later");
     else if (i == 0) { if (g_tttKidWins) snprintf(r, sizeof(r), "wins %u", g_tttKidWins); }
     else {
       uint16_t hi = i == 1 ? g_snkHigh : i == 2 ? g_bbHigh
@@ -10555,7 +10734,8 @@ static void drawGameRoster() {
   // MAXIMILIANUS's fun bar" = 32 ch = 192px, well inside the 232px budget.
   {
     char h[48];
-    fmtPet(h, sizeof(h), "games fill %s's fun bar");
+    if (g_gamesLocked) fmtPet(h, sizeof(h), "look after %s first - the garden is open");
+    else               fmtPet(h, sizeof(h), "games fill %s's fun bar");
     tft.setTextColor(C_INK_SOFT, C_BONE);
     tft.drawCentreString(h, UI_W / 2, 296, 1);
   }
@@ -10566,9 +10746,10 @@ static void drawGameRoster() {
 static int gameRosterHit(int x, int y) {
   if (titleBarBackHit(x, y)) return 100;
   if (x < GR_X || x >= GR_X + GR_W) return -1;
+  if (outsideRowOn() && y >= GR_TOP && y < GR_TOP + GR_OUT_H) return 200;   // the outdoors
   for (int i = 0; i < GAME_ROSTER_N; i++) {
-    int ry = GR_TOP + i * (GR_H + GR_GAP);
-    if (y >= ry && y < ry + GR_H) return i;
+    int ry = grGamesTop() + i * (grRowH() + grGap());
+    if (y >= ry && y < ry + grRowH()) return i;
   }
   return -1;
 }
@@ -11165,6 +11346,9 @@ void setup() {
   // Needs the index, so it runs here rather than inside pakBegin(); the walkable model reads
   // it from the first frame drawn onward.
   charMeasureBodies();
+  // The stand-in outside only exists if the art for it was packed (Jon: default to the
+  // meadow). Checked here rather than in scene.h because the index is what answers it.
+  g_scMeadow = (pakFind("rooms/room-meadow") != nullptr);
   // A UNIT MUST KNOW HOW LOUD IT IS (bench, 2026-08-09: a freshly flashed
   // board made no sound at all). hostSetMusicVolume was only ever called
   // when a human tapped the SND panel — its own comment says "boots never
@@ -11200,6 +11384,11 @@ void setup() {
   // The main scene loads fresh anyway, so he simply starts at its centre.
   S.x = 160; S.y = FLOOR_Y;                       // centre of the 320-wide room
   g_fx = (float)S.x; g_fy = (float)S.y;
+  // AND HE DOES SOMETHING WHEN HE COMES BACK (Jon: "have the user create a restart
+  // animation which we can default to being just idle"). A child can mark any of
+  // their animations "waking up (when he restarts)"; if they have not, this stays
+  // zero and the ordinary idle plays, which is exactly the old behaviour.
+  g_wakeUntil = 1;                                // armed; think() starts it once the scene is up
   // An existing pet that predates naming gets asked once, rather than being stuck as "bunbun"
   // with no way to reach the screen.
   if (!g_petName[0]) { g_nameAsk = true; g_namePainted = false; }
@@ -11331,6 +11520,17 @@ void loop() {
   float dt = (now - last) / 1000.0f; if (dt > 0.25f) dt = 0.25f;
   last = now;
   if (!g_assets) { delay(500); return; }
+  // the bench's finger. It opens the shelf PAST the care gate on purpose: the gate is
+  // about whether play is earned, and this lever exists to look at the shelf itself.
+  if (g_dbgOpenPlay) {
+    g_dbgOpenPlay = false;
+    if (!g_gameRoster) { g_careSheet = g_sleepSheet = false; g_gameRoster = true; drawGameRoster(); }
+  }
+  if (g_dbgOutside) {
+    g_dbgOutside = false;
+    if (g_gameRoster) { g_gameRoster = false; redrawRoomChrome(); }
+    outsideToggle();
+  }
 
   // W-072: put the device back in the state it held before the update (Jon:
   // "updates should put devices back in the same state"). FULL restore now -
@@ -12373,6 +12573,13 @@ void loop() {
         g_gameRoster = false;
         tttFlushWins();
         redrawRoomChrome();
+      } else if (hit == 200) {                   // GO OUTSIDE / COME HOME
+        uiTick();
+        g_gameRoster = false;
+        redrawRoomChrome();
+        outsideToggle();
+      } else if (hit >= 0 && hit < GAME_ROSTER_N && GAME_ROSTER[hit].ready && g_gamesLocked) {
+        sfxNo(); say("take care of bunbun first, then play");
       } else if (hit >= 0 && hit < GAME_ROSTER_N && GAME_ROSTER[hit].ready) {
         uiTick();
         g_gameRoster = false;

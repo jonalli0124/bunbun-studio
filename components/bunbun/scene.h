@@ -41,12 +41,20 @@
 #define SCENE_ROLE_KITCHEN  1
 #define SCENE_ROLE_BATH     2
 #define SCENE_ROLE_WORK     3
-static const char *SCENE_ROLE_PATHS[4] = {
+#define SCENE_ROLE_OUTSIDE  4
+#define SCENE_ROLE_N        5
+// A ROOM HE STAYS IN. Main and outside hold him; the other three are errands he walks home
+// from. Everything that used to ask "is this the main room?" to decide whether he should be
+// heading home asks this instead.
+static inline bool sceneRoomHolds(uint8_t r) {
+  return r == SCENE_ROLE_MAIN || r == SCENE_ROLE_OUTSIDE;
+}
+static const char *SCENE_ROLE_PATHS[SCENE_ROLE_N] = {
   SCENE_PATH, "/spiffs/scene-kitchen.json", "/spiffs/scene-bathroom.json",
-  "/spiffs/scene-work.json"};
+  "/spiffs/scene-work.json", "/spiffs/scene-outside.json"};
 static uint8_t g_scCurRole  = SCENE_ROLE_MAIN;   // which room he is IN
 static uint8_t g_scLoadRole = SCENE_ROLE_MAIN;   // which file sceneLoad() reads
-static bool    g_scRoleAvail[4] = {false, false, false, false};
+static bool    g_scRoleAvail[SCENE_ROLE_N] = {false, false, false, false, false};
 static int16_t g_scWorkMin = 0;                  // "work lasts [N] minutes"; 0 = one visit
 // WHICH ACTS EACH ROOM OFFERS - the routing table behind "actions should only happen
 // in the room where they are available" (Jon). Filled by sceneRolesScan from each
@@ -57,7 +65,8 @@ static int16_t g_scWorkMin = 0;                  // "work lasts [N] minutes"; 0 
 #define SCENE_ACT_TOILET 8
 #define SCENE_ACT_WORK   16
 #define SCENE_ACT_SLEEP  32
-static uint8_t g_scRoleActs[4] = {0, 0, 0, 0};
+#define SCENE_ACT_WAKE   64
+static uint8_t g_scRoleActs[SCENE_ROLE_N] = {0, 0, 0, 0, 0};
 static int sceneActBit(const char *act) {
   if (!act || !act[0]) return 0;
   if (!strcmp(act, "eat"))    return SCENE_ACT_EAT;
@@ -66,14 +75,19 @@ static int sceneActBit(const char *act) {
   if (!strcmp(act, "toilet")) return SCENE_ACT_TOILET;
   if (!strcmp(act, "work"))   return SCENE_ACT_WORK;
   if (!strcmp(act, "sleep"))  return SCENE_ACT_SLEEP;
+  if (!strcmp(act, "wake"))   return SCENE_ACT_WAKE;
   return 0;
 }
+// set once at boot, from main.cpp: the pak has a meadow to stand in
+static bool g_scMeadow = false;
+static const char SCENE_DEFAULT_OUTSIDE[] =
+  "{\"name\":\"outside\",\"room\":\"rooms/room-meadow\"}";
 static void sceneRolesScan() {
-  for (int r = 0; r < 4; r++) {
+  for (int r = 0; r < SCENE_ROLE_N; r++) {
     g_scRoleActs[r] = 0;
     FILE *f = fopen(SCENE_ROLE_PATHS[r], "rb");
-    g_scRoleAvail[r] = (f != nullptr);
-    if (!f) continue;
+    g_scRoleAvail[r] = (f != nullptr) || (r == SCENE_ROLE_OUTSIDE && g_scMeadow);
+    if (!f) continue;      // the default outside declares no acts, so nothing to scan
     fseek(f, 0, SEEK_END);
     long n = ftell(f);
     fseek(f, 0, SEEK_SET);
@@ -150,6 +164,11 @@ static bool      g_scTooBig = false;      // a scene file exists but is over SCE
 static uint16_t  g_scGen = 0;
 static char      g_scName[24] = "";
 static char      g_scRoom[32] = "";   // "rooms/room-farm", if the scene names one
+// WHICH ANIMAL THIS WORLD WAS MADE FOR. The tool has always written it and the firmware
+// has never read it - 0 hits in this file and in main.cpp - so a croc world landed on a
+// penguin with nothing anywhere saying so. Worse since the idle began shipping: he now
+// stands in the croc's own art with the penguin's walks, which reads as intentional.
+static char      g_scAnimal[16] = "";
 
 // ---- WHERE THE VISITING CAT MAY SLEEP ----
 // The builder lets a child drop `cat-sleep` marks — on the chair, on a shelf, on the floor by the
@@ -216,7 +235,7 @@ struct SceneLamp {
   // answer. INT16_MIN = an older scene.json; fall back to the ink bottom as before.
   int16_t anchorY;
 };
-static SceneLamp g_scLamp[4];
+static SceneLamp g_scLamp[SCENE_ROLE_N];
 static int       g_scLampN = 0;
 
 
@@ -322,6 +341,7 @@ static uint8_t g_scCelN = 0;
 static bool     g_scHasEnv  = false;
 
 static bool sceneLoad();
+static bool sceneParseJson(const char *json);   // a scene from a string, not a file
 static int  g_scTries = 0;
 static uint32_t g_scNextTry = 0;
 
@@ -369,11 +389,17 @@ static bool sceneLoad() {
   g_scEnv = SCENE_ENV_DEFAULT; g_scHasEnv = false; g_scCatN = 0; g_scFloorN = 0;
   g_scSkyN = 0; g_scCelN = 0;
   g_scRoom[0] = 0;      // the one field this used to forget, leaving a stale room across retries
+  g_scAnimal[0] = 0;
   g_scLooseN = 0; g_scPerchN = 0; g_scBunN = 0; g_scLampN = 0; g_scAnimN = 0; g_scNoGoN = 0;
   g_scTravel = 0;
 
   FILE *f = fopen(SCENE_ROLE_PATHS[g_scLoadRole], "rb");
-  if (!f) return false;                       // no scene file: the normal case, not an error
+  if (!f) {
+    if (g_scLoadRole == SCENE_ROLE_OUTSIDE && g_scMeadow) {
+      return sceneParseJson(SCENE_DEFAULT_OUTSIDE);
+    }
+    return false;                             // no scene file: the normal case, not an error
+  }
   fseek(f, 0, SEEK_END); long len = ftell(f); fseek(f, 0, SEEK_SET);
   // TOO BIG IS NOT THE SAME AS ABSENT (rehearsal S7): a scene one byte over the cap
   // returned false here and the device drew the compiled-in factory room instead - a
@@ -393,8 +419,13 @@ static bool sceneLoad() {
   fclose(f);
   buf[got] = 0;
 
-  cJSON *root = cJSON_Parse(buf);
+  bool ok = sceneParseJson(buf);
   free(buf);
+  return ok;
+}
+
+static bool sceneParseJson(const char *json) {
+  cJSON *root = cJSON_Parse(json);
   if (!root) return false;
 
   {
@@ -406,6 +437,13 @@ static bool sceneLoad() {
   if (cJSON_IsString(nm)) { strncpy(g_scName, nm->valuestring, sizeof(g_scName) - 1); }
   const cJSON *rm = cJSON_GetObjectItem(root, "room");
   if (cJSON_IsString(rm)) { strncpy(g_scRoom, rm->valuestring, sizeof(g_scRoom) - 1); }
+  {
+    const cJSON *an = cJSON_GetObjectItem(root, "animal");
+    if (cJSON_IsString(an)) {
+      strncpy(g_scAnimal, an->valuestring, sizeof(g_scAnimal) - 1);
+      g_scAnimal[sizeof(g_scAnimal) - 1] = 0;
+    }
+  }
   {
     const cJSON *wk = cJSON_GetObjectItem(root, "wk");
     // no wk in the scene = ONE VISIT: he goes, does the job once, stays his 10s
@@ -919,7 +957,7 @@ static bool sceneCatSpot(float *x, float *y) {
 // Checked against the pak by the caller: a scene naming a room that was never packed must not
 // leave the room blank.
 static bool sceneLoadRole(uint8_t r) {
-  if (r > 3 || !g_scRoleAvail[r]) return false;
+  if (r >= SCENE_ROLE_N || !g_scRoleAvail[r]) return false;
   uint8_t prev = g_scLoadRole;
   g_scLoadRole = r;
   if (sceneLoad()) { g_scCurRole = r; sceneRolesScan(); return true; }

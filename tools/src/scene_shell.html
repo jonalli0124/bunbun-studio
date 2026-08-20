@@ -121,10 +121,10 @@
     </div>
 
     <div class="panel">
-      <h2>Who is it?</h2>
+      <h2>How big is he?</h2>
       <div class="row" style="margin-bottom:12px">
-        <button id="who-baby" aria-pressed="true">🍼 Baby</button>
-        <button id="who-adult" aria-pressed="false">🧡 Grown-up</button>
+        <button id="who-baby" aria-pressed="false" hidden>🍼 Baby</button>
+        <button id="who-adult" aria-pressed="true" hidden>🧡 Grown-up</button>
       </div>
       <label class="fld" for="csize">How big? <span id="csizev" class="mono">100%</span></label>
       <div class="row" style="align-items:center;margin-bottom:14px">
@@ -192,7 +192,7 @@ const cv=$('screen'), ctx=cv.getContext('2d');
 cv.width=SCR.w*ZOOM; cv.height=SCR.h*ZOOM;
 
 // ---------- state ----------
-const S={ phase:'baby', room:Object.keys(SD.rooms)[0], steps:[], props:[], spots:[],
+const S={ phase:'adult', room:Object.keys(SD.rooms)[0], steps:[], props:[], spots:[],
           start:{x:80,y:SD.scr.floor}, size:100, sel:-1 };
 let idN=0; const nextId=()=>'k'+(++idN);
 // A place is somewhere in the room with something to do there. Steps point AT the place,
@@ -546,6 +546,7 @@ function drawRooms(){
     S.room=b.dataset.r; drawRooms(); still(); saveLocal() });
 }
 function setPhase(p){
+  if(!SD.phases[p]) p='adult';   // one age; anything else is history
   S.phase=p;
   $('who-baby').setAttribute('aria-pressed',p==='baby');
   $('who-adult').setAttribute('aria-pressed',p==='adult');
@@ -556,7 +557,7 @@ function setPhase(p){
   S.steps=S.steps.filter(st=>st.type==='move'||has(clipName(st.type)));
   refresh();
 }
-$('who-baby').onclick=()=>setPhase('baby');
+$('who-baby').onclick=()=>setPhase('adult');
 $('who-adult').onclick=()=>setPhase('adult');
 $('csize').oninput=e=>{ S.size=+e.target.value; $('csizev').textContent=S.size+'%';
   still(); saveLocal() };
@@ -572,7 +573,7 @@ function saveLocal(){ try{ localStorage.setItem(KEY,JSON.stringify(
    start:S.start,size:S.size})) }catch(e){} }
 function loadState(o){
   if(!o||typeof o!=='object') throw new Error('That file is not a scene');
-  S.phase=SD.phases[o.phase]?o.phase:'baby';
+  S.phase=SD.phases[o.phase]?o.phase:'adult';
   S.room=SD.rooms[o.room]?o.room:Object.keys(SD.rooms)[0];
   S.steps=Array.isArray(o.steps)?o.steps.filter(s=>s&&(s.type==='move'||s.type==='goto'||has(clipName(s.type)))):[];
   S.props=Array.isArray(o.props)?o.props.filter(p=>p&&SD.props[p.name]):[];
@@ -725,7 +726,7 @@ function paintTo(g,pose){                 // same as paint(), on any context, at
 }
 
 // ---------- go ----------
-drawRooms(); drawProps(); drawSpotOptions(); setPhase('baby');
+drawRooms(); drawProps(); drawSpotOptions(); setPhase('adult');
 try{ const raw=localStorage.getItem(KEY); if(raw) loadState(JSON.parse(raw)) }catch(e){}
 let ready=0;
 const all=[...Object.values(SD.rooms), ...Object.values(SD.props).map(p=>p.img)];

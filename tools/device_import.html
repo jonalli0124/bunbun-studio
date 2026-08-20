@@ -203,7 +203,8 @@ function mark(i,cls){ const el=$('st'+i); if(el) el.className=cls; }
 // file away - and it costs the device nothing: the art comes from the pak already
 // fetched, the rooms from files it already serves.
 const ROLE_FILES=[['','/spiffs/scene.json'],['kitchen','/spiffs/scene-kitchen.json'],
-                  ['bathroom','/spiffs/scene-bathroom.json'],['work','/spiffs/scene-work.json']];
+                  ['bathroom','/spiffs/scene-bathroom.json'],['work','/spiffs/scene-work.json'],
+                  ['outside','/spiffs/scene-outside.json']];
 async function rescueBundle(pak){
   const scenes=[];
   for(const [role,path] of ROLE_FILES){
@@ -266,6 +267,43 @@ async function waitBack(){
     catch(e){ await new Promise(r=>setTimeout(r,2500)); }
   }
   throw new Error('the unit did not come back - give it a minute and refresh this page');
+}
+
+
+// WHICH ANIMAL IS THIS FOR? Three answers, not two: make him match, put it on anyway, or stop.
+// The middle one is only honest when the right animal's art is actually present - otherwise
+// switching would leave him falling back to art that is not there.
+function askAnimal(want, pet, have){
+  return new Promise(resolve=>{
+    const box=document.createElement('div');
+    box.style.cssText='margin:14px 0;padding:14px 16px;border:2px solid #d08b2c;'+
+      'border-radius:12px;background:#fff8ec;text-align:left';
+    box.innerHTML =
+      `<div style="font-weight:700;font-size:17px;margin-bottom:6px">`+
+      `This world was made for the ${want}</div>`+
+      `<div style="margin-bottom:10px;line-height:1.45">Your bunbun is a <b>${pet}</b>. `+
+      (have
+        ? `He would do the ${want}'s moves but walk and stand as a ${pet}, which looks odd. `+
+          `The ${want} is already here, so he can just <b>be</b> one.`
+        : `He would do the ${want}'s moves but walk and stand as a ${pet}, which looks odd. `+
+          `You do not have the ${want}'s art yet - get the <b>${want} animal package</b> first `+
+          `and give it to him, then put this world on.`)+
+      `</div><div id="animPick" style="display:flex;gap:8px;flex-wrap:wrap"></div>`;
+    $('go').insertAdjacentElement('afterend', box);
+    const row=box.querySelector('#animPick');
+    const btn=(label,val,primary)=>{
+      const b=document.createElement('button');
+      b.textContent=label;
+      b.style.cssText='padding:10px 14px;border-radius:10px;font-size:15px;cursor:pointer;'+
+        'border:1px solid '+(primary?'#1c7a46':'#bbb')+';'+
+        (primary?'background:#1c7a46;color:#fff;font-weight:700':'background:#fff');
+      b.onclick=()=>{ box.remove(); resolve(val); };
+      row.appendChild(b);
+    };
+    if(have) btn(`Make him a ${want} too`,'switch',true);
+    btn('Put the world on anyway','anyway',!have);
+    btn('Stop','cancel',false);
+  });
 }
 
 const ANIMALS=['capybara','bunny','cat','dog','frog','penguin','croc'];
@@ -334,7 +372,8 @@ $('go').onclick=async()=>{
     const incomingRoles=new Set((bundle.sceneObj.world||[bundle.sceneObj])
       .map(w=>(w.role||'main')));
     const ROLE_PATH={main:'/spiffs/scene.json', kitchen:'/spiffs/scene-kitchen.json',
-                     bathroom:'/spiffs/scene-bathroom.json', work:'/spiffs/scene-work.json'};
+                     bathroom:'/spiffs/scene-bathroom.json', work:'/spiffs/scene-work.json',
+                     outside:'/spiffs/scene-outside.json'};
     const stillNeeded=new Set();
     for(const [role,path] of Object.entries(ROLE_PATH)){
       if(incomingRoles.has(role)) continue;              // this package replaces it
@@ -347,16 +386,60 @@ $('go').onclick=async()=>{
         for(const pr of (o.props||[])) if(pr.n) stillNeeded.add(pr.n);
       }catch(e){}
     }
+    // ONE ANIMAL AT A TIME, HERE TOO (the owner's rule). The species installer has always
+    // filtered every other animal's art out before merging; this path never did, because a
+    // world used to carry no species art at all. Now that a world brings its own animal,
+    // installing three worlds would have left three animals in a pak that is never garbage
+    // collected - and the two install paths would disagree about a rule that was set once.
+    // Only fires when the incoming world actually brings an animal: a world without one must
+    // not strip the pet down to nothing.
+    const wantAnimal=(bundle.sceneObj.world||[bundle.sceneObj]).map(w=>w.animal).find(Boolean);
+    const bringsAnimal=!!(wantAnimal &&
+      bundle.frag.entries.some(e=>e.name.startsWith(wantAnimal+'/')));
     const kept=pak.entries.filter(e=>!newNames.has(e.name)
       && (!e.name.startsWith('canim/') ||
-          [...stillNeeded].some(n=>e.name.startsWith(n))));
+          [...stillNeeded].some(n=>e.name.startsWith(n)))
+      && (!bringsAnimal ||
+          !ANIMALS.some(a2=>a2!==wantAnimal && e.name.startsWith(a2+'/'))));
+    if(bringsAnimal){
+      const dropped=pak.entries.filter(e=>
+        ANIMALS.some(a2=>a2!==wantAnimal && e.name.startsWith(a2+'/'))).length;
+      if(dropped) $('msg').textContent=
+        `the ${wantAnimal} moves in - ${dropped} pieces of the old animal move out`;
+    }
     const merged=PakLib.build(kept.concat(bundle.frag.entries));
     const room=bundle.sceneObj.room;
     if(room && !kept.concat(bundle.frag.entries).some(e=>e.name===room))
       $('msg').textContent=`heads up: this bunbun has no "${room}" art - the room will fall back`;
+    // A QUESTION, NOT A LINE THAT SCROLLS AWAY (rehearsal M11). The old warning was
+    // overwritten seconds later by the next message, so the one admission that this
+    // world belongs to another animal never survived long enough to be read.
     {const want=(bundle.sceneObj.world||[bundle.sceneObj]).map(w=>w.animal).find(Boolean);
-     if(want) $('msg').textContent=`this world was animated on the ${want} - if he is a different animal, `+
-       `give him the ${want} from the site's animal shelf so his walking matches`; }
+     if(want){
+       let pet='';
+       try{ const j=await (await fetch('/api/system/info')).json(); pet=(j.info||{}).species_id||''; }catch(e){}
+       if(pet && pet!==want){
+         // OFFER THE FIX, DO NOT JUST NAME THE PROBLEM. Installing a cat's world on a penguin
+         // gave a penguin who stands and walks as a penguin but performs the child's moves as
+         // a cat - correct by the data model, nonsense on the screen. The page already knows
+         // both animals; it can also know whether the right one's art is HERE, and if it is,
+         // fixing it is one byte of pet state away.
+         const all = kept.concat(bundle.frag.entries);
+         const have = all.some(e=>e.name.startsWith(want+'/'));
+         const choice = await askAnimal(want, pet, have);
+         if(choice==='cancel'){
+           $('msg').textContent='nothing was changed - get the '+want+' first, then try again';
+           $('msg').className='ok';
+           $('go').disabled=false;
+           return;
+         }
+         if(choice==='switch'){
+           const rs=await fetch('/api/pet/species?id='+want,{method:'POST'});
+           if(!rs.ok) throw new Error('could not make him a '+want+': '+rs.status);
+           $('msg').textContent='he is a '+want+' now - same bunbun, same age';
+         }
+       }
+     } }
     mark(3,'done'); mark(4,'doing');
     const r1=await fetch('/api/ota/assets',{method:'POST',body:merged});
     if(!r1.ok) throw new Error('art upload failed: '+r1.status);

@@ -103,12 +103,32 @@
   .pxPal .c.sel{outline:2px solid var(--accent)}
   .pxTools{display:flex;gap:4px;flex-wrap:wrap}
   .pxTools button.sel{background:var(--accent);color:#fff;border-color:var(--accent)}
+
+  /* the walkthrough - same shape as the Scene Assembler's, so a child meets one idea twice */
+  #tourBtn{margin-left:auto;align-self:center;flex:0 0 auto;padding:9px 15px;border-radius:11px;
+    border:1px solid #6b3fa0;background:#7a49b8;color:#fff;font-size:15px;font-weight:700;
+    cursor:pointer;white-space:nowrap}
+  #tourBtn:hover{background:#6b3fa0}
+  #coachCard{position:fixed;right:16px;bottom:16px;z-index:9999;width:min(340px,calc(100vw - 32px));
+    background:#fff;border:2px solid #7a49b8;border-radius:14px;padding:14px 16px;
+    box-shadow:0 12px 34px rgba(0,0,0,.24);display:none}
+  #coachCard.on{display:block}
+  #coachCard .cstep{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:#7a49b8;
+    font-weight:700}
+  #coachCard h4{margin:3px 0 7px;font-size:19px}
+  #coachB{font-size:14.5px;line-height:1.5}
+  #coachRow{display:flex;gap:8px;align-items:center;margin-top:11px}
+  #coachRow button{padding:8px 13px;border-radius:9px;border:1px solid #bbb;background:#fff;
+    cursor:pointer;font-size:14px}
+  #coachRow button.go{background:#7a49b8;border-color:#6b3fa0;color:#fff;font-weight:700}
+  .coachPoint{outline:3px solid #7a49b8 !important;outline-offset:2px;border-radius:6px}
 </style>
 
-<header>
+<header style="display:flex;flex-wrap:wrap;align-items:center;gap:10px">
   <h1>Animation Creation <span class="hint" style="font-weight:400">&middot; part of the Scene Assembler</span></h1>
   <span class="hint">anchors derived per frame · placement &amp; scale are constant offsets ·
     click a prop to select · drag to move · arrows nudge · Del removes</span>
+  <button id="tourBtn">&#x1F393; Show me how</button>
 </header>
 
 <main>
@@ -277,10 +297,11 @@
 
     <div class="panel">
       <label>the character <span class="hint">— breathing, for held frames</span></label>
-      <label style="margin-top:6px">size in the scene <span class="val" id="gsv">100</span>%
+      <label style="margin-top:6px">how big he is <span class="val" id="gsv">100</span>%
+        <span class="hint">&mdash; set once, used for every animation</span>
         <span class="hint">one dial — him and everything he holds. Each object also has its
         own scale in its layer. The Scene Assembler starts from this number</span></label>
-      <input type="range" id="gscale" min="15" max="120" step="1" value="100">
+      <input type="range" id="gscale" min="49" max="120" step="1" value="100">
       <label style="margin-top:6px">breathe <span class="val" id="brev">0</span>%
         <span class="hint">scale pulse, pinned at the feet</span></label>
       <input type="range" id="breathe" min="0" max="15" step="0.5" value="0">
@@ -560,6 +581,13 @@ window.SBX=new URLSearchParams(location.search).get('sandbox');
     document.body.classList.remove('fs'); fs.innerHTML='\u26F6'; }});
   // dividers: drag for more room, widths remembered - the assembler's wire(), verbatim
   const CKEY='bunbun-anim-tool-columns';
+  // his size, remembered per animal, so it is set once and not once per animation
+  window.SIZEKEY='bunbun-char-size';
+  window.sizeFor=a=>{ try{ const m=JSON.parse(localStorage.getItem(window.SIZEKEY)||'{}');
+    const v=+m[a||'_']; return (v>=49&&v<=120)?v:100 }catch(e){ return 100 } };
+  window.rememberSize=(a,v)=>{ try{
+    const m=JSON.parse(localStorage.getItem(window.SIZEKEY)||'{}');
+    m[a||'_']=v; localStorage.setItem(window.SIZEKEY, JSON.stringify(m)) }catch(e){} };
   try{ const w=JSON.parse(localStorage.getItem(CKEY)||'{}');
     if(w.anim)  document.documentElement.style.setProperty('--wAnim', w.anim +'px');
     if(w.props) document.documentElement.style.setProperty('--wProps', w.props+'px'); }catch(e){}
@@ -1674,7 +1702,15 @@ $('zKeep').onclick=()=>{ zdraft=null; zmode=zmode==='keepout'?'':'keepout';
 $('zDel').onclick=()=>{ if(zsel>=0){ zones.splice(zsel,1); zsel=-1; zvert=-1; render() } };
 $('gscale').oninput=e=>{ const v=+e.target.value;
   gScale=Math.round(v*GAMESCALE[guessPhase()]); $('gsv').textContent=v;
+  // this is now HIS size, not this animation's - every later one starts here
+  try{ window.rememberSize(($('charSel')&&$('charSel').value)||'', v) }catch(err){}
   render(); autosave() };
+function applyRememberedSize(){
+  const a=($('charSel')&&$('charSel').value)||'';
+  const v=window.sizeFor(a);
+  $('gscale').value=v; $('gsv').textContent=String(v);
+  gScale = (v===100) ? null : Math.round(v*GAMESCALE[guessPhase()]);
+}
 $('gx').oninput=e=>{ gX=+e.target.value; render() };
 $('gy').oninput=e=>{ gY=+e.target.value; render() };
 $('gfloor').onclick=()=>{ gY=GAME.floor; render() };
@@ -1726,7 +1762,8 @@ $('gzauto').onclick=()=>{ gZ=null; render() };
     if(zvert>=0){ zvert=-1; render(); return }
     dg=null; gv.style.cursor='grab' });
 })();
-$('clip').onchange=async e=>{stopT();clip=e.target.value;await ensureClip();resetOrder();gScale=null;$('gscale').value=100;$('gsv').textContent='100';render()};
+$('clip').onchange=async e=>{stopT();clip=e.target.value;await ensureClip();resetOrder();
+  applyRememberedSize(); render()};
 async function applyAnimal(id){
   DATA.clips=(id&&DATA.characters&&DATA.characters[id])?DATA.characters[id].clips:DATA._baseClips;
   for(const k of Object.keys(imgs)) if(!k.startsWith('room|')&&!k.startsWith('prop|')) delete imgs[k];
@@ -1738,7 +1775,7 @@ async function applyAnimal(id){
 }
 $('charSel').onchange=async e=>{ stopT();
   await applyAnimal(e.target.value);
-  gScale=null; $('gscale').value=100; $('gsv').textContent='100';
+  applyRememberedSize();
   render(); autosave(); };
 $('add').onclick=async()=>{await addLayer($('addProp').value,$('anchor').value);render()};
 $('dup').onclick=async()=>{const L=cur();if(!L)return;
@@ -2085,7 +2122,11 @@ async function loadProject(p){
     litCache.key='';
     if(p.stage){ gX=+p.stage.x||gX; gY=+p.stage.y||gY;
       gZ=(p.stage.z==null?null:+p.stage.z);
+      // THE MASTER WINS, even over what this file was saved at (Jon: "one master character
+      // scaler slider that controls all animations"). An animation made last week at 80% and
+      // one made today at 60% used to walk around the same room at two different heights.
       gScale=(p.stage.scale==null?null:Math.round(+p.stage.scale*GAMESCALE[guessPhase()]));
+      try{ applyRememberedSize() }catch(e){}
       $('gscale').value=(p.stage.scale==null?100:Math.round(+p.stage.scale));
       $('gsv').textContent=$('gscale').value }
     Object.assign(CH,{breathe:0,period:8,hold:1,pivot:'feet'},p.character||{});
@@ -2611,5 +2652,96 @@ document.addEventListener('visibilitychange',()=>{ if(document.hidden) flushSave
   if(restoreFailed){ console.warn('keeping the saved scene rather than overwriting it'); }
   else autosave();
   hist=[JSON.stringify(projectCore())]; redoS=[]; histUI();   // seed: the opening state
+})();
+</script>
+
+<div id="coachCard">
+  <div class="cstep" id="coachN"></div>
+  <h4 id="coachT"></h4>
+  <div id="coachB"></div>
+  <div id="coachRow">
+    <button id="coachSkip">skip</button>
+    <button id="coachNext" class="go">next</button>
+    <span id="coachDone"></span>
+  </div>
+</div>
+<script>
+(function(){
+  const $c=id=>document.getElementById(id);
+  const val=id=>{const e=$c(id);return e?e.value:''};
+  // Eli, 9, who made four animations and timed himself: "these seven steps are the ten
+  // minutes, so you don't have to do them."
+  const STEPS=[
+    {t:'Get your animal on the screen', el:'charSel',
+     b:'Click the animal box and pick your animal, like the cat. If the box is empty '+
+       '<b>do not panic</b> and do not keep clicking \u2014 it is still loading. Wait a moment, '+
+       'click again, and he will be standing in the big square.',
+     done:()=>!!val('charSel')},
+    {t:'Make him do something', el:'clip',
+     b:'Pick a move from the list \u2014 try <b>walk</b>, it is the easiest one to see. He starts '+
+       'doing it straight away, and the little row shows him facing eight ways. That is the '+
+       'whole point of this thing, so look at it.',
+     done:()=>!!val('clip')},
+    {t:'Give him a thing to hold', el:'add',
+     b:'Press <b>+ add</b> and pick a thing \u2014 a hard hat, a crate. Sometimes the first press '+
+       'does nothing; that is not you being wrong, press it again. It will appear somewhere '+
+       'silly, like stuck on his face. That is normal, we fix it next.',
+     done:()=>{ try{ return stack.filter(x=>!x.char).length>0 }catch(e){ return false } }},
+    {t:'Tell it which bit of him to stick to', el:'anchor',
+     b:'Open the anchor list and pick the body part \u2014 <b>head</b> for a hat, <b>hands</b> for '+
+       'a crate. <b>Read this bit:</b> the anchor is still set to whatever the LAST thing used, '+
+       'so if you do not change it you get a crate on his head. Change it first, every time.',
+     done:()=>false},
+    {t:'Nudge it till it looks right', el:'ox',
+     b:'Use the arrow keys to move it \u2014 small nudges, one or two at a time; big ones send it '+
+       'flying off him. Then check <b>all eight</b> little pictures, not just the front one: a hat '+
+       'can look perfect from the front and float by his ear from the side.',
+     done:()=>false},
+    {t:'Play the whole thing', el:'play',
+     b:'Press <b>play</b> and watch it from the start. It only plays <b>once</b> and stops \u2014 if '+
+       'you blinked, press it again. It has not broken and it has not unsaved itself. I thought '+
+       'mine had failed about four times before I worked that out.',
+     done:()=>false},
+    {t:'Save it so it turns up on the shelf', el:'save',
+     b:'Type a name you will recognise later \u2014 "Cat At Work" is good, "anim3" is rubbish \u2014 '+
+       'then press <b>save animation</b>. It appears on the shelf in the Scene Assembler. And when '+
+       'you make another one, <b>fresh</b> does not take your things off, so remove them yourself '+
+       'or your cat goes to bed in a hard hat.',
+     done:()=>((val('animName')||'').trim().length>0)},
+  ];
+  let at=-1, timer=null, pointed=null, advTimer=null;
+  function point(id){
+    if(pointed){ pointed.classList.remove('coachPoint'); pointed=null; }
+    const el=id&&$c(id); if(!el) return;
+    el.classList.add('coachPoint'); pointed=el;
+    try{ el.scrollIntoView({block:'center',behavior:'smooth'}) }catch(e){}
+  }
+  function finish(){
+    at=-1; clearInterval(timer); clearTimeout(advTimer);
+    if(pointed){ pointed.classList.remove('coachPoint'); pointed=null; }
+    $c('coachCard').classList.remove('on');
+  }
+  function show(i){
+    if(i>=STEPS.length){ finish(); return; }
+    at=i; const st=STEPS[i];
+    $c('coachCard').classList.add('on');
+    $c('coachN').textContent='STEP '+(i+1)+' OF '+STEPS.length;
+    $c('coachT').textContent=st.t;
+    $c('coachB').innerHTML=st.b;
+    $c('coachDone').textContent='';
+    $c('coachNext').textContent = (i===STEPS.length-1) ? 'done' : 'next';
+    point(st.el);
+    clearInterval(timer); clearTimeout(advTimer); advTimer=null;
+    timer=setInterval(()=>{
+      let ok=false; try{ ok=!!st.done() }catch(e){}
+      if(ok && at===i){ $c('coachDone').textContent='\u2705';
+        clearInterval(timer);
+        advTimer=setTimeout(()=>{ advTimer=null; if(at===i) show(i+1) }, 900); }
+    }, 500);
+  }
+  $c('coachSkip').onclick=finish;
+  $c('coachNext').onclick=()=>{ clearTimeout(advTimer); advTimer=null;
+    if(at<0){ show(0); return; } show(Math.min(at+1, STEPS.length)); };
+  const tb=$c('tourBtn'); if(tb) tb.onclick=()=>show(0);
 })();
 </script>
