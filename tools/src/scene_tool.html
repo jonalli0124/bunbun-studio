@@ -2369,6 +2369,9 @@ function setIf(id, html){
   if(_sig[id]===html) return false;
   _sig[id]=html; $(id).innerHTML=html; return true;
 }
+// Counts as sleeping? Then a timer cannot own it - his night decides. Anything else, even
+// a nap drawn with the sleep picture, is a normal move and may be given seconds.
+function isSleepAct(a){ try{ return actOfAnim(a)==='sleep' }catch(e){ return false } }
 function drawAnims(){
   ensureAcodes();
   // DIRECT HIM: one button per live animation. Click - he stops deliberating and goes.
@@ -2429,7 +2432,8 @@ function drawAnims(){
       'title="the device\u2019s own buttons - he walks to whichever room does it">'+
       'send him to:</span>'+
       [['eat','\u{1F37D} eat'],['bath','\u{1F6C1} bath'],['toilet','\u{1F6BD} potty'],
-       ['work','\u{1F528} work'],['@outside','\u{1F333} go outside'],['','\u{1F3E0} home']]
+       ['work','\u{1F528} work'],['sleep','\u{1F634} sleep'],
+       ['@outside','\u{1F333} go outside'],['','\u{1F3E0} home']]
       .map(function(e){ return '<button class="mini" data-errand="'+e[0]+'">'+e[1]+'</button>' }).join('')
     : '';
   if(setIf('forceRow', forceHtml+defHtml+errHtml))
@@ -2523,12 +2527,12 @@ function drawAnims(){
       <span style="flex-basis:100%;height:0"></span>
       <span class="hint" style="flex:0 0 auto">plays</span>
       <input data-dur="${i}" type="number" min="0" max="120" step="1"
-        value="${/sleep/i.test(a.clip)?'':(a.dur||'')}" ${/sleep/i.test(a.clip)?'disabled':''}
-        placeholder="${/sleep/i.test(a.clip)?'night':'auto'}"
-        title="${/sleep/i.test(a.clip)
-          ?'sleep ends when bunbun&#39;s own night ends - a timer cannot own the morning'
+        value="${isSleepAct(a)?'':(a.dur||'')}" ${isSleepAct(a)?'disabled':''}
+        placeholder="${isSleepAct(a)?'night':'auto'}"
+        title="${isSleepAct(a)
+          ?'this counts as sleeping, and sleeping ends when his night ends - a timer cannot own the morning. For a short nap, set counts as to something else.'
           :'seconds; blank = two loops + a rest, the preview&#39;s own rule'}"
-        style="width:52px;padding:2px 4px;font:inherit;font-size:11px;border:1px solid var(--line);border-radius:5px;background:var(--bg);color:var(--ink);${/sleep/i.test(a.clip)?'opacity:.45':''}">
+        style="width:52px;padding:2px 4px;font:inherit;font-size:11px;border:1px solid var(--line);border-radius:5px;background:var(--bg);color:var(--ink);${isSleepAct(a)?'opacity:.45':''}">
       <select data-actas="${i}" title="what the game treats this animation as - the clip decides unless you say otherwise"
         style="flex:0 0 auto;padding:2px;font:inherit;font-size:11px;border:1px solid var(--line);border-radius:5px;background:var(--bg);color:var(--ink)">
         <option value="">counts as: the clip</option>
