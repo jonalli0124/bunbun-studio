@@ -208,3 +208,48 @@ Delivered SIX birds; one removed in PIL (connected components) to land inside th
 v1 [FAIL]: "a loose flock of five tiny dark distant bird silhouettes shaped like flat letter m, scattered across the canvas..." — a size-ordered LINE of round beaked birds, like an animation strip.
 v2 [FAIL]: "...each one a simple wide checkmark shape of two curved wings, scattered at different heights..." — good scatter but two of five marks were asterisks that read as sparkles, not birds.
 v3 [FAIL]: the v4 prompt without "spread out across the whole canvas from left edge to right edge" — four good birds but in a flat centered row using a third of the canvas.
+
+---
+
+# Muddy / Ghibli / lofi set — 2026-08-20
+
+Jon: *"make sure it is a combo of muddy, studio ghibli, lofi"*. A NEW style clause, which is
+exactly what has cost this project generations before — so only the style words changed and
+the skeleton the log already proved was kept intact ("children's game item, a single X, front
+view, ... no floor shadow").
+
+**House pattern v2** — pixflux, 96x96, `no_background=true`, outline "single color black
+outline", shading **"medium shading"** (v1 used basic; medium is what gives the painterly
+warmth):
+
+```
+muddy lofi pixel art, dusty desaturated earthy palette, muted olive and clay and faded ochre, soft Studio Ghibli painterly warmth, gentle grain, clean dark outline, children's game item, a single <object>, front view, big and centered filling the canvas, no floor shadow
+```
+
+v1 [WEAK]: `muddy lofi pixel art in a soft Studio Ghibli mood, desaturated earthy colors,
+gentle painterly shading, clean dark outline, children's game item, a single <object>, front
+view, no floor shadow` with "basic shading" — came back close to the OLD warm palette, and
+small in the canvas. The three words that fixed it were the named colours (olive / clay /
+faded ochre), "big and centered filling the canvas", and medium shading.
+
+**Anti-ground variant.** Four came back standing on sand or grass despite "no floor shadow".
+Appending this recovered three of four (the wheelbarrow refused twice and was dropped):
+
+```
+..., floating on a plain transparent background, nothing underneath it, no ground, no sand, no grass, no floor shadow
+```
+
+Cost: measured at **$0.0067 per generation** billed to credits (the plan's allowance was
+already spent). 41 generations for the 33 installed items, re-rolls included — about $0.28.
+
+## Installed with this pattern (33)
+
+sofa · armchair · coffee table · television · fireplace · wall clock · picture frame ·
+floor cushion · bookshelf · dining table · dining chair · cupboard · kettle · fruit bowl ·
+mirror · shower · laundry basket · step ladder · cement mixer · workbench · conveyor belt ·
+control panel · reading desk · book stack · espresso machine · chalkboard menu · park bench ·
+picnic table · deck chair · beach parasol · sandcastle · campfire · tree stump
+
+Each `<object>` phrase used the item's own words, e.g. *"a single cosy two-seat sofa with
+cushions"*, *"a single small retro television set on stubby legs"*, *"a single mossy tree
+stump"*, *"a single chalkboard cafe menu sign on a wooden easel"*.

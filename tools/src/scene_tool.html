@@ -2429,7 +2429,7 @@ function drawAnims(){
   // ERRANDS ACROSS ROOMS - the same commands the device's own menu has, so a child can
   // watch the whole journey in the preview (Jon: "inter room action just like the game").
   // Only offered once the world has more than one room.
-  const errHtml = Object.keys(worldSlots).length
+  const errHtml = Object.keys(worldSlots||{}).length
     ? '<span class="hint" style="flex:0 0 auto;align-self:center;margin-left:8px" '+
       'title="the device\u2019s own buttons - he walks to whichever room does it">'+
       'send him to:</span>'+
@@ -3442,16 +3442,25 @@ loop();
 // the things that dress the place. Anything not named here still appears, under "everything
 // else" - a hand-written map that silently swallowed a new prop would be worse than no map.
 const PROP_GROUPS=[
-  ['sitting and sleeping', ['Wooden Chair','Beanbag Chair','bed']],
-  ['the kitchen',          ['fridge','stove','kitchen counter','cooking pot','food_bowl']],
-  ['the bathroom',         ['toilet','tub','blue bath tub','sink','soap','towel rack',
-                            'bath mat','duck','bubble_cloud']],
-  ['work and building',    ['toolbox','hard hat','wooden crate','traffic cone','barrier']],
-  ['on the floor',         ['Rug']],
-  ['growing and living',   ['plant','bird flock','flying bird']],
+  ['sitting and sleeping',   ['sofa','armchair','Wooden Chair','Beanbag Chair','dining chair',
+                              'floor cushion','bed']],
+  ['the living room',        ['television','fireplace','coffee table','bookshelf','wall clock',
+                              'picture frame']],
+  ['the kitchen',            ['fridge','stove','kitchen counter','cupboard','dining table',
+                              'cooking pot','kettle','food_bowl','fruit bowl']],
+  ['the bathroom',           ['toilet','tub','blue bath tub','shower','sink','mirror','soap',
+                              'towel rack','laundry basket','bath mat','duck','bubble_cloud']],
+  ['work and building',      ['workbench','toolbox','hard hat','step ladder','cement mixer',
+                              'conveyor belt','control panel','wooden crate','traffic cone',
+                              'barrier']],
+  ['the library and cafe',   ['reading desk','book stack','espresso machine','chalkboard menu']],
+  ['outside',                ['park bench','picnic table','deck chair','beach parasol',
+                              'sandcastle','campfire','tree stump']],
+  ['on the floor',           ['Rug']],
+  ['growing and living',     ['plant','bird flock','flying bird']],
   // these only show inside a sky box - the group name is the reminder
-  ['in the sky',           ['sun','setting sun','moon','crescent moon','star','star cluster',
-                            'shooting star','puffy cloud','wispy cloud','storm cloud']],
+  ['in the sky',             ['sun','setting sun','moon','crescent moon','star','star cluster',
+                              'shooting star','puffy cloud','wispy cloud','storm cloud']],
 ];
 { const opt=k=>`<option value="${k}">${nice(k)}</option>`;
   const byKind=w=>Object.keys(SD.props).filter(k=>(SD.props[k].kind||'prop')===w);
@@ -3919,7 +3928,7 @@ async function buildPortPayload(setB){
 }
 
 // ---- THE WORLD ---- one scene per room; "this room is" toggles between them.
-let worldSlots={};
+var worldSlots={};   // var: loop() can reach this before its line is evaluated
 const roleKey=()=>scene.role||'';
 // SWITCH THE WORLD'S ANIMAL (Jon: "a button to keep the objects and scenery and just
 // change the animal when it exports"): every animation's clip re-resolves to the chosen
