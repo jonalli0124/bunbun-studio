@@ -470,8 +470,10 @@
 const SD=window.ATTACH_DATA;
 // which animal this world is FOR - the select when set, else whatever the
 // room's animations were drawn with
+var gWorldAnimal='';                 // the whole house's animal, across every room
 function worldAnimalId(){
   if(scene && scene.animal) return scene.animal;     // what the world was switched to
+  if(gWorldAnimal) return gWorldAnimal;              // ...and what the OTHER rooms are
   const el=document.getElementById('worldAnimal');
   if(el && el.value) return el.value;                // mid-change, before it clears itself
   try{ return (anims.find(a=>a.clip&&a.clip.includes(':'))||{}).clip.split(':')[0] }
@@ -3891,7 +3893,8 @@ const roleKey=()=>scene.role||'';
 // (baked into this page) holds every species' clips; a clip the new animal doesn't
 // have keeps its old art and is counted out loud.
 function animalOptions(){
-  const cur=(anims.find(a=>a.on&&a.clip&&a.clip.includes(':'))||{clip:''}).clip.split(':')[0]||'';
+  const cur=(anims.find(a=>a.on&&a.clip&&a.clip.includes(':'))||{clip:''}).clip.split(':')[0]
+            || gWorldAnimal || '';
   $('worldAnimal').innerHTML =
     `<option value="">animal: ${cur||'the pack\u2019s own'}</option>`+
     Object.keys(SD.characters||{}).map(k=>`<option value="${k}">make it the ${k}</option>`).join('');
@@ -3903,6 +3906,7 @@ function switchClip(clip, id){
 async function switchWorldAnimal(id){
   if(!id || !SD.characters || !SD.characters[id]) return;
   scene.animal=id;                    // the world remembers whose it is
+  gWorldAnimal=id;                    // ...including the rooms that are not open yet
   // the whole species registers under its namespace once - the travel kit, the
   // defaults, and every future lookup come along for free
   for(const c of Object.keys(SD.characters[id].clips))
@@ -3943,6 +3947,7 @@ function freshSlot(role){
                                    :SD.rooms['garden']?'garden':Object.keys(SD.rooms)[0])
              : (SD.rooms['farmhouse']?'farmhouse':Object.keys(SD.rooms)[0]);
   return {v:1, scene:{room, role:role||undefined, objects:[], zones:[],
+                      animal:gWorldAnimal||undefined,
                       character:{x:160,y:200,scalePercent:145}},
           sceneName:'', anims:[],
           weather:{raining:false, clouding:false, cloudN:3, cloudStyle:'shipped',
@@ -4517,6 +4522,16 @@ function autosave(){ if(booting||saveTimer) return;
 
 async function restore(raw){
   const p=JSON.parse(raw);
+  // THE HOUSE'S ANIMAL SURVIVES A RELOAD. Any room that names one names it for all of them -
+  // the parked slots are searched too, because the room that happens to be open may be a
+  // fresh one that has not been given a move yet.
+  try{
+    let a=(p.scene&&p.scene.animal)||'';
+    if(!a) for(const k of Object.keys(p.slots||{})){
+      const q=JSON.parse(p.slots[k]); if(q&&q.scene&&q.scene.animal){ a=q.scene.animal; break }
+    }
+    if(a) gWorldAnimal=a;
+  }catch(e){}
   if(p.slots){
     // autosaves written before the one-room-per-slot rule carry slots nested inside
     // slots (with full clip art at every layer) - the Out of Memory page. Flatten each
