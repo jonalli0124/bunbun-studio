@@ -2455,9 +2455,17 @@ function drawAnims(){
   // DIRECT HIM: one button per live animation. Click - he stops deliberating and goes.
   // THE EMOTIONS THE SCENE DOESN'T HAVE fall back to the stock clips - Adult only for
   // now. They are preview-only: never in anims[], never saved, never exported.
+  // A STAND-IN IS ONLY FOR A FEELING THE ROOM DOES NOT HAVE. The test used to be "is this
+  // exact clip already in the room" - so a child who DREW their own love animation still got
+  // a stock Love button beside it, and pressing it played the shipped clip: "if i hit love on
+  // the assembly it isnt doing my custom animation". What matters is what a move COUNTS AS,
+  // not which drawing it happens to use. If the room already loves, there is nothing to
+  // stand in for, and their own button is the one to press.
+  const ownActs=new Set(anims.filter(a=>a.on).map(a=>actOfAnim(a)));
   const defEmotes=Object.keys(SD.clips).filter(c=>/^Adult_/.test(c)
     && !/^Adult_(Idle$|Walk_)/.test(c)
-    && !anims.some(a=>a.on && a.clip===c));
+    && !anims.some(a=>a.on && a.clip===c)
+    && !ownActs.has(actOfAnim({clip:c})));
   const forceHtml = (anims.filter(a=>a.on).length || defEmotes.length)
     ? '<span class="hint" style="flex:0 0 auto;align-self:center">make him:</span>'+
       anims.map((a,i)=>{

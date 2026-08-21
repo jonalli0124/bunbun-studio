@@ -2191,20 +2191,50 @@ static const char *moodCustom(const char *act, const char *fb) {
   const char *k = sceneActAnim(act);
   return k ? k : fb;
 }
+// Declared up here because moodAnim() consults both: he is not bored in a game, and a room
+// with another helping scheduled shows its own idle rather than a sulk.
+static bool     g_gamePanel = false;
+static uint32_t g_workNextAt = 0;    // the stroll between reps ends, and the next one starts
+bool isRaining();      // the shower is a world condition; think() asks from any room
 static const char *moodAnim() {
   bool b = (S.phase == PH_BABY);
+  // BUSY IN A ROOM: between helpings he shows that room's own idle, not a sulk. Only while a
+  // next helping is actually scheduled, so it cannot swallow the moods the rest of the time.
+  if (g_workNextAt && g_scCurRole != SCENE_ROLE_MAIN && !S.sick) {
+    const char *si = sceneAnywhereActAnim("idle");
+    if (si) return si;
+  }
   // Jon's split, honored: an EMOTION (hungry, tired, sick, bored, angry) is a state shown
   // wherever he stands - and the child's own emotion animation wins when the scene has one.
-  if (S.sick)        return moodCustom("sick",   pa("sick"));
-  if (S.food < 35)   return moodCustom("hungry", pa("hungry"));
+  // HE IS ALREADY DOING SOMETHING ABOUT IT (Jon: "while he is the room, his corresponding
+  // passive negative shouldnt be allowed. he cant feel grubby in the bathroom, he cant be
+  // behind work at work, he cant be bored outside" / "he cant be hungry in the kitchen").
+  // The room he is standing in IS the answer to that need - its meter is climbing a tick a
+  // second while he stands there - so wearing the complaint about it is just wrong.
+  // (The bathroom's gauge has no mood of its own in this ladder; it is listed in the rule
+  // above so that the day one exists, it lands here with the others.)
+  const bool inKitchen = (g_scCurRole == SCENE_ROLE_KITCHEN);
+  const bool inWork    = (g_scCurRole == SCENE_ROLE_WORK);
+  const bool outdoors  = (g_scCurRole == SCENE_ROLE_OUTSIDE);
+  if (S.sick)                    return moodCustom("sick",   pa("sick"));
+  if (S.food < 35 && !inKitchen) return moodCustom("hungry", pa("hungry"));
   if (S.energy < 35) return moodCustom("tired",  pa("tired"));
-  if (S.fun < 35)    return moodCustom("bored",  pa("bored"));
+  // NOBODY IS BORED OUTSIDE, OR IN THE MIDDLE OF A GAME (Jon: "he also cant be bored
+  // outside"). Fun is being PAID there, a tick a second, so the meter is on its way up and
+  // the sulk is about to be wrong anyway - and a pet who looks bored in the one place he
+  // asked to go reads as a bug even when the number says otherwise.
+  if (S.fun < 35 && !outdoors && !g_gamePanel)
+    return moodCustom("bored",  pa("bored"));
   // Neglected affection reads as sulking. Threshold is lower than the others (25 vs 35) and
   // it sits at the bottom of the ladder on purpose: hunger and tiredness are more urgent, and
   // a permanently cross bunbun would be miserable rather than expressive.
-  if (S.disc < 25)   return moodCustom("angry", pa("angry"));
+  if (S.disc < 25 && !inWork) return moodCustom("angry", pa("angry"));
   // Only a baby sits rather than stands, and only before he can stand up.
   if (b && !babyCanStand()) return "baby_sit";
+  // A ROOM HE IS BUSY IN GETS ITS OWN IDLE. Between two helpings he is not at a loose end -
+  // he is in the middle of a bath - so the room's own standing-about animation belongs here
+  // rather than a mood (Jon: "he is now coming out of the bath but just doing a bored
+  // animation over and over"). The moods above still win when something is actually wrong.
   return moodCustom("idle", pa("idle"));
 }
 
@@ -2222,7 +2252,6 @@ static uint8_t  g_doorTrip = 0;      // 1 = walking to the exit edge
 static uint8_t  g_whyDoor = 0;       // the reason that started this crossing
 static uint32_t g_visitHomeAt = 0;   // a fruitless side-room visit walks home at this time
 static uint32_t g_roomMinStay = 0;   // Jon: "at least 10 seconds" in a side room, whatever happens
-static uint32_t g_workNextAt = 0;    // the stroll between work reps ends, and the next one starts
 static uint32_t g_wakeUntil  = 0;    // 1 = play the child's waking-up animation as soon as we can
 static uint32_t g_outWishAt  = 0;    // when he next mentions that he fancies the garden
 // WHAT HE DID WHEN HE WOKE UP, kept because it cannot be watched. The web server comes up
@@ -3191,23 +3220,44 @@ static bool tidyStep(float dt) {
 static void stepAwayFromSpot() {
   // (no !g_workNextAt here on purpose: the scheduled next helping is exactly when the stroll
   // has to happen, and the rep sites set that timer before they call this)
-  if (g_visit < 0 && !g_doorTrip && g_tx < 0) {
-    static const int AWAY[] = {55, 70, 42, 90, 110};
-    const int dir = (S.x >= 160) ? -1 : 1;        // toward the room's open side
-    const Bounds b = bounds();
-    for (int pass = 0; pass < 2 && g_tx < 0; pass++) {
-      const int sgn = pass ? -dir : dir;
-      for (int d = 0; d < (int)(sizeof(AWAY) / sizeof(AWAY[0])); d++) {
-        int nx = S.x + sgn * AWAY[d], ny = S.y;
-        if (nx < b.x0 || nx > b.x1) continue;
-        clearOfBlocks(&nx, &ny);
-        if (!sceneFloorHas(nx, ny) || !sceneCanLoiter(nx, ny)) continue;
-        if (abs(nx - S.x) < 30) continue;         // that is not stepping away
-        g_tx = nx; g_ty = ny;
-        break;
-      }
-  }
+  if (!(g_visit < 0 && !g_doorTrip && g_tx < 0)) return;
+  // THE WHOLE ROOM, THE WAY THE PREVIEW USES IT (Jon: "when he is the room due to an action
+  // he should use the whole room just like the act it out does in the scene assembler").
+  // First choice is a real wander: any spot on the floor he is allowed to stand on, a good
+  // way from where he is - the same pick the ambient wander makes, so a visit looks like
+  // living in the room rather than hovering over the one thing he came for.
+  Bounds b = bounds();
+  if (b.x1 > b.x0 && b.y1 > b.y0) {
+    for (int tries = 0; tries < 14; tries++) {
+      int tx = b.x0 + (int)(esp_random() % (uint32_t)(b.x1 - b.x0));
+      int ty, top, bot;
+      if (sceneFloorLane(tx, &top, &bot) && bot - top > 6)
+        ty = (top + 3) + (int)(esp_random() % (uint32_t)((bot - 1) - (top + 3) + 1));
+      else
+        ty = b.y0 + (int)(esp_random() % (uint32_t)(b.y1 - b.y0));
+      clearOfBlocks(&tx, &ty);
+      if (abs(tx - S.x) + abs(ty - S.y) < 50) continue;
+      if (!sceneFloorHas(tx, ty) || !sceneCanLoiter(tx, ty)) continue;
+      g_tx = tx; g_ty = ty;
+      return;
     }
+  }
+  // Nothing free to wander to: at least get off the thing he just used - a deliberate
+  // distance, far side first, which is what the preview does when the room is tight.
+  static const int AWAY[] = {55, 70, 42, 90, 110};
+  const int dir = (S.x >= 160) ? -1 : 1;
+  for (int pass = 0; pass < 2 && g_tx < 0; pass++) {
+    const int sgn = pass ? -dir : dir;
+    for (int d = 0; d < (int)(sizeof(AWAY) / sizeof(AWAY[0])); d++) {
+      int nx = S.x + sgn * AWAY[d], ny = S.y;
+      if (nx < b.x0 || nx > b.x1) continue;
+      clearOfBlocks(&nx, &ny);
+      if (!sceneFloorHas(nx, ny) || !sceneCanLoiter(nx, ny)) continue;
+      if (abs(nx - S.x) < 30) continue;
+      g_tx = nx; g_ty = ny;
+      break;
+    }
+  }
 }
 static void think(float dt) {
   // The job drives his position and animation itself, so ordinary behaviour must stand down
@@ -3273,7 +3323,20 @@ static void think(float dt) {
   // HE ASKS TO GO OUT. Outside holds him but has no act to summon him, so without this the
   // room could only ever be reached by a grown-up pressing a button - the pet would never
   // once express a preference about the one place he is free to linger.
-  if (g_scRoleAvail[SCENE_ROLE_OUTSIDE] && S.lights && !S.sick && !g_action &&
+  // IN OUT OF THE RAIN (Jon: "if it is raining he should come in from the outside and stay
+  // inside and not allowed to go outside until the rain stops"). isRaining() is a world
+  // condition on its own clock, not a property of the room he is standing in, so both halves
+  // of the rule can be asked from anywhere.
+  if (g_scCurRole == SCENE_ROLE_OUTSIDE && isRaining() && S.lights && !g_doorTrip &&
+      !g_action && g_visit < 0 && g_pottySeq == 0) {
+    char line[64];
+    snprintf(line, sizeof(line), "it is raining - %s is coming inside", petName());
+    say(line);
+    whyFor(WHY_SCHEDULE, "");
+    sceneDoorTo(SCENE_ROLE_MAIN, "");
+    return;
+  }
+  if (g_scRoleAvail[SCENE_ROLE_OUTSIDE] && !isRaining() && S.lights && !S.sick && !g_action &&
       !g_doorTrip && g_visit < 0 && g_pottySeq == 0 && !g_sleepPending &&
       sceneRoomHolds(g_scCurRole) && g_scCurRole != SCENE_ROLE_OUTSIDE &&
       S.fun < 70.0f) {   // asking to go out with a nearly full fun meter is asking for
@@ -3300,6 +3363,15 @@ static void think(float dt) {
   // danceBegin() clears stale actions when the party starts, so the only actions that reach
   // here during dance are ones deliberately allowed through the menu (cuddles).
   if (g_action) {
+    // A BUTTON IS NEVER QUEUED BEHIND AN ANIMATION (Jon: "all action buttons should be
+    // allowed even if he is doing another animation"). A press used to wait out whatever he
+    // happened to be in the middle of - up to a whole authored duration - which reads as the
+    // button not working. What he was doing ends now and the child's request takes the floor.
+    if (g_dbgAct[0] && millis() < g_actionEnd) {
+      g_action = false; g_actionEnd = 0; g_actAct[0] = 0; g_actIsWork = false;
+      g_settleUntil = 0; g_performBehind = false;
+      whyFor(WHY_INTERRUPTED, "");
+    }
     if (millis() >= g_actionEnd) {
       g_action = false;
       if (g_actIsWork) { g_actIsWork = false; creditWork(); }
@@ -3380,7 +3452,12 @@ static void think(float dt) {
         if (millis() < g_roomMinStay) {          // the visit's minimum stay first
           if (!g_visitHomeAt) g_visitHomeAt = g_roomMinStay;
           g_wanderT = 2.0f;
-        } else { sceneDoorTo(SCENE_ROLE_MAIN, ""); return; }
+        } else if (sceneDoorTo(SCENE_ROLE_MAIN, "")) return;
+        // A REFUSED DOOR MUST NOT SWALLOW THE TICK. sceneDoorTo now says no when the room
+        // still owes him something, and these sites returned regardless - so think() ended
+        // here every frame and never reached the dispatcher that starts the next helping.
+        // He stood in the bathroom for seventy seconds with the meter climbing and nothing
+        // to do: "he went to the bath walked out and then stayed idle in the same spot".
       }
     } else return;
   }
@@ -3663,7 +3740,12 @@ static void think(float dt) {
       if (millis() < g_roomMinStay) {
         if (!g_visitHomeAt) g_visitHomeAt = g_roomMinStay;
         g_wanderT = 2.0f;
-      } else { sceneDoorTo(SCENE_ROLE_MAIN, ""); return; }
+      } else if (sceneDoorTo(SCENE_ROLE_MAIN, "")) return;
+        // A REFUSED DOOR MUST NOT SWALLOW THE TICK. sceneDoorTo now says no when the room
+        // still owes him something, and these sites returned regardless - so think() ended
+        // here every frame and never reached the dispatcher that starts the next helping.
+        // He stood in the bathroom for seventy seconds with the meter climbing and nothing
+        // to do: "he went to the bath walked out and then stayed idle in the same spot".
     }
     // the performance is OVER: drop to his mood/idle right now, exactly as the preview's
     // rest does. Leaving the clip up made a 5-second duration look like 20 ("its going
@@ -3720,8 +3802,13 @@ static void think(float dt) {
       // the room now, not by performances given, so pottering about costs him nothing: he
       // can use the other things the child put in there and still leave with a full meter.
       // Weighted toward the room's own act, because that is still what he came for.
+      // ...BUT NEVER INSTEAD OF WHAT HE WAS ASKED FOR. The first go of a visit is the thing
+      // the child pressed the button for - pressing EAT and getting the love animation is not
+      // a pet with a life of its own, it is a broken button ("eat just did my love animation
+      // not my new eating animation"). Only once the room's own act has actually happened
+      // does he start using the rest of the room.
       const char *pick = ra;
-      if ((esp_random() % 100) < 45) {
+      if (g_repeatN > 1 && (esp_random() % 100) < 45) {
         const char *cand[SCENE_MAX_ANIMS];
         int cn = 0;
         for (int i = 0; i < g_scAnimN && cn < SCENE_MAX_ANIMS; i++) {
@@ -3734,6 +3821,25 @@ static void think(float dt) {
           if (!dup) cand[cn++] = a2;
         }
         if (cn) pick = cand[esp_random() % (uint32_t)cn];
+      }
+      // AN ANYWHERE MOVE HAPPENS WHERE HE STANDS. sceneErrandTo walks him to a MARK, and
+      // returns false when the act has none - which is exactly what an "anywhere" animation
+      // is. Calling it anyway meant the dispatch quietly did nothing, the next tick's door
+      // attempt re-armed the timer, and the two ping-ponged with him rooted to the spot:
+      // "he went to the bath walked out and then stayed idle in the same spot".
+      if (sceneActMark(pick) >= 0) { sceneErrandTo(pick); return; }
+      {
+        const char *ak = sceneActAnim(pick);
+        if (!ak && strcmp(pick, ra) != 0) { pick = ra; ak = sceneActAnim(ra); }
+        if (ak) {
+          const AnimDef *ad = findAnim(ak);
+          float secs = ad ? 2.0f * (ad->frames / (ad->fps > 0.1f ? ad->fps : 7.0f)) + 1.0f : 3.0f;
+          for (int i = 0; i < g_scAnimN; i++)
+            if (!strcmp(g_scAnim[i].key, ak) && g_scAnim[i].dur > 0.1f) { secs = g_scAnim[i].dur; break; }
+          snprintf(g_actAct, sizeof(g_actAct), "%s", pick);
+          startAction(ak, secs);
+          return;
+        }
       }
       sceneErrandTo(pick);
       return;
@@ -3753,7 +3859,8 @@ static void think(float dt) {
                              (sceneActMark(rha) >= 0 || sceneActAnim(rha));
   if (g_visitHomeAt && millis() >= g_visitHomeAt && !g_workNextAt && !roomStillOwes) {
     g_visitHomeAt = 0;
-    if (g_scCurRole != SCENE_ROLE_MAIN && !g_doorTrip) { sceneDoorTo(SCENE_ROLE_MAIN, ""); return; }
+    if (g_scCurRole != SCENE_ROLE_MAIN && !g_doorTrip &&
+        sceneDoorTo(SCENE_ROLE_MAIN, "")) return;
   }
 
   if (g_tx >= 0) {
@@ -3774,7 +3881,7 @@ static void think(float dt) {
       g_tx = g_ty = -1; g_visit = -1; g_wanderT = 1.0f;
       g_performBehind = false;
       g_doorTrip = 0; g_workUntil = 0; g_pottySeq = 0;
-      if (g_scCurRole != SCENE_ROLE_MAIN) { sceneDoorTo(SCENE_ROLE_MAIN, ""); return; }
+      if (g_scCurRole != SCENE_ROLE_MAIN && sceneDoorTo(SCENE_ROLE_MAIN, "")) return;
       if (g_sleepPending) {          // bed unreachable: sleep where he stands, never strand it
         S.lights = 0; g_sleepAtMs = millis();
         if (g_sleepPending == 2) { g_nightSleep = true; saveSleepState(3); }
@@ -4571,7 +4678,6 @@ static const char *menuLabel(int i) {
 // a pick inside it. Ivy's rule made law: every future game lives behind this
 // one door, never a new menu seat.
 static bool g_gameRoster = false;
-static bool g_gamePanel = false;
 static void tttReset();
 static void drawGamePanel();
 static void drawGameRoster();
@@ -6460,13 +6566,15 @@ static bool startStar() {
 // ---- rain ----
 // A shower once an hour, as specified: it starts on the hour and runs 40-65s. Drawn only
 // over the sky, so it reads as weather outside the window rather than indoors.
+// Declared up here (with its predicate below) because think() asks whether it is raining
+// long before the weather module is reached, and this file is one translation unit.
 static uint32_t g_rainUntil = 0;
 static uint32_t g_rainStart = 0;
 static uint32_t g_nextRainAt = 0;
 static int g_lastRainHour = -1;
 static struct { float x, y, sp; } g_drops[18];
 static bool g_dropsInit = false;
-static bool isRaining() { return millis() < g_rainUntil; }
+bool isRaining() { return millis() < g_rainUntil; }
 // 0..1 with ~3s ramps at both ends, so the overcast gloom rolls in with the shower and lifts
 // as it passes instead of snapping on one frame. Everything visual about rain (room dimming,
 // grey sky, grey clouds) reads this rather than the raw boolean.
