@@ -1190,6 +1190,13 @@ const approachPoint=(x,y)=>approachCandidates(x,y)[0]||null;
 // to cover standing beside an object and getting onto it, so it scales with the object. A chair
 // ~38px across allows ~34; a keep-out that pushes standing room 45px away is a genuine refusal.
 function settleReach(o){
+  // an AREA is as big as it was drawn - the standing room it offers is its own extent, and
+  // judging it by a stock 26px ruled out anything drawn wider than a chair
+  if(o&&o.area&&o.area.pts&&o.area.pts.length>2){
+    const xs=o.area.pts.map(p=>p[0]), ys=o.area.pts.map(p=>p[1]);
+    return Math.max(26, Math.hypot(Math.max(...xs)-Math.min(...xs),
+                                   Math.max(...ys)-Math.min(...ys))/2 + 20);
+  }
   const d=o&&SD.props[o.object];
   if(!d) return 26;
   const {w,h}=sizeOf(o);
@@ -1806,15 +1813,50 @@ const areaColor=(z,a)=>'hsla('+AREA_HUES[(((z&&z.spotId)||1)-1)%AREA_HUES.length
 const areaLabelById=id=>{ const z=scene.zones.find(q=>q.kind==='spot'&&q.spotId===id);
   return areaLabel(z); };
 // somewhere standable inside an area - its centroid if that works, else a scan
+// AN AREA HAS ONE SPOT IN IT, and it is the same spot every time you ask (Jon, of a work
+// area at the bench: "it just keeps moving or slingshotting in that area instead of just
+// sitting still in that spot breathing"). This used to answer with a fresh RANDOM point on
+// every call - and every decision calls it - so an area whose middle he cannot stand in
+// named a different destination each time. He would arrive, finish, be handed a spot four
+// pixels away, and set off again: motion with no reason behind it, forever.
+//
+// So: the middle if he can stand there, otherwise the standable point NEAREST the middle,
+// found by walking a grid rather than by dice. Deterministic, and remembered on the zone -
+// and the memory re-validates itself, so redrawing the area or moving the furniture under
+// it simply finds the next one.
 function areaPoint(z){
   const cx=z.pts.reduce((t,p)=>t+p[0],0)/z.pts.length,
         cy=z.pts.reduce((t,p)=>t+p[1],0)/z.pts.length;
   if(standable(cx,cy)&&inPoly(cx,cy,z.pts)) return {x:cx,y:cy};
+  if(z._pt && inPoly(z._pt.x,z._pt.y,z.pts) && standable(z._pt.x,z._pt.y))
+    return {x:z._pt.x, y:z._pt.y};
   const xs=z.pts.map(p=>p[0]), ys=z.pts.map(p=>p[1]);
-  for(let t=0;t<120;t++){
-    const x=Math.min(...xs)+Math.random()*(Math.max(...xs)-Math.min(...xs));
-    const y=Math.min(...ys)+Math.random()*(Math.max(...ys)-Math.min(...ys));
-    if(inPoly(x,y,z.pts)&&standable(x,y)) return {x,y} }
+  const x0=Math.min(...xs), x1=Math.max(...xs), y0=Math.min(...ys), y1=Math.max(...ys);
+  const N=16; let best=null, bd=1e9;
+  for(let i=0;i<=N;i++) for(let j=0;j<=N;j++){
+    const x=x0+(x1-x0)*i/N, y=y0+(y1-y0)*j/N;
+    if(!inPoly(x,y,z.pts)||!standable(x,y)) continue;
+    const d=Math.hypot(x-cx,y-cy);
+    if(d<bd){ bd=d; best={x,y} } }
+  if(best){ z._pt={x:best.x, y:best.y}; return best }
+  // AN AREA DRAWN OVER FURNITURE IS AN INSTRUCTION TO USE IT (Jon drew one on the workbench
+  // and the cat never went: every point inside it is inside the bench's column, so the area
+  // had nowhere to stand and was quietly dropped from the list of things to do - leaving one
+  // "anywhere" move, which is a wander, which is why he never stopped moving).
+  // A pinned move already walks INTO the chair it is pinned to. An area over a thing is the
+  // same promise, so it takes the same licence, and hands the oid on so the whole trip has it.
+  const own=blockObjAt(cx,cy);
+  if(own>=0){
+    const sb=allowObj; allowObj=own;
+    let b2=null, d2=1e9;
+    for(let i=0;i<=N;i++) for(let j=0;j<=N;j++){
+      const x=x0+(x1-x0)*i/N, y=y0+(y1-y0)*j/N;
+      if(!inPoly(x,y,z.pts)||!standable(x,y)) continue;
+      const d=Math.hypot(x-cx,y-cy);
+      if(d<d2){ d2=d; b2={x,y} } }
+    allowObj=sb;
+    if(b2){ z._pt={x:b2.x, y:b2.y}; return {x:b2.x, y:b2.y, oid:own} }
+  }
   // No room to stand in it - an area off the floor, or smaller than his feet. The GHOST still
   // has to show (a vanished ghost reads as a broken tool), so hand back the centroid, marked,
   // and let the panel and the sim treat it as unusable.
@@ -1832,7 +1874,7 @@ function placesFor(a){
     const p=z&&areaPoint(z);
     // shaped like an object so everything downstream works unchanged
     return {kind:'needs',
-      spots:p?[{x:p.x,y:p.y,object:areaLabel(z),area:z,unusable:p.unusable}]:[]};
+      spots:p?[{x:p.x,y:p.y,object:areaLabel(z),area:z,oid:p.oid,unusable:p.unusable}]:[]};
   }
   if(!ruleNeeds(a)) return {kind:'anywhere', spots:[]};
   // hiding the chair is how you find out what he does with nowhere to sit
@@ -2875,6 +2917,10 @@ function defaultAnim(clip){
     order:SD.clips[useClip].frames.map((_,i)=>({i,cs:100})),
     character:{breathe:0,period:8,hold:1,pivot:'feet'}, layers:[]};
 }
+// A TEMPLATE CLIP is art out of a character pack - nobody drew it for this world, so it
+// takes the house defaults. A drawing a child made is theirs, numbers included.
+const isTemplateClip=k=>{ const m=/^([a-z0-9]+):(Adult|Baby)_/.exec(k||'');
+  return !!(m && SD.characters && SD.characters[m[1]]); };
 function addAnim(name, p){
   const clip=p.clip; if(!clip||!SD.clips[clip]) return null;
   const order=(p.order||[]).filter(o=>!o.skip);
@@ -2927,7 +2973,8 @@ function addAnim(name, p){
            inheritedFrom: inherited ? sized.name : null},
     place, ...(facing?{facing}:{}),
     order: order.length?order:SD.clips[clip].frames.map((_,i)=>({i,cs:100})),
-    character:{breathe:+ch.breathe||0, period:+ch.period||8,
+    character:{breathe:(ch.breathe==null && isTemplateClip(clip)) ? 2 : (+ch.breathe||0),
+               period:+ch.period||8,
                hold:Math.max(1,+ch.hold||1), pivot:ch.pivot||'feet'},
     layers:(p.layers||[]).filter(l=>l!=='CHARACTER')};
   anims.push(a);
@@ -4862,6 +4909,7 @@ function session(){
   return {v:1, savedAt:new Date().toISOString(),
     slots:(()=>{ const s={...worldSlots}; delete s[roleKey()]; return s; })(),
     scene, passiveScale, travelScale,
+    br2:1,                       // the breathing default has been applied to this world
     sceneName: ($('sceneName')&&$('sceneName').value)||'',
     // EVERYTHING about each animation. The first version of this listed seven fields and
     // quietly dropped stage/place/depth/facing, so a refresh reset every size to 100% and put
@@ -5047,6 +5095,25 @@ async function restore(raw){
     if(a.actAs)  made.actAs=a.actAs;
     await loadArtFor(made);
   }
+  // ONCE PER WORLD, bring the older moves up to the house default (Jon: "not all of my
+  // animations are doing the breathing function"). Worlds built before the default was set
+  // carry breathe 0 on pack art, so half a room stands there like a photograph while the
+  // half added since breathes. Only PACK art is touched, and only this once - the marker
+  // means a deliberate 0 set afterwards is never overwritten.
+  if(!p.br2){
+    let fixed=0;
+    const up=list=>{ for(const a of (list||[])){
+      if(!isTemplateClip(a.clip)) continue;
+      a.character=a.character||{};
+      if(!(+a.character.breathe>0)){ a.character.breathe=2; a.character.period=+a.character.period||8; fixed++ }
+    } };
+    up(anims);
+    for(const k of Object.keys(worldSlots||{})){
+      try{ const q=JSON.parse(worldSlots[k]); up(q.anims); worldSlots[k]=JSON.stringify(q) }catch(e){}
+    }
+    if(fixed) setTimeout(()=>say(`${fixed} move${fixed===1?'':'s'} `+
+      `now breathe${fixed===1?'s':''} — 2% every 8 frames, the same as a new one`), 1200);
+  }
   rebuildClouds(); weatherInit(scene.room); litCache.key='';
   if(typeof syncRoleUI==='function') syncRoleUI();
   return {objects:scene.objects.length, anims:anims.length,
@@ -5162,13 +5229,15 @@ async function restore(raw){
        'it, not sunk into it.',
      done:()=>{ try{ return +$('ascale').value!==100 }catch(e){ return false } }},
     {ch:'Your first room', t:'Say how long it lasts', el:'anims',
-     b:'Every move has a little <b>plays</b> box \u2014 that is <b>seconds</b>. Type 5 and '+
-       'he does it for five. Leave it blank and he decides: twice through, then a rest.',
-     done:()=>anims.some(a=>+a.dur>0)},
+     b:'Every move has a little <b>plays</b> box \u2014 that is <b>seconds</b>. New moves '+
+       'start at <b>5</b>. Type a bigger number for something he should linger over, or '+
+       'clear it and he decides: twice through, then a rest.',
+     done:()=>anims.some(a=>a.dur===undefined || (+a.dur>0 && +a.dur!==5))},
     {ch:'Your first room', t:'What the move counts as', el:'anims',
-     b:'Each move has a <b>counts as</b> list. That is the pet\u2019s <i>reason</i>: pick '+
-       '<b>eating</b> and a hungry bunbun will walk here by himself. Leave it on '+
-       '<b>the clip</b> and it is just something nice he does.',
+     b:'Each move has a <b>counts as</b> list. That is the pet\u2019s <i>reason</i>: a move '+
+       'that counts as <b>eating</b> is where a hungry bunbun walks by himself. A meal, a '+
+       'bath and a sleep already know what they are. <b>Sitting down</b> is the one to '+
+       'answer: a chair, or the <b>potty</b>? Only you know which you put there.',
      done:()=>false},
     {ch:'Your first room', t:'Watch him live in it', el:'preview',
      b:'Press <b>Act it out</b>. He walks about your room and does your moves, exactly as '+
