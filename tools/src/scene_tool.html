@@ -1064,9 +1064,34 @@ async function sendHimTo(act){
 // he comes home on his own when a side room has nothing left to do
 async function comeHome(){ if(roleKey()) await crossTo('', ''); }
 
+// THE TICK COUNTS IN EVERY ROOM, HERE TOO (Jon: "we need to make sure the assembler
+// recognizes that checkmark in each room"). A move flagged "every room" lives in ONE room's
+// list, and the export hands it to the others - so the preview has to see it the same way or
+// acting out in the kitchen would show a world the device will never have. These are borrowed
+// for the sim only: they are never added to anims[], so they cannot be edited, moved or
+// deleted from the wrong room.
+function everywhereExtras(){
+  const out=[], seen=new Set();
+  const have=new Set(anims.filter(a=>a.on).map(a=>actOfAnim(a)));
+  for(const k of Object.keys(worldSlots||{})){
+    try{
+      const q=JSON.parse(worldSlots[k]);
+      for(const a of (q.anims||[])){
+        if(a.on===false || !a.everywhere || !a.clip || !SD.clips[a.clip]) continue;
+        const act=a.actAs||actOfAnim(a);
+        if(have.has(act) || seen.has(act)) continue;
+        seen.add(act);
+        out.push(Object.assign({}, a, {rule:{anywhere:true}, fromEverywhere:true,
+          character:a.character||{breathe:2,period:8,hold:1,pivot:'feet'},
+          order:a.order||[], stage:a.stage||{scale:gMasterScale||100}, place:a.place||{dx:0,dy:0}}));
+      }
+    }catch(e){}
+  }
+  return out;
+}
 function candidates(){
   const out=[];
-  for(const a of anims){ if(!a.on) continue;
+  for(const a of anims.concat(everywhereExtras())){ if(!a.on) continue;
     const p=placesFor(a);
     if(p.kind==='anywhere') out.push({a, spot:null});
     // Something with no standing room anywhere near it can never be used, and looping forever
@@ -2572,7 +2597,11 @@ function drawAnims(){
     // a move that counts as the same feeling, that is what the pet will really do, so that is
     // what the button has to show.
     const want=actOfAnim({clip:b.dataset.forcedef});
-    const own=anims.find(x=>x.on && actOfAnim(x)===want);
+    // his own drawing for this feeling: THIS room's first, then whatever another room lends
+    // it through the "every room" tick - or pressing love in a room that borrows one does
+    // nothing at all, which is what Jon saw
+    const own=anims.find(x=>x.on && actOfAnim(x)===want)
+           || everywhereExtras().find(x=>actOfAnim(x)===want);
     if(own){
       await loadArtFor(own);
       forcePick={a:own, spot:null};
@@ -5109,7 +5138,9 @@ $('ghosts').onclick=()=>{
   $('ghosts').textContent='Ghosts: '+(showGhosts?'all':'off');
   $('ghosts').classList.toggle('pri',!showGhosts); draw() };
 $('preview').onclick=async()=>{ simOn=!simOn; sim=null;
-  if(simOn){ say('loading how he walks…'); await loadTravelArt() }
+  if(simOn){ say('loading how he walks…'); await loadTravelArt();
+    // ...and whatever the other rooms lend this one
+    for(const x of everywhereExtras()){ try{ await loadArtFor(x) }catch(e){} } }
   $('preview').classList.toggle('pri',simOn);
   $('preview').textContent=simOn?'Stop':'Act it out';
   if(simOn){ const n=candidates().length, bad=unreachable();
