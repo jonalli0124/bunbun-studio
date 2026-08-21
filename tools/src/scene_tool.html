@@ -132,7 +132,7 @@
       <button class="pri" id="play">&#10074;&#10074; running</button>
       <button id="saveScene" class="pri" title="every room in this world, one file">&#128190; Save scene</button>
       <button id="saveRoom" title="just the room on screen, for moving one room between scenes">&#128193; save room</button>
-      <button id="impScene">&#128194; Open scene</button>
+      <button id="impScene" title="opens a whole world, a single room, or a bunbun package - a room drops into the room you are in and leaves the others alone">&#128194; Open scene or room</button>
       <button id="freshScene" title="empty room, nothing placed - save first if you want this one back">&#10024; start fresh</button>
       <button id="exportPkg" class="pri" title="saves one .bunbun file with every room and animation - open your bunbun's own page (http://bunbun-XXXX.local/build) and give it this file. Works from anywhere, no network tricks">&#128230; save a bunbun package</button>
       <button id="preview">Act it out</button>
@@ -146,10 +146,10 @@
       <button id="redoB" title="Ctrl+Y">&#8631;</button>
 
       <button id="impAnim" class="pri">Add animations</button>
-      <button class="pri" id="exp">Export for the device</button>
-      <button id="expAll" title="one zip: the scene json, every animation as an editor file, and the art it shows">Export everything</button>
+
+      <button id="expAll" title="a zip holding the scene, every animation as a file you can reopen in Animation Creation, and the art - the belt-and-braces backup">&#128230; backup everything (zip)</button>
     </div>
-    <input type="file" id="fScene" accept=".json" style="display:none">
+    <input type="file" id="fScene" accept=".json,.bunbun" style="display:none">
     <input type="file" id="fAnim" accept=".json" multiple style="display:none">
     <input type="file" id="fReplace" accept=".json" style="display:none">
     <div id="msg" style="margin-top:9px"></div>
@@ -473,8 +473,8 @@ const SD=window.ATTACH_DATA;
 var gWorldAnimal='';                 // the whole house's animal, across every room
 var gMasterScale=0;                  // ...and its one size. 0 = nobody has set it yet
 function worldAnimalId(){
-  if(scene && scene.animal) return scene.animal;     // what the world was switched to
-  if(gWorldAnimal) return gWorldAnimal;              // ...and what the OTHER rooms are
+  if(gWorldAnimal) return gWorldAnimal;              // the house's animal always wins
+  if(scene && scene.animal) return scene.animal;     // what this room was saved as
   const el=document.getElementById('worldAnimal');
   if(el && el.value) return el.value;                // mid-change, before it clears itself
   try{ return (anims.find(a=>a.clip&&a.clip.includes(':'))||{}).clip.split(':')[0] }
@@ -3000,12 +3000,21 @@ $('freshScene').onclick=()=>{
   location.reload();
 };
 $('impAnim').onclick=()=>$('fAnim').click();
+// The 'a' is WHAT IT COUNTS AS (Jon: "can we default their action like having a meal to
+// eating, having a bath to bathing, going to sleep as sleeping"). A meal is a meal - there
+// is nothing for a child to decide there, and leaving the box on "the clip" made it look
+// like an unanswered question. Sitting down is the one that genuinely IS a question - it is
+// a chair or it is the potty, and only the person who placed it knows - so it stays blank.
 const BASE_MOVES=[
-  {c:'Adult_Eat',    t:'having a meal',        i:'\u{1F37D}', k:'do'},
-  {c:'Adult_Bathe',  t:'having a bath',        i:'\u{1F6C1}', k:'do'},
-  {c:'Adult_Sleep',  t:'going to sleep',       i:'\u{1F634}', k:'do'},
+  {c:'Adult_Eat',    t:'having a meal',        i:'\u{1F37D}', k:'do', a:'eat'},
+  {c:'Adult_Bathe',  t:'having a bath',        i:'\u{1F6C1}', k:'do', a:'bath'},
+  {c:'Adult_Sleep',  t:'going to sleep',       i:'\u{1F634}', k:'do', a:'sleep'},
   {c:'Adult_Sit',    t:'sitting down',         i:'\u{1FA91}', k:'do'},
   {c:'Adult_Pickup', t:'picking something up', i:'\u{1F91A}', k:'do'},
+  // Jon: "we need to add idle to things he does". Every pack has Adult_Idle - the pose he
+  // holds when nothing else is going on - and a child could reach every move he owns EXCEPT
+  // that one, which is the one a room most often wants: somewhere to just stand.
+  {c:'Adult_Idle',   t:'just standing there',  i:'\u{1F9CD}', k:'do'},
   {c:'Adult_Love',   t:'feeling happy',        i:'\u{1F970}', k:'feel'},
   {c:'Adult_Bored',  t:'being bored',          i:'\u{1F611}', k:'feel'},
   {c:'Adult_Tired',  t:'being sleepy',         i:'\u{1F971}', k:'feel'},
@@ -3031,9 +3040,15 @@ async function addBaseMove(m){
   const order = dirs.some(Boolean)
     ? [{i: Math.max(0, dirs.indexOf('south'))}]     // a pose: one direction, never all eight
     : cd.frames.map((_,i)=>({i}));                  // a real animation: all of it
-  const made=addAnim(m.t, {clip:key, order});
+  const made=addAnim(m.t, {clip:key, order, character:{breathe:2, period:8}});
   if(!made) return say('could not add that move',true);
   made.fromBase=true;
+  if(m.a) made.actAs=m.a;
+  // FIVE SECONDS unless somebody says otherwise (Jon: "all of them need to be defaulted to
+  // 5 seconds"). Blank meant "two loops and a rest", which for a one-frame pose is over
+  // before it reads. Sleeping is the exception the tool has always made: it ends when his
+  // night ends, its box is disabled, and a number there would be a lie.
+  if(m.a!=='sleep') made.dur=5;
   await Promise.all(cd.frames.map((f,i)=>load(f.img,'clip|'+key+'|'+i)));
   asel=anims.length-1; syncRule(); draw();
   say(`"${m.t}" is in the room \u2014 he can do that now`);
@@ -3106,8 +3121,250 @@ function drawShelf(){
 drawShelf();
 setInterval(drawShelf, 2000);   // saves from the other tab appear within a couple seconds
 
+// OPEN A PACKAGE, NOT JUST A PROJECT (Jon, having lost a session: "all i have is a bunbun
+// package with everything, but i cant load it"). The .bunbun is the one file that always
+// exists - it is what goes to the device - and until now it was write-only. It carries the
+// DEVICE's shape of a world, so this converts back: props to objects, floor and nogo to zones,
+// baked frames to clips the shelf can use.
+//
+// What comes back: every room, its art, its objects where they stood, its floor and keep-outs,
+// and animations that play and can be re-placed and re-tagged. What does not: the layer-by-
+// layer recipe of a drawn animation, which only lives in its Animation Creation project file.
+// how tall the DRAWN part of an image is. A package's frames are baked at the size the world
+// was exported at, and the animal's own clip is full size; the ratio between the two opaque
+// boxes is the scale the child had chosen, which is otherwise lost on the way out.
+const _bboxCache={};
+function opaqueHeight(src){
+  return new Promise(res=>{
+    if(_bboxCache[src]!=null) return res(_bboxCache[src]);
+    const im=new Image();
+    im.onload=()=>{
+      const c=document.createElement('canvas'); c.width=im.width; c.height=im.height;
+      const g=c.getContext('2d',{willReadFrequently:true}); g.drawImage(im,0,0);
+      let top=-1, bot=-1;
+      try{
+        const d=g.getImageData(0,0,c.width,c.height).data;
+        for(let y=0;y<c.height;y++) for(let x=0;x<c.width;x++)
+          if(d[(y*c.width+x)*4+3]>8){ if(top<0) top=y; bot=y; break; }
+      }catch(e){}
+      const h=(bot>=top&&top>=0)?(bot-top+1):im.height;
+      _bboxCache[src]=h; res(h);
+    };
+    im.onerror=()=>res(0);
+    im.src=src;
+  });
+}
+async function importBundle(buf){
+  const u8=new Uint8Array(buf), dv=new DataView(buf);
+  if(!(u8[0]===0x42&&u8[1]===0x4E&&u8[2]===0x44&&u8[3]===0x4C)) throw new Error('not a bunbun package');
+  const scLen=dv.getUint32(8,true), frLen=dv.getUint32(12,true);
+  // A PACKAGE MADE SINCE TODAY CARRIES ITS OWN SOURCE. Rebuilding a world from the device's
+  // shape is inference - it guesses which chair a sit belonged to and measures the size back
+  // out of the pixels - and it is only ever a fallback. If the real project is in here, use it.
+  if(u8.length>8){
+    const t=u8.length-8, dvT=new DataView(buf);
+    if(u8[t+4]===0x42&&u8[t+5]===0x50&&u8[t+6]===0x52&&u8[t+7]===0x4A){
+      const pLen=dvT.getUint32(t,true);
+      if(pLen>0 && t-pLen>=16){
+        const projText=new TextDecoder().decode(u8.subarray(t-pLen,t));
+        booting=true;
+        await restore(projText);
+        booting=false;
+        histPush(projText);
+        syncRule(); syncObj(); animalOptions(); draw(); autosave();
+        const pj=JSON.parse(projText);
+        return {rooms:1+Object.keys(pj.slots||{}).length,
+                objs:(pj.scene&&pj.scene.objects||[]).length,
+                moves:(pj.anims||[]).length, missingArt:0, exact:true};
+      }
+    }
+  }
+  const body=new TextDecoder().decode(u8.subarray(16,16+scLen));
+  const j=JSON.parse(body);
+  const scenes=j.world||[j];
+  // the art that travelled with it
+  const art={};
+  if(frLen>0){
+    const {entries}=PakLib.parse(buf.slice(16+scLen,16+scLen+frLen));
+    for(const en of entries){
+      try{ art[en.name]=PakLib.decodeSprite(en).toDataURL('image/png') }catch(err){}
+    }
+  }
+  const ROLE_OF={0:'',1:'kitchen',2:'bathroom',3:'work',4:'outside'};
+  const scaleVotes=[];
+  const slots={}; let firstRole=null, rooms=0, objs=0, moves=0, missingArt=0;
+  for(const sc of scenes){
+    const roleKeyName = typeof sc.role==='number' ? (ROLE_OF[sc.role]||'') : (sc.role||'');
+    const roomKey=String(sc.room||'').replace(/^rooms\/room-/,'');
+    if(!SD.rooms[roomKey]) { missingArt++; }
+    // THE EXPORT WRITES THE SPRITE'S TOP, THE EDITOR KEEPS ITS BASE. buildPortPayload does
+    //     y: o.y - d.h * o.scale * passiveScale
+    // so importing that y straight back lifted every object by its own height and the whole
+    // room floated (Jon: "the restore from package has all the objects floating"). Undo it.
+    const objects=(sc.props||[]).map(o=>{
+      const name=String(o.n||'').replace(/^items\//,'');
+      const d=SD.props[name];
+      if(!d) return null;
+      const sc2=+(o.s||1);
+      return { object:name, x:+o.x||0, y:(+o.y||0) + d.h*sc2, scale:sc2, z:o.z,
+               rot:+(o.r||0), flip:!!o.f, opacity:100, can:o.can||null,
+               walkOver:(o.z!=null && o.z<0)||undefined,
+               lamp:!!(d&&d.kind==='light') };
+    }).filter(Boolean);
+    const zones=[];
+    // a point is {x,y} in one place and [x,y] in another - the floor writes objects, the
+    // keep-outs write pairs. Take either, or inPoly gets handed something it cannot walk.
+    // THE EDITOR'S POINT IS A PAIR, not an object - inPoly destructures `const [xi,yi]=pts[i]`.
+    // The device writes its floor as {x,y} and its keep-outs as [x,y], so take either and always
+    // hand back a pair. Getting this backwards fed inPoly something it could not walk and the
+    // whole draw threw.
+    const pt=p=>Array.isArray(p) ? [+p[0], +p[1]] : [+p.x, +p.y];
+    const poly=a=>Array.isArray(a)&&a.length>2 ? a.map(pt).filter(q=>isFinite(q[0])&&isFinite(q[1])) : null;
+    const fl=poly(sc.floor); if(fl&&fl.length>2) zones.push({kind:'floor', pts:fl});
+    for(const ng of (sc.nogo||[])){ const q=poly(ng); if(q&&q.length>2) zones.push({kind:'keepout', pts:q}); }
+    for(const sk of (sc.sky||[])){ const q=poly(sk); if(q&&q.length>2) zones.push({kind:'sky', pts:q}); }
+    // the ghost placements: which clip stands where
+    const placed={};
+    for(const b of (sc.bun||[])) if(b&&b.a) placed[b.a]={x:b.x, y:b.y};
+    const anims=[];
+    for(const o of objects) if(o.oid==null) o.oid=oidSeq++;   // rules name objects by id
+    const wantAnimal=sc.animal||'';
+    for(const a of (sc.anims||[])){
+      const slug=String(a.f||'').replace(/^canim\//,'');
+      // PREFER THE REAL CLIP OVER THE BAKED ONE. A package carries frames baked at the size
+      // the world was exported at - cat-walk-e is 24x34 inside a 96x136 canvas - because the
+      // device wants them ready to blit. Dropping those into the editor, which holds full-size
+      // art and does its own scaling, makes every sprite wrong (Jon: "the sprites are all wrong
+      // for the scene assembler"). When the move counts as something every animal can do, take
+      // that animal's own full-size clip instead; keep the baked frames only for a drawing that
+      // has no equivalent, where small art is better than none.
+      let key=null;
+      if(wantAnimal && SD.characters && SD.characters[wantAnimal]){
+        const t=ACT_TEMPLATE[a.act||''];
+        if(t && SD.characters[wantAnimal].clips[t]){
+          key=wantAnimal+':'+t;
+          if(!SD.clips[key]) SD.clips[key]=SD.characters[wantAnimal].clips[t];
+        }
+      }
+      const frames=[];
+      if(!key){
+        for(let i=0;i<(a.n||0);i++){ const im=art[(a.f||'')+'/'+i]; if(im) frames.push({img:im}); }
+        if(frames.length){ key='pkg:'+slug; SD.clips[key]={frames, fps:a.fps||7}; }
+        else if(SD.clips[a.k]) key=a.k;
+        else { missingArt++; continue; }
+      }
+      const st=placed[a.k]||{};
+      // WHAT IT BELONGS TO. The package does not carry "this move is tied to that chair" - the
+      // device does not need it, it works from marks - so the tie has to be recovered from
+      // WHERE the mark is. The nearest object to the mark is the thing the child put it on:
+      // sit-beanbag is marked at x=53 and the Beanbag Chair stands at x=52.
+      let rule={anywhere:true};
+      if(!a.aw && st.x!=null){
+        let best=null, bd=1e9;
+        for(const o of objects){
+          const d2=Math.hypot(o.x-st.x, o.y-st.y);
+          if(d2<bd){ bd=d2; best=o; }
+        }
+        if(best && bd<70){
+          if(best.oid==null) best.oid=oidSeq++;
+          rule={onItems:[best.oid]};
+          // and the object has to admit it can be used for this, or the rule reads as broken
+          if(a.act){ best.can=Array.from(new Set([...(best.can||[]), a.act])); }
+        }
+      }
+      // HOW BIG HE WAS. Compare the baked frame with the animal's own clip: the ratio is the
+      // size the child chose, which the export folded into the pixels and threw away.
+      let sc100=100;
+      if(key.indexOf(':')>0){
+        const bakedSrc=art[(a.f||'')+'/0'];
+        const real=(SD.clips[key]&&SD.clips[key].frames&&SD.clips[key].frames[0]);
+        if(bakedSrc && real && real.img){
+          const [hb,hr]=await Promise.all([opaqueHeight(bakedSrc), opaqueHeight(real.img)]);
+          if(hb>0&&hr>0) sc100=Math.max(15, Math.min(150, Math.round(100*hb/hr)));
+        }
+      }
+      if(key.indexOf(':')>0 && sc100>0) scaleVotes.push(sc100);
+      const templated=key.indexOf(':')>0 && key.indexOf('pkg:')!==0;
+      anims.push({ name:slug.replace(/[-_]+/g,' '), on:true, clip:key,
+                   fps:a.fps||7, actAs:a.act||undefined,
+                   // five seconds for a template nobody has timed; a drawing keeps its own
+                   // (walking is how he gets around, not something he does for a while)
+                   dur:a.dur || ((templated && !['sleep','walk_e','walk_w'].includes(a.act))
+                                 ? 5 : undefined),
+                   // a template gets the house default; a baked drawing keeps what it had
+                   character:templated ? {breathe:2, period:8, hold:1, pivot:'feet'}
+                                       : {breathe:+a.br||0, period:+a.bp||8, hold:1, pivot:'feet'},
+                   stage:{x:st.x==null?null:st.x, y:st.y==null?null:st.y,
+                          scale:sc100, authored:true},
+                   rule,
+                   order:((SD.clips[key]&&SD.clips[key].frames)||[{}]).map((_,i)=>({i,cs:100})) });
+      moves++;
+    }
+    rooms++; objs+=objects.length;
+    const slot={ v:1, scene:{ room:SD.rooms[roomKey]?roomKey:Object.keys(SD.rooms)[0],
+                              role:roleKeyName||undefined, objects, zones,
+                              animal:sc.animal||undefined,
+                              character:{x:160,y:200,scalePercent:145} },
+                 sceneName:sc.name||'', anims,
+                 weather:{raining:!!(sc.env&&sc.env.rw), clouding:!!(sc.env&&sc.env.cn),
+                          cloudN:(sc.env&&sc.env.cn)||3, cloudStyle:'shipped',
+                          starsOn:!!(sc.env&&sc.env.st), starN:(sc.env&&sc.env.st)||18} };
+    slots[roleKeyName]=JSON.stringify(slot);
+    if(firstRole===null) firstRole=roleKeyName;
+  }
+  // the median of what each clip measured - one world, one size
+  if(scaleVotes.length){
+    scaleVotes.sort((a,b)=>a-b);
+    const one=scaleVotes[Math.floor(scaleVotes.length/2)];
+    for(const k of Object.keys(slots)){
+      const q=JSON.parse(slots[k]);
+      for(const a of (q.anims||[])) if(a.clip && a.clip.indexOf(':')>0 && a.clip.indexOf('pkg:')!==0)
+        a.stage.scale=one;
+      slots[k]=JSON.stringify(q);
+    }
+  }
+  // hand it to the editor the way a project file would
+  const openRole = slots['']!==undefined ? '' : firstRole;
+  const open=JSON.parse(slots[openRole]);
+  const rest={...slots}; delete rest[openRole];
+  const session={ v:1, format:'bunbun-scene-project', savedAt:new Date().toISOString(),
+                  slots:rest, scene:open.scene, anims:open.anims,
+                  sceneName:open.sceneName, passiveScale:1, travelScale:1,
+                  // todOn TRUE, which is the tool's own default. Importing with it false
+                  // left the lighting preview switched off, so the time-of-day slider moved
+                  // the clock and nothing on screen changed (Jon: "the time of day adjuster
+                  // isnt working") - it was working, and I had turned off the thing it drives.
+                  light:{todMin:780, todOn:true, lampMode:'auto', lightScale:100} };
+  booting=true;
+  await restore(JSON.stringify(session));
+  booting=false;
+  // register the declared animal's own clips, the way choosing it from the list would, so the
+  // character in the room is that creature rather than whatever the base pack is
+  const wa=(scenes.find(x=>x.animal)||{}).animal;
+  if(wa && SD.characters && SD.characters[wa]){
+    gWorldAnimal=wa;
+    for(const c of Object.keys(SD.characters[wa].clips))
+      if(!SD.clips[wa+':'+c]) SD.clips[wa+':'+c]=SD.characters[wa].clips[c];
+    if(typeof loadTravelArt==='function') { try{ await loadTravelArt() }catch(e){} }
+  }
+  histPush(JSON.stringify(session));
+  syncRule(); syncObj(); animalOptions(); draw(); autosave();
+  return {rooms, objs, moves, missingArt};
+}
+
 $('fScene').onchange=async e=>{
   const f=e.target.files[0]; e.target.value=''; if(!f) return;
+  // a .bunbun package is binary and starts "BNDL" - try that before parsing as text
+  if(/\.bunbun$/i.test(f.name)){
+    try{
+      const r=await importBundle(await f.arrayBuffer());
+      return say(`opened the package \u2014 ${r.rooms} room${r.rooms===1?'':'s'}, ${r.objs} `+
+        `object${r.objs===1?'':'s'}, ${r.moves} animation${r.moves===1?'':'s'}`+
+        (r.missingArt?` (${r.missingArt} piece(s) of art were not in the file)`:'')+
+        '. Drawn animations come back as they were baked \u2014 to re-edit one, open its own '+
+        'project file in Animation Creation.');
+    }catch(err){ return say('could not open that package \u2014 '+err.message, true) }
+  }
   let p; try{ p=JSON.parse(await f.text()) }catch(err){ return say('that file is not readable',true) }
   // a saved scene PROJECT restores exactly - it is the same shape the autosave and undo use
   if(p.format==='bunbun-scene-project'){
@@ -3312,7 +3569,7 @@ function forDevice(){
       playable: placesFor(a).kind==='anywhere' || placesFor(a).spots.length>0})),
   };
 }
-$('exp').onclick=()=>{
+const _removedExport=()=>{
   const bad=anims.filter(a=>a.on && placesFor(a).kind==='needs' && !placesFor(a).spots.length);
   if(bad.length) return say(`${bad.map(a=>'"'+a.name+'"').join(', ')} can never play in this `+
     `room — switch off, or mark something with what it needs`, true);
@@ -3629,7 +3886,46 @@ const PakLib=(()=>{
     data.set(idx,2+pal.length*2);
     return {origW:DW,origH:DH,w:DW,h:DH,offX:0,offY:0,fmt:1,data};
   }
-  return {parse, encodeSprite, encodeRoom, build};
+  // the inverse of encodeSprite: rows of {skip,len,RGB565...} back into pixels, replaced on
+  // the original canvas at the offset the encoder trimmed to
+  function decodeSprite(e){
+    const W=e.origW||e.w, H=e.origH||e.h;
+    const cv=document.createElement('canvas'); cv.width=W; cv.height=H;
+    const g=cv.getContext('2d'); const img=g.createImageData(W,H); const px=img.data;
+    if(e.fmt!==0 || !e.w || !e.h) return cv;      // rooms (fmt 1) come from the pack, not here
+    let p=0;
+    for(let row=0; row<e.h; row++){
+      if(p>=e.data.length) break;
+      const nseg=e.data[p++]; let x=0;
+      for(let sgi=0; sgi<nseg; sgi++){
+        if(p+1>=e.data.length) break;
+        const skip=e.data[p++], len=e.data[p++];
+        x+=skip;
+        for(let k=0;k<len;k++){
+          const c=e.data[p] | (e.data[p+1]<<8); p+=2;
+          // 565 -> 888, then undo the encoder's white balance and saturation lift so a round
+          // trip does not drift further every time
+          let r=((c>>11)&31)*255/31, gg=((c>>5)&63)*255/63, b=(c&31)*255/31;
+          const w=255.0/246.0, SAT=1.30;
+          r/=w; gg/=w; b/=w;
+          const luma=0.299*r+0.587*gg+0.114*b;
+          r=luma+(r-luma)/SAT; gg=luma+(gg-luma)/SAT; b=luma+(b-luma)/SAT;
+          const X=(e.offX||0)+x+k, Y=(e.offY||0)+row;
+          if(X>=0&&X<W&&Y>=0&&Y<H){
+            const i=(Y*W+X)*4;
+            px[i]=Math.max(0,Math.min(255,Math.round(r)));
+            px[i+1]=Math.max(0,Math.min(255,Math.round(gg)));
+            px[i+2]=Math.max(0,Math.min(255,Math.round(b)));
+            px[i+3]=255;
+          }
+        }
+        x+=len;
+      }
+    }
+    g.putImageData(img,0,0);
+    return cv;
+  }
+  return {parse, encodeSprite, encodeRoom, build, decodeSprite};
 })();
 
 // slug + key, the same rules the PC port uses: canim/<slug> fits the pak's 31, c_<slug>
@@ -3963,6 +4259,23 @@ function animalOptions(){
     `<option value="">animal: ${cur||'the pack\u2019s own'}</option>`+
     Object.keys(SD.characters||{}).map(k=>`<option value="${k}">make it the ${k}</option>`).join('');
 }
+// EVERY ANIMAL HAS THE SAME TEMPLATED MOVES (Jon), so a swap need never leave a world
+// wearing the previous creature. switchClip can only re-dress a clip the new animal literally
+// has - a hand-drawn "c_penguin-bathe" has no frog twin - so those kept their old art and the
+// world ended up half one animal, half the other. Fine once; Jon swaps constantly, so it
+// compounds. The ACT is the bridge: a move that counts as bathing can always become the new
+// animal's Adult_Bathe, because every pack has one.
+const ACT_TEMPLATE={eat:'Adult_Eat', bath:'Adult_Bathe', wash:'Adult_Bathe', toilet:'Adult_Sit',
+                    sleep:'Adult_Sleep', wake:'Adult_Idle', idle:'Adult_Idle', sit:'Adult_Sit',
+                    work:'Adult_Pickup', walk_e:'Adult_Walk_East', walk_w:'Adult_Walk_West',
+                    play:'Adult_Happy', love:'Adult_Love'};
+function templateFor(a, id){
+  const act=(typeof actOfAnim==='function' ? actOfAnim(a) : (a&&a.actAs)) || '';
+  const t=ACT_TEMPLATE[act];
+  if(!t || !SD.characters[id] || !SD.characters[id].clips[t]) return null;
+  if(!SD.clips[id+':'+t]) SD.clips[id+':'+t]=SD.characters[id].clips[t];
+  return id+':'+t;
+}
 function switchClip(clip, id){
   const base=(clip||'').replace(/^[a-z0-9]+:/,'');
   return (SD.characters[id] && SD.characters[id].clips[base]) ? id+':'+base : null;
@@ -3976,12 +4289,19 @@ async function switchWorldAnimal(id){
   for(const c of Object.keys(SD.characters[id].clips))
     if(!SD.clips[id+':'+c]) SD.clips[id+':'+c]=SD.characters[id].clips[c];
   let kept=0, moved=0;
-  const swap=a=>{ const nk=switchClip(a.clip, id);
-    if(nk){ a.clip=nk; moved++; } else if(a.clip) kept++; };
+  let templated=0;
+  const swap=a=>{
+    const nk=switchClip(a.clip, id);
+    if(nk){ a.clip=nk; moved++; return; }
+    const tk=templateFor(a, id);          // no twin: fall back to what it COUNTS AS
+    if(tk && tk!==a.clip){ a.clip=tk; a.fromBase=true; templated++; return; }
+    if(a.clip) kept++;
+  };
   anims.forEach(swap);
   for(const rk of Object.keys(worldSlots)){
     try{ const q=JSON.parse(worldSlots[rk]);
       (q.anims||[]).forEach(swap);
+      if(q.scene) q.scene.animal=id;      // the room's own record, not just its moves
       worldSlots[rk]=JSON.stringify(q);
     }catch(e){}
   }
@@ -3989,6 +4309,7 @@ async function switchWorldAnimal(id){
   await loadTravelArt();
   animalOptions(); syncRule(); draw(); autosave();
   say(`the whole world is the ${id}'s now \u2014 ${moved} animation${moved===1?'':'s'} changed over`+
+      (templated?`, ${templated} drawn for another animal swapped to the ${id}'s own`:'')+
       (kept?`, ${kept} kept their old art (reopen those in Animation Creation to re-dress them)`:'')+
       `. \u{1F4E6} ships it.`);
 }
@@ -4115,7 +4436,13 @@ async function exportDevicePackage(){
     head.set([0x42,0x4E,0x44,0x4C,1,0,0,0]);   // "BNDL", version 1
     const dv=new DataView(head.buffer);
     dv.setUint32(8, sc.length, true); dv.setUint32(12, frag.length, true);
-    const blob=new Blob([head, sc, frag], {type:'application/octet-stream'});
+    // the editable world, appended: | project json | u32 length | "BPRJ" |
+    const proj=new TextEncoder().encode(JSON.stringify(
+      Object.assign({format:'bunbun-scene-project'}, session())));
+    const tail=new Uint8Array(8);
+    new DataView(tail.buffer).setUint32(0, proj.length, true);
+    tail.set([0x42,0x50,0x52,0x4A], 4);                 // "BPRJ"
+    const blob=new Blob([head, sc, frag, proj, tail], {type:'application/octet-stream'});
     const aEl=document.createElement('a');
     aEl.href=URL.createObjectURL(blob);
     // stamped like every other save, so ten packages in Downloads stay tellable apart
@@ -4126,7 +4453,8 @@ async function exportDevicePackage(){
     say(`package saved! Open your bunbun's own page — http://bunbun-XXXX.local/build — and give it `+
         `this file. Inside: ${(body[0]==='{'&&body.slice(0,8).includes('world'))?'your whole world, ':'your room, '}`+
         `${plan.anims.length} animation${plan.anims.length===1?'':'s'} `+
-        `and ${newEntries.length} pieces of art (${((16+sc.length+frag.length)/1024)|0} KB).`);
+        `and ${newEntries.length} pieces of art, with the editable world inside it `+
+        `(${((16+sc.length+frag.length+proj.length+8)/1024)|0} KB).`);
   }catch(err){
     say('package failed — '+err.message,true);
   }finally{
@@ -4478,12 +4806,22 @@ function drawGameView(){
 // him on the left, watch the shipped screen on the right.
 $('gvBtn').onclick=()=>{ window.gvOn=!window.gvOn; const on=window.gvOn;
   const box=cv.closest('.stagebox');
-  box.style.display='flex'; box.style.gap='12px'; box.style.alignItems='flex-start';
-  // EQUAL HALVES when it is on - the two views share the row 50/50
-  cv.style.flex='1 1 0'; cv.style.minWidth='0';
+  // PUT THE ROOM BACK WHEN IT IS OFF (Jon: "when i turn game view on and then off the main
+  // screen doesnt go back to the old screen"). These were set unconditionally and never
+  // cleared, so switching off hid the second view but left the main canvas pinned in the
+  // half-width flex layout it was given for SHARING the row. Clearing an inline style to ''
+  // hands the element back to the stylesheet, which is what "the old screen" means.
+  if(on){
+    box.style.display='flex'; box.style.gap='12px'; box.style.alignItems='flex-start';
+    // EQUAL HALVES when it is on - the two views share the row 50/50
+    cv.style.flex='1 1 0'; cv.style.minWidth='0';
+  } else {
+    box.style.display=''; box.style.gap=''; box.style.alignItems='';
+    cv.style.flex=''; cv.style.minWidth='';
+  }
   $('gview').style.display=on?'':'none';
-  $('gview').style.flex=on?'1 1 0':'0 0 auto';
-  $('gview').style.minWidth='0';
+  $('gview').style.flex=on?'1 1 0':'';
+  $('gview').style.minWidth=on?'0':'';
   $('gview').style.maxWidth=on?'50%':'';
   $('gview').style.imageRendering='pixelated';
   $('gvBtn').classList.toggle('pri',on);
@@ -4583,7 +4921,19 @@ function autosave(){ if(booting||saveTimer) return;
   saveTimer=setTimeout(()=>{ saveTimer=0;
     const j=JSON.stringify(session());
     histPush(j);
-    try{ localStorage.setItem(SKEY,j) }catch(e){} }, 1000) }
+    // A FULL BROWSER MUST NOT FAIL IN SILENCE. This swallowed every error, so once the browser
+    // ran out of room the autosave simply stopped and the child's work looked thrown away -
+    // which is exactly how it feels when a refresh brings back an older world. Say it once,
+    // and say what to do about it.
+    try{ localStorage.setItem(SKEY,j); quotaWarned=false; }
+    catch(e){
+      if(!quotaWarned){
+        quotaWarned=true;
+        say('this browser is out of room, so your work is NOT being saved automatically — '+
+            'press \u{1F4BE} Save scene now to put it in a file', true);
+      }
+    } }, 1000) }
+let quotaWarned=false;
 
 async function restore(raw){
   const p=JSON.parse(raw);

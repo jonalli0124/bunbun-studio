@@ -1827,8 +1827,10 @@ static void freshState() {
   saveName();
   g_nameAsk = true;
   g_namePainted = false;
+  const uint8_t keepSpecies = S.species_idx;   // survives the wipe: see below
   memset(&S, 0, sizeof(S));
   S.magic = SAVE_MAGIC; S.version = SAVE_VERSION;
+  S.species_idx = keepSpecies;
   S.stage = STAGE_EGG; S.phase = PH_ADULT;   // there is only one age now
   S.food = S.fun = S.clean = S.energy = S.health = S.disc = 100;
   S.lights = 1; S.x = 160; S.y = FLOOR_Y;
@@ -1838,6 +1840,12 @@ static void freshState() {
   g_settleUntil = 0; g_nextVisitOK = 0;
   g_action = false; g_wanderT = 0; g_emoteT = 9;
   g_anim = &EGG_ANIM; g_animT = 0;
+  if (g_scAnimal[0]) {
+    for (int i = 0; i < CHARACTERS_N; i++) {
+      if (!CHARACTERS[i].id[0]) continue;                 // the base pack answers to no name
+      if (!strcasecmp(CHARACTERS[i].id, g_scAnimal)) { S.species_idx = (uint8_t)i; break; }
+    }
+  }
 }
 static void loadName() {
   prefs.begin("bunbun", true);
@@ -2189,11 +2197,40 @@ static uint32_t g_outWishAt  = 0;    // when he next mentions that he fancies th
 // only way to ask the device what happened at boot.
 static char g_wakeDid[24] = "not yet";
 static bool     g_actIsWork  = false;   // the running startAction() is a work performance
+static char     g_actAct[8]  = "";      // ...and WHICH act it is, so the room can pay for it
 static int8_t   g_workReps   = 0;       // visit mode: work performances still owed (-1 = a wk session governs)
 static uint8_t  g_doorRole = 0;
 static char     g_doorAct[8] = "";
 static bool     g_outPending = false;   // "and then outside" - the second leg of a trip home
 static uint32_t g_workUntil = 0;     // the scene work session deadline; 0 = no session
+static char     g_repeatAct[8] = "";  // the act this visit keeps repeating until its meter fills
+static uint8_t  g_repeatN   = 0;      // how many reps this visit has already done
+
+// A ROOM'S JOB IS FINISHED WHEN ITS METER IS FULL (Jon: "he needs to stay at work not for 10
+// seconds but until his work meter is full just like sleep", then "same concept for bathe and
+// same concept for food same for outside"). Sleep already worked this way - his night ends it,
+// never a timer - and these are the same idea read off a different gauge.
+//
+// 98, not 100: a meter that ticks down while he works would never quite arrive, and he would
+// stand in the kitchen for ever one crumb short.
+static const float ACT_FULL = 98.0f;
+// ...and a hard cap all the same. A world where the meter cannot rise - a bath that credits
+// nothing, a scene whose act was mistagged - must end the visit rather than trap him in it.
+static const uint8_t REPEAT_CAP = 24;
+static bool actMeterFull(const char *act) {
+  if (!act || !act[0]) return true;
+  if (!strcmp(act, "eat"))                          return S.food  >= ACT_FULL;
+  if (!strcmp(act, "bath") || !strcmp(act, "wash")) return S.clean >= ACT_FULL;
+  if (!strcmp(act, "work"))                         return S.disc  >= ACT_FULL;
+  return true;                       // anything else has no gauge, so one go is the whole of it
+}
+// which act this room is FOR - the builder's own model: "this room is - acts travel to the
+// room that owns them"
+static const char *roomOwnAct(uint8_t role) {
+  return role == SCENE_ROLE_KITCHEN ? "eat"
+       : role == SCENE_ROLE_BATH    ? "bath"
+       : role == SCENE_ROLE_WORK    ? "work" : "";
+}
 // HIS WORK METER GOES UP AT WORK (Jon: "his work meter should go up while he is at
 // work its not doing that") - only the retired farm script ever paid discipline. A
 // one-visit job pays what the script paid; a session pays per rep, so the meter
@@ -2370,7 +2407,17 @@ static bool sceneDoorTo(uint8_t tgt, const char *act) {
   // 240px panel the room is drawn onto at 0.75). The doors live at the room's edges.
   const int ROOMSPACE_W = 320;
   int ex = exitLeft ? 6 : ROOMSPACE_W - 6;
-  int ey = (int)g_fy;
+  // THE DOORWAY HAS ITS OWN HEIGHT, and he should walk to it - one clean diagonal - rather
+  // than crossing the room flat and dropping into it at the last moment (Jon: "when he is not
+  // in the bottom right (door) he walks to the wall and while facing the direction, he then
+  // shifts down to go through the door ... if he is already at the bottom where the door is
+  // it is clean").
+  //
+  // ey was simply wherever he happened to be standing, and the clamp that would have corrected
+  // it never runs out there: sceneFloorLane refuses every column inside SCENE_OFFSTAGE, and the
+  // door sits at x=6. So nothing moved him down until he had already arrived. Ask the floor for
+  // its near edge just INSIDE that margin, which is where the doorway actually is.
+  int ey = (int)g_fy;             // straight at the wall, from wherever he is standing
   if (g_scHasBounds) {
     if (ey < g_scBounds.y0 + 4) ey = g_scBounds.y0 + 4;   // above the floor: come down first
     if (ey > g_scBounds.y1 - 2) ey = g_scBounds.y1 - 2;
@@ -2405,7 +2452,7 @@ extern "C" void bunbun_brain_snapshot(char *buf, int len) {
     "\"x\":%d,\"y\":%d,\"anim\":\"%s\",\"potty\":%d,\"work\":%d,"
     "\"food\":%d,\"fun\":%d,\"energy\":%d,\"clean\":%d,"
     "\"floorN\":%d,\"props\":%d,\"anims\":%d,\"sick\":%d,"
-    "\"worldAnimal\":\"%s\",\"petAnimal\":\"%s\",\"wake\":\"%s\"}",
+    "\"worldAnimal\":\"%s\",\"petAnimal\":\"%s\",\"wake\":\"%s\",\"rep\":\"%s\",\"repN\":%d,\"next\":%d,\"minStay\":%d}",
     (int)g_scCurRole,
     (g_scRoleAvail[0]?1:0)|(g_scRoleAvail[1]?2:0)|(g_scRoleAvail[2]?4:0)|(g_scRoleAvail[3]?8:0)|
     (g_scRoleAvail[4]?16:0),
@@ -2417,7 +2464,10 @@ extern "C" void bunbun_brain_snapshot(char *buf, int len) {
     g_scAnimal,
     (S.species_idx < CHARACTERS_N && CHARACTERS[S.species_idx].id)
       ? CHARACTERS[S.species_idx].id : "",
-    g_wakeDid);
+    g_wakeDid,
+    g_repeatAct, (int)g_repeatN,
+    (int)(g_workNextAt ? (millis() < g_workNextAt ? g_workNextAt - millis() : 0) : -1),
+    (int)(millis() < g_roomMinStay ? g_roomMinStay - millis() : 0));
 }
 // /api/debug/act - the remote lever the door-walk tests (and future layers) need.
 // Set from the web task, consumed on the game task the next tick.
@@ -2431,6 +2481,16 @@ extern "C" void bunbun_debug_act(const char *a) {
   // stat pokes apply IMMEDIATELY (the queued version raced the next meal - "it says
   // he is full"); everything that moves him still goes through think()'s consumption
   if (a && !strcmp(a, "hungry")) { S.food = 20.0f; return; }
+  // WATCH THE WHOLE ROUTINE WITHOUT WAITING FOR THE DAY (Jon: "can you set all his meters low
+  // so i can see it?"). Every gauge the room-acts read, put where he will go and do something
+  // about it - energy deliberately left high, or he simply goes to bed and none of it happens.
+  if (a && !strcmp(a, "drain")) {
+    S.food = 12.0f; S.clean = 12.0f; S.fun = 10.0f; S.disc = 8.0f;
+    S.energy = 75.0f; S.sick = 0;
+    saveState();
+    say("all his meters are low - watch him work through them");
+    return;
+  }
   // THE LEVERS THAT UNSTICK HIM (rehearsal M10): while sick, away or asleep every act
   // was swallowed with ok:true and nothing happened, with no route to the MEDS button.
   if (a && !strcmp(a, "meds")) { S.sick = 0; S.health = min(100.0f, S.health + 35); return; }
@@ -2452,8 +2512,16 @@ static const char *sceneTravelAnim(float dx, bool horiz) {
   // idle fallback is only for a kit with a piece missing (and for vertical travel,
   // which a side-on walk clip cannot face)
   if (!sceneActAnim("walk_e") && !sceneActAnim("walk_w")) return nullptr;
-  const char *k = horiz ? sceneActAnim(dx > 0 ? "walk_e" : "walk_w") : nullptr;
-  if (!k) k = sceneActAnim("idle");
+  // WALKING IS WALKING, WHICHEVER WAY HE IS HEADED (Jon: "it looks like it is replacing his
+  // idle with that direction"). Vertical travel used to fall back to the scene's IDLE clip, so
+  // any move that was more up-and-down than side-to-side slid him across the floor playing the
+  // standing-still animation - and since the door trip and the walk to the room's middle are
+  // both largely vertical, that is most of what he does. A side-on walk cannot face up, but it
+  // is a walk, and a walk is what the eye wants; the sign of dx still decides which way he
+  // faces, however small it is.
+  const char *k = sceneActAnim(dx > 0 ? "walk_e" : "walk_w");
+  if (!k) k = sceneActAnim(dx > 0 ? "walk_w" : "walk_e");   // only one direction drawn
+  if (!k) k = sceneActAnim("idle");                         // ...and only then, standing still
   return k;
 }
 // Can this act happen anywhere in this world at all? (rehearsal S10) - the same
@@ -2480,7 +2548,9 @@ static bool sceneErrandTo(const char *act) {
   // the session, so the owed reps and the stroll tick re-summoned him after the meal.
   // Only work itself, and the potty's own internal legs, keep the session alive.
   if (strcmp(act, "work") != 0 && !g_pottyLock) {
-    g_workUntil = 0; g_workReps = 0; g_workNextAt = 0;
+    g_workUntil = 0; g_workReps = 0;
+    // ...but if this errand IS the repetition, it is not a command interrupting it
+    if (strcmp(act, g_repeatAct) != 0) { g_workNextAt = 0; g_repeatAct[0] = 0; g_repeatN = 0; }
   }
   // WHICH ROOM does this act live in? ("if someone hits bathe... he can go to the
   // bathroom, if he hits eat, he can go to the kitchen")
@@ -2534,6 +2604,7 @@ static bool sceneErrandTo(const char *act) {
     for (int i = 0; i < g_scAnimN; i++)
       if (!strcmp(g_scAnim[i].key, k) && g_scAnim[i].dur > 0.1f) { secs = g_scAnim[i].dur; break; }
     g_actIsWork = !strcmp(act, "work");
+    snprintf(g_actAct, sizeof(g_actAct), "%s", act);
     whyNote(why, act, whyMeter);
     startAction(k, secs);
     return true;
@@ -3118,6 +3189,16 @@ static void think(float dt) {
     if (millis() >= g_actionEnd) {
       g_action = false;
       if (g_actIsWork) { g_actIsWork = false; creditWork(); }
+      // a helping, a wash: smaller than the care button's one big top-up, because several
+      // of them are meant to fill the meter while he stands there doing it
+      else if (g_actAct[0]) {
+        if (!strcmp(g_actAct, "eat")) {
+          S.food = min(100.0f, S.food + 18.0f); S.fun = min(100.0f, S.fun + 1.0f); saveState();
+        } else if (!strcmp(g_actAct, "bath") || !strcmp(g_actAct, "wash")) {
+          S.clean = min(100.0f, S.clean + 22.0f); S.fun = min(100.0f, S.fun + 2.0f); saveState();
+        }
+      }
+      g_actAct[0] = 0;
       if (g_pottySeq == 1) {
         g_pottySeq = 2;
         const char *washAct = (sceneActMark("wash") >= 0 || sceneActAnim("wash")) ? "wash"
@@ -3136,20 +3217,44 @@ static void think(float dt) {
       }
       if (g_workUntil || g_workReps > 0) {
         if (g_dbgAct[0]) { g_workUntil = 0; g_workReps = 0; }  // a command outranks work
-        else if ((g_workUntil ? millis() < g_workUntil : g_workReps > 0) &&
+        // THE METER ENDS THE SHIFT, not the clock and not a rep count. The scene's work
+        // minutes still bound it, so a world that says "work lasts 5 minutes" is not lied to -
+        // but inside that bound he stays until the job is actually done.
+        else if (!actMeterFull("work") && g_repeatN < REPEAT_CAP &&
+            (!g_workUntil || millis() < g_workUntil) &&
             (sceneActMark("work") >= 0 || sceneActAnim("work"))) {
           // HE WALKS HIS ROUNDS (Jon: "shouldnt he walk around?"): back-to-back reps of
           // a 5s work clip read as standing still. Each rep ends in a short stroll; the
           // tick below starts the next rep from wherever the stroll took him.
           g_workNextAt = millis() + 2500 + esp_random() % 3500;
+          snprintf(g_repeatAct, sizeof(g_repeatAct), "work");
+          g_repeatN++;
           g_wanderT = 0.5f;
           return;
         }
         if (g_workUntil) { g_workUntil = 0; say("work is all done!"); }
       }
+      // EVERY ROOM STAYS THE SAME WAY, WORK INCLUDED. I generalised eat and bathe and then
+      // excluded work here, on the belief that the block above still owned it - but that block
+      // only runs when a work SESSION or owed reps exist, which needs either a scene that
+      // declares work minutes or an arrival carrying the act. Neither is true for a plain
+      // visit, so the work room fell through both paths and he stood there doing nothing
+      // (Jon: "he didnt stay at work until it was up"). The room's own act is the rule; the
+      // session above is only the scene's optional cap on top of it.
+      {
+        const char *ra = roomOwnAct(g_scCurRole);
+        if (ra[0] && !g_dbgAct[0] && !actMeterFull(ra) &&
+            g_repeatN < REPEAT_CAP && (sceneActMark(ra) >= 0 || sceneActAnim(ra))) {
+          g_workNextAt = millis() + 2000 + esp_random() % 2500;
+          snprintf(g_repeatAct, sizeof(g_repeatAct), "%s", ra);
+          g_repeatN++;
+          g_wanderT = 0.5f;
+          return;
+        }
+      }
       // outside holds him like home does: no errand is over, so there is nothing to walk
       // back from. Only a command for another room, or the potty, takes him out of it.
-      if (!sceneRoomHolds(g_scCurRole) && !g_doorTrip) {
+      if (!sceneRoomHolds(g_scCurRole) && !g_doorTrip && !g_workNextAt) {
         if (millis() < g_roomMinStay) {          // the visit's minimum stay first
           if (!g_visitHomeAt) g_visitHomeAt = g_roomMinStay;
           g_wanderT = 2.0f;
@@ -3174,7 +3279,7 @@ static void think(float dt) {
     if (!g_dbgAct[0] && g_visit < 0 && !g_doorTrip && millis() >= g_settleUntil) {
       if (g_scCurRole != SCENE_ROLE_MAIN) {
         // his bed is at home: the working day ends and he walks back before sleeping
-        g_workUntil = 0; g_workReps = 0; g_workNextAt = 0; g_visitHomeAt = 0;
+        g_workUntil = 0; g_workReps = 0; g_workNextAt = 0; g_repeatAct[0] = 0; g_repeatN = 0; g_visitHomeAt = 0;
         sceneDoorTo(SCENE_ROLE_MAIN, "");
         return;
       }
@@ -3202,7 +3307,7 @@ static void think(float dt) {
     // ends the trip honestly instead of fighting it.
     if (g_visit >= 0 || g_doorTrip || g_sleepPending) {
       g_visit = -1; g_doorTrip = 0; g_sleepPending = 0;
-      g_workUntil = 0; g_workReps = 0; g_workNextAt = 0; g_pottySeq = 0;
+      g_workUntil = 0; g_workReps = 0; g_workNextAt = 0; g_repeatAct[0] = 0; g_repeatN = 0; g_pottySeq = 0;
       say("bunbun is too poorly for that - he needs medicine");
     }
     setAnim(moodAnim()); g_tx = g_ty = -1; return;
@@ -3448,16 +3553,25 @@ static void think(float dt) {
 
   // the stroll between work reps is over: the next rep starts where he stands
   if (g_workNextAt && millis() >= g_workNextAt) {
-    if (!g_workUntil && g_workReps <= 0) g_workNextAt = 0;   // nothing owed: drop it
+    // whichever act this visit is repeating - work, dinner or a bath - and it stops the
+    // moment that act's own meter says it is done
+    const char *ra = g_repeatAct[0] ? g_repeatAct : ((g_workUntil || g_workReps > 0) ? "work" : "");
+    if (!ra[0] || actMeterFull(ra) || g_repeatN >= REPEAT_CAP ||
+        !(sceneActMark(ra) >= 0 || sceneActAnim(ra))) {
+      g_workNextAt = 0; g_repeatAct[0] = 0;
+    }
     else if (g_visit < 0 && !g_doorTrip && !g_action) {
       g_workNextAt = 0;
       whyFor(WHY_SCHEDULE, "");
-      sceneErrandTo("work");
+      sceneErrandTo(ra);
       return;
     }
   }
   // the fruitless-visit linger is over: head home (cleared by any new door trip)
-  if (g_visitHomeAt && millis() >= g_visitHomeAt) {
+  // ...unless the visit is NOT fruitless: a scheduled repeat means the room still owes him
+  // something. I guarded the min-stay path and missed this one, which is the second of the
+  // two doors home and the one that kept beating the kitchen's next helping to it.
+  if (g_visitHomeAt && millis() >= g_visitHomeAt && !g_workNextAt) {
     g_visitHomeAt = 0;
     if (g_scCurRole != SCENE_ROLE_MAIN && !g_doorTrip) { sceneDoorTo(SCENE_ROLE_MAIN, ""); return; }
   }
@@ -3510,7 +3624,9 @@ static void think(float dt) {
     // clamp can land a stride inside the wall - at night he stood at x~25 against a
     // target the d<4 test missed by inches until the 9s backstop shot the trip. A
     // door is an edge, not a mark: being NEAR it is being through it.
-    if (d < 12 && g_visit == 4 && g_doorTrip) {
+    // A DOOR IS AN EDGE, SO ONLY THE EDGE COUNTS: how far he still is from the wall, not
+    // from a spot on it. Any height along that wall is the doorway.
+    if (g_visit == 4 && g_doorTrip && fabsf(g_fx - (float)g_tx) < 12.0f) {
       // AT THE DOOR: swap the room, walk in from the mirror edge, then do the errand
       g_doorTrip = 0; g_tx = g_ty = -1; g_visit = -1;
       bool exitedLeft = (g_fx < 160);              // the ROOM's centre, not the panel's
@@ -3534,6 +3650,9 @@ static void think(float dt) {
       // there for at least 10 seconds"): even a 3-second meal keeps him in the room a
       // human-visible while before the walk home.
       g_roomMinStay = !sceneRoomHolds(g_scCurRole) ? millis() + 10000 + esp_random() % 4000 : 0;
+      // a fresh visit owes a fresh count - but coming back for the NEXT helping of the
+      // same act is the same visit continuing, not a new one
+      if (strcmp(roomOwnAct(g_scCurRole), g_repeatAct) != 0) { g_repeatN = 0; g_repeatAct[0] = 0; }
       // THROUGH THE MIDDLE (Jon: "when he transitions from room to room he needs to
       // go to the middle of each room and then do the action. the same for coming
       // back"): entering at the edge, he first walks to the room's middle - the act
@@ -3996,7 +4115,12 @@ static void simulate(float dt) {
     // W-029: school-hours mercy — see schoolHoursNow().
     if (schoolHoursNow()) m *= 0.5f;
     S.food = max(0.0f, S.food - r.food * m);
-    S.fun = max(0.0f, S.fun - r.fun * m);
+    // fun is PAID by the per-second tick in loop() when he is outside or playing; here it
+    // only ever drains, and not while he is earning it
+    // (a game also pays fun, but g_gamePanel is declared further down and a game is short
+    // enough that the +1/s outruns the drain anyway - outside is the one that had to stop)
+    if (g_scCurRole != SCENE_ROLE_OUTSIDE)
+      S.fun = max(0.0f, S.fun - r.fun * m);
     // each mess on the floor drags cleanliness down faster, as in the HTML
     S.clean = max(0.0f, S.clean - (r.clean + S.poopN * 0.3f) * m);
     S.energy = max(0.0f, S.energy - r.energy * m);
@@ -4603,7 +4727,7 @@ static void runMenu(int i) {
               // says he is busy"): the session is Jon's own dont-stop-early rule doing
               // its job for the full work length - what was missing was the recall.
               if (g_workUntil || g_workReps > 0) {
-                g_workUntil = 0; g_workReps = 0; g_workNextAt = 0;
+                g_workUntil = 0; g_workReps = 0; g_workNextAt = 0; g_repeatAct[0] = 0; g_repeatN = 0;
                 say("work is done for today - heading home");
                 if (g_scCurRole != SCENE_ROLE_MAIN && !g_doorTrip) sceneDoorTo(SCENE_ROLE_MAIN, "");
                 break;
@@ -7253,7 +7377,7 @@ static void updateCat(float dt) {
       catSetClip(CC_WALK); g_catFaceE = !west;     // her art faces west; east mirrors it
       if (west && g_catX < -24.0f) {
         g_catPhase = 0;
-        g_nextCatAt = millis() + 70000 + (esp_random() % 60000);
+        g_nextCatAt = millis() + 300000 + (esp_random() % 600000);   // 5-15 min (Jon)
         break;
       }
       if (g_catX > 336) {
@@ -7262,7 +7386,7 @@ static void updateCat(float dt) {
         // "Jon: she needs to show up more" written next to it and "a nap keeps her away longer".
         // This visit always ends in a nap, so it is the longer branch. Was 15-40 min here, which
         // is roughly twenty times the builder's cadence and is why she was never seen.
-        g_nextCatAt = millis() + 70000 + (esp_random() % 60000);
+        g_nextCatAt = millis() + 300000 + (esp_random() % 600000);   // 5-15 min (Jon)
       }
       break;
     }
@@ -7423,9 +7547,13 @@ static void drawBird() {
 
 struct EvtDef { const char *id; uint8_t wDay, wNight; bool (*run)(); };
 static const EvtDef EVENTS[] = {
-    {"bird",    36, 28, startBird},      // gaze's weight folded in: window-sitting always
+    // Jon, 2026-08-21: "for now can we remove the bird and firefly?" - weights zeroed rather
+    // than the code deleted, because "for now" is not "for ever" and the visitors are wired
+    // into window-watching, the cat's yield rules and the sky gate. One number each turns
+    // them back on; ripping them out would cost an afternoon to undo.
+    {"bird",     0,  0, startBird},      // was 36 day / 28 night
     {"motes",   18, 10, startMotes},     // means there is something out there to see
-    {"firefly",  0, 26, startFirefly},
+    {"firefly",  0,  0, startFirefly},   // was 0 day / 26 night
     {"star",     0, 18, startStar},
 };
 static const int N_EVENTS = 4;
@@ -10682,7 +10810,7 @@ bool outsideRowOn() { return g_scRoleAvail[SCENE_ROLE_OUTSIDE]; }
 static void outsideToggle() {
   g_action = false; g_tx = g_ty = -1; g_visit = -1;
   g_settleUntil = 0; g_wanderT = 0;
-  g_workUntil = 0; g_workReps = 0; g_workNextAt = 0;
+  g_workUntil = 0; g_workReps = 0; g_workNextAt = 0; g_repeatAct[0] = 0; g_repeatN = 0;
   whyFor(WHY_BUTTON, "");
   if (g_scCurRole == SCENE_ROLE_OUTSIDE) {
     g_outPending = false;
@@ -11520,6 +11648,37 @@ void loop() {
   float dt = (now - last) / 1000.0f; if (dt > 0.25f) dt = 0.25f;
   last = now;
   if (!g_assets) { delay(500); return; }
+  // ---- one tick a second, wherever he is and whatever he is doing ----
+  {
+    static uint32_t lastSec = 0;
+    if (millis() - lastSec >= 1000) {
+      lastSec = millis();
+      if (!S.sick && S.lights) {
+        // outside, and playing a game, both pay FUN
+        if (g_scCurRole == SCENE_ROLE_OUTSIDE || g_gamePanel)
+          S.fun = min(100.0f, S.fun + 1.0f);
+        // the work room pays DISCIPLINE for the time he puts in
+        if (g_scCurRole == SCENE_ROLE_WORK)
+          S.disc = min(100.0f, S.disc + 1.0f);
+      }
+      // ...and when the gauge is full, the visit is over. Outside says its own line; work
+      // keeps the one it has always said.
+      if (!g_action && g_visit < 0 && !g_doorTrip && g_pottySeq == 0 && !g_gamePanel) {
+        if (g_scCurRole == SCENE_ROLE_OUTSIDE && S.fun >= ACT_FULL) {
+          char line[64];
+          snprintf(line, sizeof(line), "%s has had enough fresh air", petName());
+          say(line);
+          whyFor(WHY_SCHEDULE, "fun");
+          sceneDoorTo(SCENE_ROLE_MAIN, "");
+        } else if (g_scCurRole == SCENE_ROLE_WORK && S.disc >= ACT_FULL) {
+          say("work is all done!");
+          g_workUntil = 0; g_workReps = 0; g_workNextAt = 0; g_repeatAct[0] = 0; g_repeatN = 0;
+          whyFor(WHY_SCHEDULE, "disc");
+          sceneDoorTo(SCENE_ROLE_MAIN, "");
+        }
+      }
+    }
+  }
   // the bench's finger. It opens the shelf PAST the care gate on purpose: the gate is
   // about whether play is earned, and this lever exists to look at the shelf itself.
   if (g_dbgOpenPlay) {
@@ -11724,8 +11883,12 @@ void loop() {
     // R(2,6) — placer.html simInit: `cat:{st:'away',t:R(2,6),...}`. She is meant to turn up
     // almost straight away. Was 5-15 minutes here, on top of a reboot for every flash, which is
     // most of why she was never caught.
+    // ...and the SAME band from a cold start. 2-6 seconds was put here because a reboot for
+    // every flash kept resetting her clock and she was never caught during testing - true for
+    // me, and false for a child, who never reboots at all. It is also most of why she felt
+    // constant today: fifteen flashes is fifteen near-instant arrivals.
     if (!g_nextCatAt && !catHere())
-      g_nextCatAt = millis() + 2000 + (esp_random() % 4000);
+      g_nextCatAt = millis() + 300000 + (esp_random() % 600000);
     BC(BC_EVENTS); updateEvents(dt);   // the old fleet-beacon suspect lives in here -
                                        // stamped so the next panic names it or clears it
     if (millis() >= g_holdUntil) g_animT += dt;   // held still for a beat after arriving

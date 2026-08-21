@@ -2067,7 +2067,17 @@ async function loadProject(p){
   } else if(!p.animal&&DATA.clips!==DATA._baseClips){
     $('charSel').value=''; await applyAnimal('');
   }
-  if(!DATA.clips[p.clip]) throw new Error(`clip "${p.clip}" is not in this data set`);
+  // A CLIP HAS TWO SPELLINGS AND THEY MEAN THE SAME THING. applyAnimal() swaps DATA.clips to
+  // that animal's own set, whose keys are BARE ("Adult_Bathe"), while a saved project stores
+  // the qualified name ("frog:Adult_Bathe"). Refusing the file over that told Jon his own
+  // animation "is not in this data set" when it was sitting right there under another name.
+  if(!DATA.clips[p.clip]){
+    const bare=String(p.clip||'').replace(/^[a-z0-9_-]+:/,'');
+    const pref=(p.animal?p.animal+':':'')+bare;
+    if(DATA.clips[bare])      p.clip=bare;
+    else if(DATA.clips[pref]) p.clip=pref;
+    else throw new Error(`clip "${p.clip}" is not in this data set`);
+  }
   // the file's own drawings register FIRST, so its layers validate against them
   if(p.customProps) for(const k of Object.keys(p.customProps)){
     const c=p.customProps[k];
