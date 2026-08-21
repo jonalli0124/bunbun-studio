@@ -2398,7 +2398,7 @@ function drawAnims(){
                   : 'counts as '+act+' \u2014 needs a place here';
         const nm = a.name.length>18 ? a.name.slice(0,17)+'\u2026' : a.name;
         return '<button class="mini" data-force="'+i+'" title="'+tip+'" style="background:'+
-          tint[0]+';border-color:'+tint[1]+'">'+nm+'</button>';
+          tint[0]+';border-color:'+tint[1]+';color:#241f1b;font-weight:600">'+nm+'</button>';
       }).join('')
     : '';
   // which of the stock clips is a FEELING (he wears it anywhere) and which is an ACTION
@@ -2413,7 +2413,7 @@ function drawAnims(){
   const roomDoes=act=>anims.some(a=>a.on && actOfAnim(a)===act);
   const defBtn=(c,tint,edge,dim,tip)=>
     `<button class="mini" data-forcedef="${c}" title="${tip}" style="font-size:13px;`+
-    `background:${tint};border-color:${edge}${dim?';opacity:.45':''}">${
+    `background:${tint};border-color:${edge};color:#241f1b;font-weight:600${dim?';opacity:.45':''}">${
       c.replace(/^Adult_/,'')}</button>`;
   // only the ones that need nowhere to happen - a stand-in for a feeling is the real
   // thing, a stand-in for an act is a guess at an animation the room already owns
@@ -3050,7 +3050,7 @@ function drawBaseRow(){
     `<span class="hint" style="flex:0 0 100%;margin:5px 0 1px">${label}</span>`+
     BASE_MOVES.map((m,i)=>[m,i]).filter(x=>x[0].k===kind)
       .map(x=>`<button class="mini" data-base="${x[1]}" style="font-size:13px;`+
-        `background:${tint};border-color:${edge}">${x[0].i} ${x[0].t}</button>`).join('');
+        `background:${tint};border-color:${edge};color:#241f1b;font-weight:600">${x[0].i} ${x[0].t}</button>`).join('');
   host.innerHTML=
     '<h2 style="flex:0 0 100%;margin:0 0 9px;font-size:16px;letter-spacing:.02em;'+
     'color:#4b3f63">Add to Room <span style="font-weight:400;font-size:12.5px;'+
