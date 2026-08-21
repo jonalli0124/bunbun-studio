@@ -2238,6 +2238,9 @@ static char     g_doorAct[8] = "";
 static bool     g_outPending = false;   // "and then outside" - the second leg of a trip home
 static uint32_t g_workUntil = 0;     // the scene work session deadline; 0 = no session
 static char     g_repeatAct[8] = "";  // the act this visit keeps repeating until its meter fills
+// The pending command from a button or /api/debug/act. Declared up here because sceneDoorTo
+// has to know whether a trip was ASKED FOR before it may refuse one.
+static char     g_dbgAct[8] = "";
 static uint8_t  g_repeatN   = 0;      // how many reps this visit has already done
 
 // A ROOM'S JOB IS FINISHED WHEN ITS METER IS FULL (Jon: "he needs to stay at work not for 10
@@ -2411,6 +2414,27 @@ static inline bool roleRightOfMain(uint8_t r) {
   return r == SCENE_ROLE_WORK || r == SCENE_ROLE_OUTSIDE;
 }
 static bool sceneDoorTo(uint8_t tgt, const char *act) {
+  // ONE RULE, ONE PLACE: HE DOES NOT LEAVE A ROOM THAT STILL OWES HIM SOMETHING.
+  // Jon has reported this four times - "he didnt stay in the kicthen untill full", "same for
+  // bathroom / bathe and same for work" - and it has had four different causes, because the
+  // decision to walk home was written out in four places: the action clock in think(), the
+  // mark/settle path, the fruitless-visit linger, and the window the repeat opens when it
+  // clears its own timer to dispatch. Guarding them one at a time moved the number he leaves
+  // at from 30 to 37 to 49 and never to full. So it is written ONCE, here, where every door
+  // home has to pass: a walk home from a room whose own gauge is unfull is refused and the
+  // next helping is scheduled instead. A command, bedtime or illness still overrides, and
+  // REPEAT_CAP remains the backstop so an unreachable act can never trap him.
+  if (tgt == SCENE_ROLE_MAIN && !g_dbgAct[0] && S.lights && !S.sick && !g_danceMode) {
+    const char *ra = roomOwnAct(g_scCurRole);
+    if (ra[0] && !actMeterFull(ra) && g_repeatN < REPEAT_CAP &&
+        (sceneActMark(ra) >= 0 || sceneActAnim(ra))) {
+      if (!g_workNextAt) {
+        g_workNextAt = millis() + 1500 + esp_random() % 2000;
+        snprintf(g_repeatAct, sizeof(g_repeatAct), "%s", ra);
+      }
+      return false;
+    }
+  }
   // A ROOM CHANGE OUTRANKS THE ROUTINE, exactly as an errand does (Jon: "when he's on the
   // potty and I hit home he sits walking on the side of the room for a bit"). sceneErrandTo
   // has always cleared g_pottySeq for this reason; this door did not. So sending him home
@@ -2457,9 +2481,35 @@ static bool sceneDoorTo(uint8_t tgt, const char *act) {
     if (ey < g_scBounds.y0 + 4) ey = g_scBounds.y0 + 4;   // above the floor: come down first
     if (ey > g_scBounds.y1 - 2) ey = g_scBounds.y1 - 2;
   }
-  clampErrandToFloor(&ex, &ey);
-  clearOfBlocks(&ex, &ey);
-  clampErrandToFloor(&ex, &ey);
+  // THE DOORWAY IS THE WHOLE EDGE, AND IT CANNOT BE BARRICADED (Jon: "can we widen the doors
+  // even further. what happens if someone puts objects blocking the doors? if they are all
+  // blocked, i want him to just go through them"). It used to be ONE point, nudged out of
+  // furniture by clearOfBlocks - so a chest of drawers against the wall pushed the door
+  // somewhere strange, and a wall of them had nowhere to push it to. Now the near edge is
+  // searched from his own height outward, six pixels at a time, and the first spot that is on
+  // the floor and clear of furniture wins. If a child has walled the whole edge in, he walks
+  // THROUGH it: a door that can be permanently blocked is a room you can be trapped in, and
+  // being trapped is worse than clipping a wardrobe.
+  {
+    const int ex0 = ex, ey0 = ey;
+    bool found = false;
+    for (int step = 0; step <= 9 && !found; step++) {
+      for (int sgn = 1; sgn >= -1 && !found; sgn -= 2) {
+        if (step == 0 && sgn < 0) continue;          // his own height, once
+        int cx = ex0, cy = ey0 + sgn * step * 6;
+        if (g_scHasBounds && (cy < g_scBounds.y0 + 4 || cy > g_scBounds.y1 - 2)) continue;
+        clampErrandToFloor(&cx, &cy);
+        int bx = cx, by = cy;
+        clearOfBlocks(&bx, &by);
+        if (abs(bx - cx) <= 2 && abs(by - cy) <= 2) { ex = cx; ey = cy; found = true; }
+      }
+    }
+    if (!found) {                                    // every way out is furniture: through it
+      ex = ex0; ey = ey0;
+      clampErrandToFloor(&ex, &ey);
+      Serial.println("door: the whole edge is blocked - going through");
+    }
+  }
   g_tx = ex; g_ty = ey;
   g_visit = 4;
   g_doorTrip = 1; g_doorRole = tgt; g_visitHomeAt = 0;
@@ -2506,7 +2556,6 @@ extern "C" void bunbun_brain_snapshot(char *buf, int len) {
 }
 // /api/debug/act - the remote lever the door-walk tests (and future layers) need.
 // Set from the web task, consumed on the game task the next tick.
-static char g_dbgAct[8] = "";
 // A panel can only be opened by a finger, which makes every screen past the room
 // invisible from a bench. Set here, consumed by the UI task - drawing from the HTTP
 // task would race the renderer for the glass.
@@ -3558,6 +3607,26 @@ static void think(float dt) {
       }
       if (g_workUntil) { g_workUntil = 0; say("work is all done!"); }
     }
+    // THE ROOM STILL HAS A CLAIM ON HIM. There are two places a performance can end - the
+    // action clock in think(), and this one, the mark/settle path - and only the other one
+    // ever asked whether the room's meter was full. So a placed meal, bath or job did its one
+    // performance and walked home with the gauge barely moved: "he didnt stay in the kicthen
+    // untill full", "same for bathroom / bathe and same for work". Measured on the device
+    // before this: food 11 -> 30 and out of the kitchen inside fifteen seconds. Same rule as
+    // the other path, in the same words, so the two cannot drift apart again.
+    {
+      const char *ra = roomOwnAct(g_scCurRole);
+      if (ra[0] && !g_dbgAct[0] && !g_danceMode && !actMeterFull(ra) &&
+          g_repeatN < REPEAT_CAP && (sceneActMark(ra) >= 0 || sceneActAnim(ra))) {
+        g_workNextAt = millis() + 2000 + esp_random() % 2500;
+        snprintf(g_repeatAct, sizeof(g_repeatAct), "%s", ra);
+        g_repeatN++;
+        g_wanderT = 0.5f;
+        setAnim(moodAnim());          // he is between goes, not still performing
+        g_performBehind = false;
+        return;
+      }
+    }
     // an act in another room is over: walk home - after the visit's minimum stay. Outside
     // is not an errand, so he stays there as long as he likes.
     if (!sceneRoomHolds(g_scCurRole) && !g_doorTrip) {
@@ -3646,7 +3715,15 @@ static void think(float dt) {
   // ...unless the visit is NOT fruitless: a scheduled repeat means the room still owes him
   // something. I guarded the min-stay path and missed this one, which is the second of the
   // two doors home and the one that kept beating the kitchen's next helping to it.
-  if (g_visitHomeAt && millis() >= g_visitHomeAt && !g_workNextAt) {
+  // THE THIRD DOOR HOME, and the third cause of "he didnt stay in the kicthen untill full".
+  // The repeat CLEARS g_workNextAt at the moment it dispatches, so between one helping being
+  // sent and the next being scheduled this rule's guard was open, and it walked him out of
+  // the room mid-meal. A room whose own gauge is not full still owes him something, whatever
+  // the linger timer thinks.
+  const char *rha = roomOwnAct(g_scCurRole);
+  const bool roomStillOwes = rha[0] && !actMeterFull(rha) && g_repeatN < REPEAT_CAP &&
+                             (sceneActMark(rha) >= 0 || sceneActAnim(rha));
+  if (g_visitHomeAt && millis() >= g_visitHomeAt && !g_workNextAt && !roomStillOwes) {
     g_visitHomeAt = 0;
     if (g_scCurRole != SCENE_ROLE_MAIN && !g_doorTrip) { sceneDoorTo(SCENE_ROLE_MAIN, ""); return; }
   }

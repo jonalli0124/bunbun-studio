@@ -1712,9 +1712,18 @@ function drawSim(){
     const c=idleClip(sim.a);
     // Adult_Idle is a rotation set too - hold it facing the way he last walked, rather than
     // letting him revolve while he thinks about what to do next.
-    // his own choice first, then the pose default - this used to take the measurement
-    // even when the animation said which way he stands
-    const facing=(sim.a&&sim.a.facing)||faceOnOf(c);
+    // HIS OWN CHOICE ONLY IF IT IS ABOUT THIS KIND OF CLIP. A hand-drawn animation has no
+    // compass at all, so addAnim gives it a facing inherited from whichever neighbour had
+    // one - and reading that here pointed the STOCK idle wherever that neighbour happened to
+    // face: "as soon as i added the feeling happy custom animation, the turn south east idle
+    // came back in the scene". A rotation's facing speaks for rotations; anything else falls
+    // to the pose default, which is south.
+    // A FACING BELONGS TO THE CLIP IT WAS CHOSEN FOR. This is the stock idle standing in
+    // between things - a DIFFERENT clip from the one he just performed - so wearing that
+    // one's direction is how a south-west potty ended up as a south-west idle: "after he
+    // sits on the potty which is south west facing, it says he is doing sitting down but it
+    // is the idle and it is facing south west".
+    const facing=((sim.a && sim.a.facing && sim.a.clip===c) ? sim.a.facing : faceOnOf(c));
     // A real step, not 0. sin(0) is 0 forever, so the breath never moved - which is what
     // "its not breathing" was on this path.
     if(c && isRot(c)) drawChar({...sim.a, facing},
@@ -4201,7 +4210,14 @@ async function buildPortPayload(setB){
       await loadArtFor(a);
       const slug=animSlug(a.name, taken), key='c_'+slug;
       let n=0;
-      for(let s2=0;s2<a.order.length;s2++){
+      // A POSE IS ONE VIEW, AND THE EXPORT SAYS SO. A rotation clip draws the frame its
+      // FACING names - that is what the preview shows and what bakeStep bakes - but the
+      // order could still be eight entries long, so the package shipped eight identical
+      // frames and left two fields disagreeing about which way he faces. One frame, chosen
+      // by the facing, and the two can never drift: "potty isnt honoring the orientation of
+      // sit. the animation i have selected is south west but he sat south".
+      const steps = isRot(a.clip) ? 1 : a.order.length;
+      for(let s2=0;s2<steps;s2++){
         const cvB=await bakeStep(a, s2, {K:1, canvas:true});
         if(!cvB) continue;
         // HALF SIZE, anchored at the feet - the species frames in the pak are halved so the
@@ -4607,6 +4623,13 @@ async function exportDevicePackage(){
     const stamp=d.getFullYear()+z(d.getMonth()+1)+z(d.getDate())+'-'+z(d.getHours())+z(d.getMinutes());
     aEl.download=(((($('sceneName')&&$('sceneName').value)||scene.room||'my-scene')).replace(/[^\w -]+/g,'').trim().replace(/ +/g,'-')||'my-scene')+'_'+stamp+'.bunbun';
     aEl.click(); setTimeout(()=>URL.revokeObjectURL(aEl.href), 5000);
+    // ...AND THE ZIP, IN THE SAME BREATH (Jon: "i thought we had determined that save a
+    // bunbun package created a zip file that contained everything and not just a separate
+    // button"). The .bunbun has to stay a .bunbun - it is what the device reads - so the
+    // editable world rides inside it as the trailer above, and the belt-and-braces zip is
+    // written alongside it rather than waiting behind a second button nobody presses.
+    // The browser may ask to allow two downloads; that is the price of one gesture.
+    setTimeout(()=>{ try{ $('expAll').click() }catch(e){} }, 900);
     say(`package saved! Open your bunbun's own page — http://bunbun-XXXX.local/build — and give it `+
         `this file. Inside: ${(body[0]==='{'&&body.slice(0,8).includes('world'))?'your whole world, ':'your room, '}`+
         `${plan.anims.length} animation${plan.anims.length===1?'':'s'} `+
