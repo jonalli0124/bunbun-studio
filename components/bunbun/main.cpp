@@ -1672,6 +1672,16 @@ static float spriteScale() {
 // fixed 0.5 of the source art, and the scene says how big he travels (ts). Composed
 // animation frames already carry their authored size, so they never take this factor.
 // ("the new scaler on the device doesnt seem to adjust walking")
+// WHAT HE DOES WHEN A FEELING TAKES HIM. His own drawing first, whenever the world made
+// one: the child's frames, the child's size, and the child's words on the ticker (a c_ clip
+// resolves through the scene table in emoteLineFor, which the kit cannot). Only a world that
+// authored nothing for this feeling falls back to the kit the package ships with.
+// This is "master update for passive emotions": tag a drawing as feeling happy in the
+// assembler and it becomes the happy he has by himself, in every room, at once.
+static const char *emoteClip(const char *act, const char *kitKey) {
+  const char *k = sceneAnywhereActAnim(act);
+  return k ? k : pa(kitKey);
+}
 static float travelFactor() {
   if (S.species_idx == 0 || g_scTravel <= 0) return 1.0f;
   return g_scTravel / 0.5f;
@@ -2260,7 +2270,8 @@ static const char *roomOwnAct(uint8_t role) {
 // one-visit job pays what the script paid; a session pays per rep, so the meter
 // visibly climbs while he is there.
 static void creditWork() {
-  S.disc   = min(100.0f, S.disc + (g_workUntil ? 6.0f : 14.0f));
+  // The discipline is paid by the per-second tick in loop() now - time at work, not
+  // performances given - so this keeps only what a shift COSTS him.
   S.energy = max(0.0f, S.energy - (g_workUntil ? 2.0f : 5.0f));
   if (g_workReps > 0) g_workReps--;
   saveState();
@@ -2797,7 +2808,7 @@ static void danceStep(float dt) {
     g_danceHop  = (int)(3.0f * sinf(ph * 3.14159265f));
     g_danceSway = 0;
   } else {
-    clip = pa("jump");
+    clip = emoteClip("dance", "jump");
     // The hop that made this read as dancing in the first place: a full arc every beat.
     g_danceHop  = (int)(7.0f * sinf(ph * 3.14159265f));
     g_danceSway = (int)(4.0f * sinf(g_dancePos * 3.14159265f));
@@ -3217,13 +3228,8 @@ static void think(float dt) {
       if (g_actIsWork) { g_actIsWork = false; creditWork(); }
       // a helping, a wash: smaller than the care button's one big top-up, because several
       // of them are meant to fill the meter while he stands there doing it
-      else if (g_actAct[0]) {
-        if (!strcmp(g_actAct, "eat")) {
-          S.food = min(100.0f, S.food + 18.0f); S.fun = min(100.0f, S.fun + 1.0f); saveState();
-        } else if (!strcmp(g_actAct, "bath") || !strcmp(g_actAct, "wash")) {
-          S.clean = min(100.0f, S.clean + 22.0f); S.fun = min(100.0f, S.fun + 2.0f); saveState();
-        }
-      }
+      // (an act used to pay a lump here - 18 food, 22 clean. The room's own per-second
+      // tick pays now, so the meter measures TIME SPENT rather than performances given.)
       g_actAct[0] = 0;
       // THE PARTY OWNS WHAT HAPPENS NEXT (Jon: "he also went and did a sit when i started
       // dance mode so it didnt overwrite everything"). danceBegin() clears what was already
@@ -3502,7 +3508,7 @@ static void think(float dt) {
           if (love) sfxPurr(); else sfxHomeAgain();
         }
       }
-      startAction(love ? pa("love") : pa("jump"), 2.0f);
+      startAction(love ? emoteClip("love", "love") : emoteClip("dance", "jump"), 2.0f);
       return;
     }
   }
@@ -3565,6 +3571,29 @@ static void think(float dt) {
     // longer than 5" - the animation kept playing while he waited to decide what was next).
     setAnim(moodAnim());
     g_performBehind = false;
+    // AND HE STEPS AWAY FROM THE THING HE JUST USED (Jon: "he needs to make sure to move
+    // further away after he does an action like sit. right now he sits and then just kind of
+    // stands right next to the object"). The assembler's preview has always done this - a
+    // deliberate distance, far side first, never stopping anywhere he is not allowed to
+    // linger - and the device just dropped to idle where it stood, which reads as him
+    // hovering over the chair he has finished with. Same distances the preview uses.
+    if (g_visit < 0 && !g_doorTrip && g_tx < 0 && !g_workNextAt) {
+      static const int AWAY[] = {55, 70, 42, 90, 110};
+      const int dir = (S.x >= 160) ? -1 : 1;        // toward the room's open side
+      const Bounds b = bounds();
+      for (int pass = 0; pass < 2 && g_tx < 0; pass++) {
+        const int sgn = pass ? -dir : dir;
+        for (int d = 0; d < (int)(sizeof(AWAY) / sizeof(AWAY[0])); d++) {
+          int nx = S.x + sgn * AWAY[d], ny = S.y;
+          if (nx < b.x0 || nx > b.x1) continue;
+          clearOfBlocks(&nx, &ny);
+          if (!sceneFloorHas(nx, ny) || !sceneCanLoiter(nx, ny)) continue;
+          if (abs(nx - S.x) < 30) continue;         // that is not stepping away
+          g_tx = nx; g_ty = ny;
+          break;
+        }
+      }
+    }
     // 35-60s between furniture visits, down from 60-100s. This cooldown was the real limit on
     // how often he reached the radio — the per-visit chance barely mattered while this was
     // throttling every furniture trip.
@@ -4693,9 +4722,14 @@ static void runMenu(int i) {
             // W-047: a meal when he's genuinely hungry is THRILLING - the
             // trill rides in right behind the menu's OK chirp.
             if (S.food < 30) sfxExcited();
-            S.food = min(100.0f, S.food + 35); S.fun = min(100.0f, S.fun + 2);
             whyFor(WHY_BUTTON, "food");
-            if (!sceneErrandTo("eat")) startAction(pa("eat"), 3.4f);
+            // THE BUTTON SENDS HIM; THE KITCHEN FEEDS HIM. Pressing eat used to hand over 35
+            // food on the spot, which made the trip decorative. A world with nowhere to eat
+            // still gets the old top-up - otherwise a pet in a bare world could never be fed.
+            if (!sceneErrandTo("eat")) {
+              startAction(pa("eat"), 3.4f);
+              S.food = min(100.0f, S.food + 35); S.fun = min(100.0f, S.fun + 2);
+            }
             say("bunbun ate a meal");
             // Meals are followed by a mess a while later (babies more often). "A while" was
             // 15-35 SECONDS, so every feed produced a mess almost immediately and the floor
@@ -4721,9 +4755,12 @@ static void runMenu(int i) {
               sfxNo(); whyNote(WHY_BLOCKED, "bath", "");
               return;
             }
-            S.clean = min(100.0f, S.clean + 45); S.fun = min(100.0f, S.fun + 6);
             whyFor(WHY_BUTTON, "clean");
-            if (!sceneErrandTo("bath")) startAction(pa("bath"), 4.2f);
+            // same bargain as the meal above: the bathroom does the washing, not the button
+            if (!sceneErrandTo("bath")) {
+              startAction(pa("bath"), 4.2f);
+              S.clean = min(100.0f, S.clean + 45); S.fun = min(100.0f, S.fun + 6);
+            }
             say("bunbun took a bath"); break;
     case 3: if (!S.poopN) { sfxNo(); say("nothing to sweep"); return; }
             S.poopN = 0; S.clean = min(100.0f, S.clean + 12);
@@ -11712,9 +11749,14 @@ void loop() {
         // outside, and playing a game, both pay FUN
         if (g_scCurRole == SCENE_ROLE_OUTSIDE || g_gamePanel)
           S.fun = min(100.0f, S.fun + 1.0f);
-        // the work room pays DISCIPLINE for the time he puts in
-        if (g_scCurRole == SCENE_ROLE_WORK)
-          S.disc = min(100.0f, S.disc + 1.0f);
+        // ...and every room pays its OWN meter for the time he spends in it (Jon: "it
+        // needs to be based on his time in the room, but it should start with the main
+        // action"). The button walks him there and starts the act; the room does the rest,
+        // one tick a second, until the gauge is full - which is also what keeps him there.
+        const char *ra = roomOwnAct(g_scCurRole);
+        if (!strcmp(ra, "eat"))       S.food  = min(100.0f, S.food  + 1.0f);
+        else if (!strcmp(ra, "bath")) S.clean = min(100.0f, S.clean + 1.0f);
+        else if (!strcmp(ra, "work")) S.disc  = min(100.0f, S.disc  + 1.0f);
       }
       // ...and when the gauge is full, the visit is over. Outside says its own line; work
       // keeps the one it has always said.

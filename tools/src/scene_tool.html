@@ -2615,6 +2615,14 @@ function drawAnims(){
         <option value="wake" ${a.actAs==='wake'?'selected':''}>waking up (when he restarts)</option>
         <option value="walk_e" ${a.actAs==='walk_e'?'selected':''}>how he walks (this way &rarr;)</option>
         <option value="walk_w" ${a.actAs==='walk_w'?'selected':''}>how he walks (&larr; that way)</option>
+        <option value="dance" ${a.actAs==='dance'?'selected':''}>dancing</option>
+        <option value="love" ${a.actAs==='love'?'selected':''}>feeling happy</option>
+        <option value="play" ${a.actAs==='play'?'selected':''}>playing</option>
+        <option value="bored" ${a.actAs==='bored'?'selected':''}>being bored</option>
+        <option value="tired" ${a.actAs==='tired'?'selected':''}>being sleepy</option>
+        <option value="hungry" ${a.actAs==='hungry'?'selected':''}>being hungry</option>
+        <option value="angry" ${a.actAs==='angry'?'selected':''}>being grumpy</option>
+        <option value="sick" ${a.actAs==='sick'?'selected':''}>feeling poorly</option>
       </select>
       <span class="hint" style="flex:0 0 auto">s &middot; he says</span>
       <input data-txt="${i}" value="${(a.says||'').replace(/"/g,'&quot;')}"
@@ -3122,11 +3130,13 @@ const BASE_MOVES=[
   // holds when nothing else is going on - and a child could reach every move he owns EXCEPT
   // that one, which is the one a room most often wants: somewhere to just stand.
   {c:'Adult_Idle',   t:'just standing there',  i:'\u{1F9CD}', k:'do'},
-  {c:'Adult_Love',   t:'feeling happy',        i:'\u{1F970}', k:'feel'},
-  {c:'Adult_Bored',  t:'being bored',          i:'\u{1F611}', k:'feel'},
-  {c:'Adult_Tired',  t:'being sleepy',         i:'\u{1F971}', k:'feel'},
-  {c:'Adult_Hungry', t:'being hungry',         i:'\u{1F62B}', k:'feel'},
-  {c:'Adult_Angry',  t:'being grumpy',         i:'\u{1F620}', k:'feel'},
+  // The 'a' on a feeling is what makes it HIS: the device plays the world's own drawing
+  // for a feeling it has, in every room, instead of the stock kit art (emoteClip, main.cpp).
+  {c:'Adult_Love',   t:'feeling happy',        i:'\u{1F970}', k:'feel', a:'love'},
+  {c:'Adult_Bored',  t:'being bored',          i:'\u{1F611}', k:'feel', a:'bored'},
+  {c:'Adult_Tired',  t:'being sleepy',         i:'\u{1F971}', k:'feel', a:'tired'},
+  {c:'Adult_Hungry', t:'being hungry',         i:'\u{1F62B}', k:'feel', a:'hungry'},
+  {c:'Adult_Angry',  t:'being grumpy',         i:'\u{1F620}', k:'feel', a:'angry'},
 ];
 // the world's animal owns the move when that animal is installed, so a cat world eats
 // as a cat; otherwise the pack's own art, which the device swaps for whoever lives there
@@ -4184,8 +4194,9 @@ async function buildPortPayload(setB){
     const on=anims.filter(a=>a.on);
     // NOTHING IS TRIMMED SILENTLY (council 8/17: "a child would just see the thing
     // missing"). Every cap says what did not fit, by name, before the port continues.
-    if(on.length>8) say(`the device holds 8 animations - ${on.slice(8).map(a=>'"'+a.name+'"').join(', ')} stayed home`,true);
-    for(const a of on.slice(0,8)){
+    // 14 authored + the two walks the export adds = the device's 16
+    if(on.length>14) say(`the device holds 14 animations - ${on.slice(14).map(a=>'"'+a.name+'"').join(', ')} stayed home`,true);
+    for(const a of on.slice(0,14)){
       setB(`baking "${a.name}"…`);
       await loadArtFor(a);
       const slug=animSlug(a.name, taken), key='c_'+slug;
@@ -4404,7 +4415,11 @@ function animalOptions(){
 const ACT_TEMPLATE={eat:'Adult_Eat', bath:'Adult_Bathe', wash:'Adult_Bathe', toilet:'Adult_Sit',
                     sleep:'Adult_Sleep', wake:'Adult_Idle', idle:'Adult_Idle', sit:'Adult_Sit',
                     work:'Adult_Pickup', walk_e:'Adult_Walk_East', walk_w:'Adult_Walk_West',
-                    play:'Adult_Happy', love:'Adult_Love'};
+                    play:'Adult_Happy', love:'Adult_Love',
+                    // the feelings a child can now tag a drawing as - so a world that swaps
+                    // animal still finds a stand-in for each one
+                    dance:'Adult_Happy', bored:'Adult_Bored', tired:'Adult_Tired',
+                    hungry:'Adult_Hungry', angry:'Adult_Angry', sick:'Adult_Sick'};
 function templateFor(a, id){
   const act=(typeof actOfAnim==='function' ? actOfAnim(a) : (a&&a.actAs)) || '';
   const t=ACT_TEMPLATE[act];

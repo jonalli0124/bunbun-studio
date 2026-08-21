@@ -261,7 +261,12 @@ static int     g_scBunN = 0;
 // can touch the pet's saved state.
 // 8 -> 10 when the travel kit arrived: a room keeps its 8 authored animations and the
 // package's walk_e/walk_w clips ride in the two extra slots without evicting anything.
-#define SCENE_MAX_ANIMS 10
+// 16, not 10. A room used to hold 8 authored moves plus the two walks; now that a child
+// can hand the pet his own drawing for each FEELING as well - happy, bored, sleepy,
+// hungry, grumpy, poorly - eight was gone before the room had anything to do in it. Six
+// more slots cost about 500 bytes, once, because only the room he is standing in is
+// loaded. Kept well under the pak and flash budgets either way.
+#define SCENE_MAX_ANIMS 16
 struct SceneAnim {
   char    key[16];       // the mark key, e.g. "c_bathing" — fits BunMark::anim exactly
   char    folder[32];    // the pak folder, e.g. "canim/bathing" — frames at <folder>/<i>
@@ -854,6 +859,19 @@ static const char *sceneAnywhereAnim(void) {
   int cand[SCENE_MAX_ANIMS], n = 0;
   for (int i = 0; i < g_scAnimN; i++)
     if (g_scAnim[i].anywhere) cand[n++] = i;
+  if (!n) return NULL;
+  return g_scAnim[cand[esp_random() % (uint32_t)n]].key;
+}
+
+// THE CHILD'S OWN DRAWING FOR A FEELING, if this world made one. Same rule as the plain
+// anywhere-anim above - it has to be one that plays wherever he stops, because a feeling
+// happens where he is standing and a pinned one would drag him to its chair - but narrowed
+// to what it COUNTS AS, so "feeling happy" answers for love and nothing else does.
+static const char *sceneAnywhereActAnim(const char *act) {
+  if (!act || !act[0]) return NULL;
+  int cand[SCENE_MAX_ANIMS], n = 0;
+  for (int i = 0; i < g_scAnimN; i++)
+    if (g_scAnim[i].anywhere && !strcmp(g_scAnim[i].act, act)) cand[n++] = i;
   if (!n) return NULL;
   return g_scAnim[cand[esp_random() % (uint32_t)n]].key;
 }
