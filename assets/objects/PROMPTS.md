@@ -253,3 +253,34 @@ picnic table · deck chair · beach parasol · sandcastle · campfire · tree st
 Each `<object>` phrase used the item's own words, e.g. *"a single cosy two-seat sofa with
 cushions"*, *"a single small retro television set on stubby legs"*, *"a single mossy tree
 stump"*, *"a single chalkboard cafe menu sign on a wooden easel"*.
+
+## Statues — 2026-08-20, and NOT generated
+
+Jon: *"Can we generate a statue that would go outside of each of the characters?"* then
+*"I want it all grey"* then *"I just want their south model on a pedal stool but all be
+concrete"*.
+
+Three PixelLab rolls per species failed the same way: the frog stayed green and the penguin
+stayed black-white-orange no matter how hard the prompt insisted on grey granite. The model
+will not decolour a strongly-coloured animal, and each attempt cost a roll.
+
+**The statues are not generated art.** They are built from the pack's own
+`assets/characters/<species>/Adult_Idle/south.png`, luminance-mapped onto one concrete ramp,
+and composited on a single generated plinth. One generation total (the plinth), reused seven
+times, and the statue is unmistakably *that pet* - dungarees and all - which no prompt would
+ever have matched.
+
+Plinth prompt (the only generation):
+```
+muddy lofi pixel art, plain weathered grey concrete, soft Studio Ghibli painterly warmth, gentle grain, clean dark outline, children's game item, a single empty stone pedestal plinth with a flat square top and a moulded base, front view, big and centered filling the canvas, floating on a plain transparent background, nothing on top of it, nothing underneath it, no floor shadow
+```
+
+The lesson worth keeping: when the thing you want already exists as art in the repo, compose
+it - do not ask a model to redraw it from words.
+
+**Placement, measured not guessed.** First build put the feet at the plinth's BACK corner and
+every statue looked like it was standing behind its pedestal (Jon: "but they aren't standing on
+the plinth"). The plinth is an isometric slab: scanning its rows, opaque width grows from the
+back corner at row 8, and mean brightness stays ~165 until row 31 then drops to ~129 where the
+darker side faces begin. So the lit top diamond is rows 8-31 and the feet belong at row 24 -
+the front half of the top face, where a figure standing on it would really be.
