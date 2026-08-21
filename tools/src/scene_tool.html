@@ -2455,17 +2455,15 @@ function drawAnims(){
   // DIRECT HIM: one button per live animation. Click - he stops deliberating and goes.
   // THE EMOTIONS THE SCENE DOESN'T HAVE fall back to the stock clips - Adult only for
   // now. They are preview-only: never in anims[], never saved, never exported.
-  // A STAND-IN IS ONLY FOR A FEELING THE ROOM DOES NOT HAVE. The test used to be "is this
-  // exact clip already in the room" - so a child who DREW their own love animation still got
-  // a stock Love button beside it, and pressing it played the shipped clip: "if i hit love on
-  // the assembly it isnt doing my custom animation". What matters is what a move COUNTS AS,
-  // not which drawing it happens to use. If the room already loves, there is nothing to
-  // stand in for, and their own button is the one to press.
-  const ownActs=new Set(anims.filter(a=>a.on).map(a=>actOfAnim(a)));
+  // EVERY FEELING KEEPS ITS BUTTON. I briefly hid the stock one when the room had its own,
+  // which took away the only way to TEST the thing you had just drawn ("but i want to be able
+  // to test out the love. now i cant do that"). The button stays; what changes is what it
+  // plays - see the handler below, which prefers the room's own drawing for that feeling and
+  // only falls back to the shipped clip when there is none. Same rule as the device's
+  // emoteClip(), so pressing it here shows exactly what the pet will do there.
   const defEmotes=Object.keys(SD.clips).filter(c=>/^Adult_/.test(c)
     && !/^Adult_(Idle$|Walk_)/.test(c)
-    && !anims.some(a=>a.on && a.clip===c)
-    && !ownActs.has(actOfAnim({clip:c})));
+    && !anims.some(a=>a.on && a.clip===c));
   const forceHtml = (anims.filter(a=>a.on).length || defEmotes.length)
     ? '<span class="hint" style="flex:0 0 auto;align-self:center">make him:</span>'+
       anims.map((a,i)=>{
@@ -2570,6 +2568,19 @@ function drawAnims(){
     await sendHimTo(act);
   });
   $('forceRow').querySelectorAll('[data-forcedef]').forEach(b=>b.onclick=async()=>{
+    // HIS OWN DRAWING FIRST. The stock clip is the stand-in, not the answer: if this room has
+    // a move that counts as the same feeling, that is what the pet will really do, so that is
+    // what the button has to show.
+    const want=actOfAnim({clip:b.dataset.forcedef});
+    const own=anims.find(x=>x.on && actOfAnim(x)===want);
+    if(own){
+      await loadArtFor(own);
+      forcePick={a:own, spot:null};
+      if(!simOn){ await $('preview').onclick() }
+      if(sim){ sim.phase='rest'; sim.t=1e9; sim.waitFor=0 }
+      return say(`going: "${own.name}" — your own ${want}, which is what the real `+
+                 `bunbun does too`);
+    }
     const a=defaultAnim(b.dataset.forcedef);
     if(!a) return;
     await loadArtFor(a);
@@ -2759,24 +2770,44 @@ function drawAnims(){
       if(src.actAs || a.actAs) return (a.actAs||actOfAnim(a))===(src.actAs||act);
       return actOfAnim(a)===act || a.name===src.name;
     };
-    let here=0, there=0, rooms=0; const without=[];
+    let here=0, there=0, rooms=0, added=0; const without=[], full=[];
     for(const a of anims) if(same(a)){ Object.assign(a, art()); here++ }
     for(const k of Object.keys(worldSlots||{})){
       try{
         const q=JSON.parse(worldSlots[k]); let hit=0;
         for(const a of (q.anims||[])) if(same(a)){ Object.assign(a, art()); hit++ }
         if(hit){ worldSlots[k]=JSON.stringify(q); there+=hit; rooms++ }
+        else if(isAnywhere(src)){
+          // NOT ONE PER ROOM, BY HAND (Jon: "do i have to create one per room? that is really
+          // redundant if so"). A feeling needs nowhere to happen, so a room that has none can
+          // simply be given this one - same drawing, same words, its own copy. A move that
+          // needs a PLACE is left alone: dropping it into a room with no chair to sit on
+          // would be inventing a rule the child never made.
+          const room=(q.anims||[]);
+          if(room.length>=14){ full.push(k||'home'); }
+          else{
+            const copy=JSON.parse(JSON.stringify(src));
+            delete copy.place; delete copy.acode;
+            copy.rule={anywhere:true};
+            copy.stage=Object.assign({}, src.stage||{}, {x:null, y:null});
+            room.push(copy); q.anims=room;
+            worldSlots[k]=JSON.stringify(q); added++; rooms++;
+          }
+        }
         else without.push(k||'home');
       }catch(e){}
     }
     syncRule(); draw(); autosave();
-    const tot=here+there;
+    const tot=here+there+added;
     if(!tot) return say(`nothing else in this world counts as "${act}" — `+
       `this is the only one`, true);
     say(`"${src.name}" is now the ${act} everywhere — ${tot} move${tot===1?'':'s'} `+
-        `updated${rooms?` across ${rooms} other room${rooms===1?'':'s'}`:''}`+
+        `updated${added?`, ${added} room${added===1?'':'s'} given one`:''}`+
+        `${rooms?` across ${rooms} other room${rooms===1?'':'s'}`:''}`+
         (without.length?`; ${without.join(', ')} ${without.length===1?'has':'have'} no `+
-         `${act} of ${without.length===1?'its':'their'} own`:'')) });
+         `${act} of ${without.length===1?'its':'their'} own (it needs a place, so I left `+
+         `${without.length===1?'it':'them'} alone)`:'')+
+        (full.length?`; ${full.join(', ')} ${full.length===1?'is':'are'} full at 14 moves`:'')) });
   $('anims').querySelectorAll('[data-dup]').forEach(b=>b.onclick=()=>{
     const a=anims[+b.dataset.dup];
     // EVERYTHING comes with it - rule, place, size, depth, facing, breathing - because the
