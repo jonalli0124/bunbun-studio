@@ -4248,9 +4248,16 @@ function hash4(str){ let h=0; for(let i=0;i<str.length;i++){ h=(h*31+str.charCod
 // bake every enabled animation at its authored size (feet at row 130), plan the anims
 // table + marks through the assembler's OWN resolvers, collect replaced object art, and
 // emit the device scene. No device I/O in here - that is exactly why it can be shared.
-async function buildPortPayload(setB){
+// `takenSlugs` is the WHOLE WORLD's set of animation folder names, passed in by the package
+// export so it spans every room. A slug is the name cut to 13 characters, and the pak has one
+// canim/<slug>/ folder for the entire world - so two animations in DIFFERENT rooms whose names
+// agree that far were both writing to the same folder, the second one's frames were dropped by
+// the "already seen" guard, and one room silently performed the other's drawing. That is how a
+// kitchen ended up eating a love animation, hearts and all: "penguin Adult Love" and "penguin
+// Adult Eat (2)" both cut to "penguin-adult". Deduping per room could never have caught it.
+async function buildPortPayload(setB, takenSlugs){
     // 2. bake the animations at 96px + encode; plan slugs, marks, the anims table
-    const taken=new Set(), plan={anims:[], marks:[]}, newEntries=[];
+    const taken=takenSlugs||new Set(), plan={anims:[], marks:[]}, newEntries=[];
     const on=anims.filter(a=>a.on);
     // NOTHING IS TRIMMED SILENTLY (council 8/17: "a child would just see the thing
     // missing"). Every cap says what did not fit, by name, before the port continues.
@@ -4638,11 +4645,12 @@ async function exportDevicePackage(){
               todMin, todOn, lampMode, lightScale};
     const pinWx=()=>{ ({raining, clouding, cloudN, cloudStyle, starsOn, starN,
                        todMin, todOn, lampMode, lightScale}=wx); };
+    const worldSlugs=new Set();     // one namespace for the whole world - see buildPortPayload
     for(const rk of roles){
       setB(`packing the ${rk||'main room'}…`);
       await restore(keepW[rk]);
       pinWx();
-      const {plan, newEntries, body}=await buildPortPayload(setB);
+      const {plan, newEntries, body}=await buildPortPayload(setB, worldSlugs);
       const one=JSON.parse(body);
       if(body.length>8192) throw new Error(`the ${rk||'main'} scene is ${body.length} bytes; the device reads 8192`);
       scenes.push(one); planCount+=plan.anims.length;
