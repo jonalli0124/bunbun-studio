@@ -30,7 +30,13 @@ OUT_ROOT = pathlib.Path("C:/Users/Jon/Downloads/bunbun_web_test/assets")
 # Anchored at bottom-centre, the same point spriteBlit() anchors on, so the feet stay put.
 # = the scene's travelScale dial, passed by the port ("the export should have it all at
 # 45% per the scene assembler") - the wandering pet is the size the assembler previews.
-SCALE = 0.35   # default; overridden by argv[2]
+# 0.5, AND IT IS A CONTRACT, not a preference. The firmware brings a species frame up to the
+# world's size with travelFactor() = scene.ts / 0.5 - it has no way to ask what scale the pack
+# was baked at, so a pack built at anything else is drawn at the wrong size for the rest of its
+# life. A dog pack baked at 0.70 (and then multiplied by 1.4 for a 70% world) is what "he keeps
+# going bigger than the default on passive animations" was: his authored moves 56px tall, every
+# feeling he shows by himself 78px. Pass argv[2] only if you are also changing that divisor.
+SCALE = 0.5    # default; overridden by argv[2]
 
 # ANIMS folder -> (frame count, source recipe). A recipe is either
 #   ("anim", "Clip_Name")            numbered frames 00.png.., padded/truncated to count

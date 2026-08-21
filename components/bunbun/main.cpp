@@ -31,6 +31,8 @@ using fs::File;
 // does a malloc and a cJSON recursion from inside the render path, which makes it a suspect
 // worth being able to rule in or out. Defined with the rest of the breadcrumb, further down.
 static void bcMark(int where);
+// The party flag, up above everything that reads it - the ticker caption is the first.
+static bool g_danceMode = false;
 #include "scene.h"   // a room read from /spiffs/scene.json, if one is there
 
 // EVERY EMOTION ANNOUNCES ITSELF on the ticker (Jon: "if he is doing an emote the
@@ -60,7 +62,11 @@ static const char *emoteLineFor(const char *key) {
        !strcmp(b2, "eat")    ? "bunbun is tucking in"             :
        !strcmp(b2, "sleep")  ? "bunbun is fast asleep... zzz"     :
        !strcmp(b2, "play")   ? "bunbun is up to something"        :
-       !strcmp(b2, "jump")   ? "bunbun cannot keep still"         :
+       // The jump clip IS the dance, so during a party this line read as a complaint that
+       // he would not settle (Jon: "it keeps saying he cant sit still"). Same clip, and the
+       // caption now says what is actually happening.
+       !strcmp(b2, "jump")   ? (g_danceMode ? "bunbun is dancing!"
+                                            : "bunbun cannot keep still")  :
        !strcmp(b2, "work")   ? "bunbun is being very industrious" : nullptr;
 }
 #include "ui.h"
@@ -152,8 +158,7 @@ static void buildAirName() {
 
 // Declared up here, well above the disco module that owns them, because backlightTick(),
 // think() and simulate() all sit above that module and this file is one translation unit
-// compiled top to bottom.
-static bool  g_danceMode = false;
+// compiled top to bottom. (g_danceMode moved higher still - the ticker's caption reads it.)
 static float g_discoDrop = 0.0f;    // 0 = stowed above the ceiling, 1 = fully lowered
 
 // "Ball is down and settled", the condition for bunbun to actually dance and for decay to
@@ -3199,7 +3204,19 @@ static void think(float dt) {
         }
       }
       g_actAct[0] = 0;
-      if (g_pottySeq == 1) {
+      // THE PARTY OWNS WHAT HAPPENS NEXT (Jon: "he also went and did a sit when i started
+      // dance mode so it didnt overwrite everything"). danceBegin() clears what was already
+      // running, but nothing stopped the brain from starting the NEXT thing a moment later -
+      // a potty trip, a work rep, the room's own act - and each of those returns before the
+      // dance check further down is ever reached. So when the music is on, an act that
+      // finishes ends the errand instead of chaining into another one.
+      if (g_danceMode) {
+        g_pottySeq = 0; g_pottyLock = false;
+        g_workUntil = 0; g_workReps = 0; g_workNextAt = 0;
+        g_repeatAct[0] = 0; g_repeatN = 0;
+        g_tx = g_ty = -1; g_visit = -1;
+      }
+      else if (g_pottySeq == 1) {
         g_pottySeq = 2;
         const char *washAct = (sceneActMark("wash") >= 0 || sceneActAnim("wash")) ? "wash"
                             : (sceneActMark("bath") >= 0 || sceneActAnim("bath")) ? "bath"
@@ -3215,7 +3232,7 @@ static void think(float dt) {
       } else if (g_pottySeq == 2) {
         g_pottySeq = 0;
       }
-      if (g_workUntil || g_workReps > 0) {
+      if (!g_danceMode && (g_workUntil || g_workReps > 0)) {
         if (g_dbgAct[0]) { g_workUntil = 0; g_workReps = 0; }  // a command outranks work
         // THE METER ENDS THE SHIFT, not the clock and not a rep count. The scene's work
         // minutes still bound it, so a world that says "work lasts 5 minutes" is not lied to -
@@ -3243,7 +3260,7 @@ static void think(float dt) {
       // session above is only the scene's optional cap on top of it.
       {
         const char *ra = roomOwnAct(g_scCurRole);
-        if (ra[0] && !g_dbgAct[0] && !actMeterFull(ra) &&
+        if (ra[0] && !g_dbgAct[0] && !g_danceMode && !actMeterFull(ra) &&
             g_repeatN < REPEAT_CAP && (sceneActMark(ra) >= 0 || sceneActAnim(ra))) {
           g_workNextAt = millis() + 2000 + esp_random() % 2500;
           snprintf(g_repeatAct, sizeof(g_repeatAct), "%s", ra);
@@ -3254,7 +3271,7 @@ static void think(float dt) {
       }
       // outside holds him like home does: no errand is over, so there is nothing to walk
       // back from. Only a command for another room, or the potty, takes him out of it.
-      if (!sceneRoomHolds(g_scCurRole) && !g_doorTrip && !g_workNextAt) {
+      if (!sceneRoomHolds(g_scCurRole) && !g_doorTrip && !g_workNextAt && !g_danceMode) {
         if (millis() < g_roomMinStay) {          // the visit's minimum stay first
           if (!g_visitHomeAt) g_visitHomeAt = g_roomMinStay;
           g_wanderT = 2.0f;
@@ -3263,11 +3280,19 @@ static void think(float dt) {
     } else return;
   }
 
-  // the party never steals an errand either - he walks his trip plainly and the
-  // dance takes him back the moment he is free
-  if (discoDown() && S.lights && !S.sick &&
-      !g_doorTrip && g_visit < 0 && g_tx < 0 && !g_action && !g_sleepPending) {
-    danceStep(dt); return;
+  // DANCING OWNS HIM, IN WHATEVER ROOM HE IS STANDING IN (Jon: "he should also be able to
+  // dance in every room he is in"). This used to wait for him to be completely free - no
+  // target, no visit, no trip - and anything short of that fell through to the ordinary
+  // brain below, which promptly sent him somewhere. Now the party takes the floor and the
+  // walker is stood down; only a door already in progress is allowed to finish, because
+  // stopping halfway would leave him between two rooms.
+  if (g_danceMode && S.lights && !S.sick && !g_action && !g_sleepPending) {
+    if (!g_doorTrip) {
+      g_tx = g_ty = -1; g_visit = -1;
+      g_workNextAt = 0; g_repeatAct[0] = 0; g_repeatN = 0;
+      if (discoDown()) danceStep(dt);
+    }
+    return;
   }
   if (!S.lights) {
     // A COMMAND OUTRANKS BEDTIME. This return used to fire before the errand code and
@@ -4813,7 +4838,13 @@ static bool     g_bcPrevValid = false;
 enum {
   BC_IDLE = 1, BC_SIMULATE, BC_THINK, BC_TIDY, BC_KEEPLEGAL, BC_CLOUDS, BC_RAIN, BC_BIRD,
   BC_CAT, BC_LOOSE, BC_EVENTS, BC_COMPOSE, BC_LIGHTMAP, BC_SCENEPROPS, BC_CATCLOCK,
-  BC_DRAWCAT, BC_SCENELOAD, BC_PAKREAD, BC_TOUCH, BC_UI
+  BC_DRAWCAT, BC_SCENELOAD, BC_PAKREAD, BC_TOUCH, BC_UI,
+  // Added after a panic came back pointing at BC_DRAWCAT (16) - which is not a function but a
+  // SPAN: everything from the cat's blit down to the light map, including the effects, the
+  // messes and the disco. Appended rather than inserted so 16 still means what it meant in
+  // every crash already recorded. 21 = the effects, 22 = the messes on the floor,
+  // 23 = the disco spots inside the band pipeline.
+  BC_DRAWFX, BC_MESS, BC_DISCO
 };
 static void bcMark(int where) { BC(where); }
 
@@ -7969,6 +8000,7 @@ static void composeRoom(int fx, int fy, float sc, int lampOn, bool cloudLit, flo
     }
     g_tPixAcc += micros() - tPix0;
     if (!g_composeNoChar && !bunAway()) spriteBlit(g_band, by, fx, fy, sc);
+    BC(BC_DISCO);
     discoBandStage(g_band, by, rows);
     { uint32_t t0 = micros();
       scene.pushImage(0, by, UI_W, rows, g_band);
@@ -8041,7 +8073,7 @@ static void composeRoom(int fx, int fy, float sc, int lampOn, bool cloudLit, flo
       BC(BC_DRAWCAT); drawCat();
       g_stenApply = false;
     }
-    drawFx();
+    BC(BC_DRAWFX); drawFx();
     // After the character has been blitted, so the beams fall ACROSS bunbun too rather
     // than being hidden behind it. Lights first, ball on top of them.
     // disco now happens inside the band pipeline (discoBandStage) — see the note there
@@ -8053,6 +8085,7 @@ static void composeRoom(int fx, int fy, float sc, int lampOn, bool cloudLit, flo
   // clothes, adults stack dirty dishes. Same counter, same SWEEP, three
   // skins — and until the clothes/dishes art lands in the pak, the sprite
   // lookup falls back to the poop so nothing draws blank.
+  BC(BC_MESS);
   for (int i = 0; i < S.poopN; i++) {
     const char *ms = (S.phase == PH_TEEN)  ? "items/clothes"
                    : (S.phase == PH_ADULT) ? "items/dishes"

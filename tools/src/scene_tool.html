@@ -169,7 +169,7 @@
         <span id="msl" style="color:var(--ink);font-weight:600">&mdash;</span>
         <span class="hint">one dial for everything he does &mdash; his moves and his
           walking</span></label>
-      <input type="range" id="master" min="20" max="120" step="5" value="45" style="width:100%">
+      <input type="range" id="master" min="20" max="120" step="5" value="70" style="width:100%">
       <!-- the separate travel dial is gone: the master above sets the walk too, so there is
            one size and it cannot drift. The controls stay in the DOM, hidden, because the
            master writes through them and the export reads the value. -->
@@ -475,7 +475,7 @@ var gWorldAnimal='';                 // the whole house's animal, across every r
 // empty world was born at 100 - the dial said one thing and the tool did another until
 // somebody touched it. 45 is the default in both places now. (0 still means "nobody has set
 // it": an animation inherits from its siblings first, and only then falls back to this.)
-const MASTER_DEFAULT=45;
+const MASTER_DEFAULT=70;   // 45 first, then Jon across the whole cast: "70% looks better"
 var gMasterScale=0;                  // ...and its one size. 0 = nobody has set it yet
 function worldAnimalId(){
   if(gWorldAnimal) return gWorldAnimal;              // the house's animal always wins
