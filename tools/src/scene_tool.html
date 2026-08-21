@@ -3461,10 +3461,16 @@ const PROP_GROUPS=[
   ['statues',                ['bunny statue','cat statue','dog statue','frog statue',
                               'penguin statue','croc statue','capybara statue']],
   ['on the floor',           ['Rug']],
-  ['growing and living',     ['plant','bird flock','flying bird']],
+  // Jon: "some of the greenery is for inside and some is outside" - so they are two shelves,
+  // not one. A child dressing a bathroom should never have to scroll past bulrushes.
+  ['plants indoors',         ['plant','potted fern','monstera','cactus','hanging plant',
+                              'herb pots','flower jug']],
+  ['plants outside',         ['bush','hedge','sapling','tall grass','ferns','wildflowers',
+                              'reeds','mushrooms']],
   // these only show inside a sky box - the group name is the reminder
   ['in the sky',             ['sun','setting sun','moon','crescent moon','star','star cluster',
-                              'shooting star','puffy cloud','wispy cloud','storm cloud']],
+                              'shooting star','puffy cloud','wispy cloud','storm cloud',
+                              'bird flock','flying bird']],
 ];
 { const opt=k=>`<option value="${k}">${nice(k)}</option>`;
   const byKind=w=>Object.keys(SD.props).filter(k=>(SD.props[k].kind||'prop')===w);
