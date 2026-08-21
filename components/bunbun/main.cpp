@@ -2195,14 +2195,26 @@ static const char *moodCustom(const char *act, const char *fb) {
 // with another helping scheduled shows its own idle rather than a sulk.
 static bool     g_gamePanel = false;
 static uint32_t g_workNextAt = 0;    // the stroll between reps ends, and the next one starts
+// TEMPORARY PROBE: what the repeat dispatcher last decided. 0 = think() never got that far,
+// 1 = cleared (meter full / cap / no such act), 2 = dispatched, 3 = held back by a visit,
+// a door or a running action. Guessing at this cost several flashes.
+static uint8_t  g_dspWhy = 0;
 bool isRaining();      // the shower is a world condition; think() asks from any room
+static bool actMeterFull(const char *act);        // both defined a few dozen lines below;
+static const char *roomOwnAct(uint8_t role);      // moodAnim asks them what this room is for
 static const char *moodAnim() {
   bool b = (S.phase == PH_BABY);
-  // BUSY IN A ROOM: between helpings he shows that room's own idle, not a sulk. Only while a
-  // next helping is actually scheduled, so it cannot swallow the moods the rest of the time.
-  if (g_workNextAt && g_scCurRole != SCENE_ROLE_MAIN && !S.sick) {
-    const char *si = sceneAnywhereActAnim("idle");
-    if (si) return si;
+  // NO SULKING WHILE HE IS FIXING IT (Jon: "while he is in the rooms getting his stats up,
+  // we need to not get stuck on the negative emotions"). In a room whose own gauge is still
+  // filling he is BUSY, not miserable - a tick a second is going in - so what belongs between
+  // goes is the room's own standing-about animation, or failing that the plain idle. Being
+  // genuinely poorly still outranks it; that is the one state a room does not fix.
+  {
+    const char *rn = roomOwnAct(g_scCurRole);
+    if (rn[0] && !actMeterFull(rn) && !S.sick) {
+      const char *si = sceneAnywhereActAnim("idle");
+      return si ? si : moodCustom("idle", pa("idle"));
+    }
   }
   // Jon's split, honored: an EMOTION (hungry, tired, sick, bored, angry) is a state shown
   // wherever he stands - and the child's own emotion animation wins when the scene has one.
@@ -2455,6 +2467,13 @@ static bool sceneDoorTo(uint8_t tgt, const char *act) {
   // REPEAT_CAP remains the backstop so an unreachable act can never trap him.
   if (tgt == SCENE_ROLE_MAIN && !g_dbgAct[0] && S.lights && !S.sick && !g_danceMode) {
     const char *ra = roomOwnAct(g_scCurRole);
+    // NOTHING ELSE PULLS AT HIM WHILE HE IS IN HERE (Jon: "the rooms should not allow the
+    // negative emotions to start can we supress them so they arent pulling on him?"). I first
+    // let a worse gauge break the hold, which is why he stood between two owners - hunger
+    // pulling him to the kitchen while the bathroom refused to let go - and then, with
+    // hysteresis, why he still broke off mid-wash. The simplest rule is the one he asked for
+    // twice: the room he is in owns him until its gauge is full. A visit is about ninety
+    // seconds at a tick a second, and a button, bedtime or illness still outrank it.
     if (ra[0] && !actMeterFull(ra) && g_repeatN < REPEAT_CAP &&
         (sceneActMark(ra) >= 0 || sceneActAnim(ra))) {
       if (!g_workNextAt) {
@@ -2564,7 +2583,7 @@ extern "C" void bunbun_brain_snapshot(char *buf, int len) {
     "{\"role\":%d,\"avail\":%d,\"lights\":%d,\"tx\":%d,\"ty\":%d,"
     "\"visit\":%d,\"door\":%d,\"action\":%d,\"settle_ms\":%ld,"
     "\"x\":%d,\"y\":%d,\"anim\":\"%s\",\"potty\":%d,\"work\":%d,"
-    "\"food\":%d,\"fun\":%d,\"energy\":%d,\"clean\":%d,"
+    "\"food\":%d,\"fun\":%d,\"energy\":%d,\"clean\":%d,\"disc\":%d,\"dsp\":%d,"
     "\"floorN\":%d,\"props\":%d,\"anims\":%d,\"sick\":%d,"
     "\"worldAnimal\":\"%s\",\"petAnimal\":\"%s\",\"wake\":\"%s\",\"rep\":\"%s\",\"repN\":%d,\"next\":%d,\"minStay\":%d}",
     (int)g_scCurRole,
@@ -2573,7 +2592,7 @@ extern "C" void bunbun_brain_snapshot(char *buf, int len) {
     S.lights?1:0, g_tx, g_ty, (int)g_visit, (int)g_doorTrip, g_action?1:0,
     (long)(millis()<g_settleUntil ? (g_settleUntil-millis()) : 0),
     (int)S.x, (int)S.y, g_anim?g_anim->key:"?", (int)g_pottySeq, g_workUntil?1:0,
-    (int)S.food, (int)S.fun, (int)S.energy, (int)S.clean,
+    (int)S.food, (int)S.fun, (int)S.energy, (int)S.clean, (int)S.disc, (int)g_dspWhy,
     (int)g_scFloorN, (int)g_scPropN, (int)g_scAnimN, (int)S.sick,
     g_scAnimal,
     (S.species_idx < CHARACTERS_N && CHARACTERS[S.species_idx].id)
@@ -3785,17 +3804,19 @@ static void think(float dt) {
     return;
   }
 
+  g_dspWhy = (g_dspWhy >= 4) ? g_dspWhy : 4;   // 4 = reached, timer not due yet
   // the stroll between work reps is over: the next rep starts where he stands
   if (g_workNextAt && millis() >= g_workNextAt) {
+    g_dspWhy = 3;
     // whichever act this visit is repeating - work, dinner or a bath - and it stops the
     // moment that act's own meter says it is done
     const char *ra = g_repeatAct[0] ? g_repeatAct : ((g_workUntil || g_workReps > 0) ? "work" : "");
     if (!ra[0] || actMeterFull(ra) || g_repeatN >= REPEAT_CAP ||
         !(sceneActMark(ra) >= 0 || sceneActAnim(ra))) {
-      g_workNextAt = 0; g_repeatAct[0] = 0;
+      g_workNextAt = 0; g_repeatAct[0] = 0; g_dspWhy = 1;
     }
     else if (g_visit < 0 && !g_doorTrip && !g_action) {
-      g_workNextAt = 0;
+      g_workNextAt = 0; g_dspWhy = 2;
       whyFor(WHY_SCHEDULE, "");
       // A VISIT IS NOT ONE ACT ON REPEAT (Jon: "he is supposed to go the rooms and act out
       // the various things in the room not just the 1 action"). The gauge fills by TIME in
@@ -11120,6 +11141,16 @@ bool outsideRowOn() { return g_scRoleAvail[SCENE_ROLE_OUTSIDE]; }
 // whatever he had decided for himself, exactly as a room's act does. From a side room it
 // is two journeys, because a door only ever leads home.
 static void outsideToggle() {
+  // AND HE SAYS WHY (Jon: "it needs to say that he cant go outside because it is raining").
+  // Refusing in silence reads as a broken button; the child is owed the reason, and the
+  // reason is on the glass anyway - it is pouring.
+  if (g_scCurRole != SCENE_ROLE_OUTSIDE && isRaining()) {
+    sfxNo();
+    char line[64];
+    snprintf(line, sizeof(line), "it is raining - %s is staying in", petName());
+    say(line);
+    return;
+  }
   g_action = false; g_tx = g_ty = -1; g_visit = -1;
   g_settleUntil = 0; g_wanderT = 0;
   g_workUntil = 0; g_workReps = 0; g_workNextAt = 0; g_repeatAct[0] = 0; g_repeatN = 0;

@@ -2765,11 +2765,13 @@ function drawAnims(){
     // are called the same thing in two rooms and are emphatically not the same drawing, so
     // whenever either side has been given an explicit counts-as, that has to agree. Only
     // when nobody has said does the name get a vote.
-    const same=a=>{
-      if(a===src) return false;
-      if(src.actAs || a.actAs) return (a.actAs||actOfAnim(a))===(src.actAs||act);
-      return actOfAnim(a)===act || a.name===src.name;
-    };
+    // WHAT COUNTS AS THE SAME MOVE - AND ONLY THAT. The name used to get a vote when
+    // neither side had an explicit counts-as, and that is how a drawing lands on the wrong
+    // move: two animations called "Penguin Adult ..." are not the same thing, and copying
+    // one's art onto the other is how a kitchen ended up performing a love animation, hearts
+    // and all, whenever the child pressed EAT. The act is the only thing that means "these
+    // two are the same move in different rooms".
+    const same=a=>a!==src && (a.actAs||actOfAnim(a))===(src.actAs||act);
     let here=0, there=0, rooms=0, added=0; const without=[], full=[];
     for(const a of anims) if(same(a)){ Object.assign(a, art()); here++ }
     for(const k of Object.keys(worldSlots||{})){
