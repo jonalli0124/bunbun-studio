@@ -3181,6 +3181,34 @@ static bool tidyStep(float dt) {
   return true;
 }
 
+// STEP AWAY FROM THE THING HE JUST USED (Jon: "he needs to make sure to move further away
+// after he does an action like sit", and again of the tub: "he isnt leaving the bath
+// location. he is just standing there"). The assembler's preview has always done this - a
+// deliberate distance, far side first, never stopping anywhere he may not linger. Called
+// from BOTH ends of a performance: the one that finishes the visit, and the one that
+// schedules another helping - that second one returns early, which is why a bath he was
+// staying for left him standing in the tub between goes.
+static void stepAwayFromSpot() {
+  // (no !g_workNextAt here on purpose: the scheduled next helping is exactly when the stroll
+  // has to happen, and the rep sites set that timer before they call this)
+  if (g_visit < 0 && !g_doorTrip && g_tx < 0) {
+    static const int AWAY[] = {55, 70, 42, 90, 110};
+    const int dir = (S.x >= 160) ? -1 : 1;        // toward the room's open side
+    const Bounds b = bounds();
+    for (int pass = 0; pass < 2 && g_tx < 0; pass++) {
+      const int sgn = pass ? -dir : dir;
+      for (int d = 0; d < (int)(sizeof(AWAY) / sizeof(AWAY[0])); d++) {
+        int nx = S.x + sgn * AWAY[d], ny = S.y;
+        if (nx < b.x0 || nx > b.x1) continue;
+        clearOfBlocks(&nx, &ny);
+        if (!sceneFloorHas(nx, ny) || !sceneCanLoiter(nx, ny)) continue;
+        if (abs(nx - S.x) < 30) continue;         // that is not stepping away
+        g_tx = nx; g_ty = ny;
+        break;
+      }
+  }
+    }
+}
 static void think(float dt) {
   // The job drives his position and animation itself, so ordinary behaviour must stand down
   // for the duration — otherwise setAnim() runs every frame and the sequence never shows.
@@ -3342,6 +3370,7 @@ static void think(float dt) {
           snprintf(g_repeatAct, sizeof(g_repeatAct), "%s", ra);
           g_repeatN++;
           g_wanderT = 0.5f;
+          stepAwayFromSpot();   // the stroll between helpings
           return;
         }
       }
@@ -3622,6 +3651,7 @@ static void think(float dt) {
         snprintf(g_repeatAct, sizeof(g_repeatAct), "%s", ra);
         g_repeatN++;
         g_wanderT = 0.5f;
+        stepAwayFromSpot();   // the stroll between helpings
         setAnim(moodAnim());          // he is between goes, not still performing
         g_performBehind = false;
         return;
@@ -3640,29 +3670,7 @@ static void think(float dt) {
     // longer than 5" - the animation kept playing while he waited to decide what was next).
     setAnim(moodAnim());
     g_performBehind = false;
-    // AND HE STEPS AWAY FROM THE THING HE JUST USED (Jon: "he needs to make sure to move
-    // further away after he does an action like sit. right now he sits and then just kind of
-    // stands right next to the object"). The assembler's preview has always done this - a
-    // deliberate distance, far side first, never stopping anywhere he is not allowed to
-    // linger - and the device just dropped to idle where it stood, which reads as him
-    // hovering over the chair he has finished with. Same distances the preview uses.
-    if (g_visit < 0 && !g_doorTrip && g_tx < 0 && !g_workNextAt) {
-      static const int AWAY[] = {55, 70, 42, 90, 110};
-      const int dir = (S.x >= 160) ? -1 : 1;        // toward the room's open side
-      const Bounds b = bounds();
-      for (int pass = 0; pass < 2 && g_tx < 0; pass++) {
-        const int sgn = pass ? -dir : dir;
-        for (int d = 0; d < (int)(sizeof(AWAY) / sizeof(AWAY[0])); d++) {
-          int nx = S.x + sgn * AWAY[d], ny = S.y;
-          if (nx < b.x0 || nx > b.x1) continue;
-          clearOfBlocks(&nx, &ny);
-          if (!sceneFloorHas(nx, ny) || !sceneCanLoiter(nx, ny)) continue;
-          if (abs(nx - S.x) < 30) continue;         // that is not stepping away
-          g_tx = nx; g_ty = ny;
-          break;
-        }
-      }
-    }
+    stepAwayFromSpot();
     // 35-60s between furniture visits, down from 60-100s. This cooldown was the real limit on
     // how often he reached the radio — the per-visit chance barely mattered while this was
     // throttling every furniture trip.
@@ -3707,7 +3715,27 @@ static void think(float dt) {
     else if (g_visit < 0 && !g_doorTrip && !g_action) {
       g_workNextAt = 0;
       whyFor(WHY_SCHEDULE, "");
-      sceneErrandTo(ra);
+      // A VISIT IS NOT ONE ACT ON REPEAT (Jon: "he is supposed to go the rooms and act out
+      // the various things in the room not just the 1 action"). The gauge fills by TIME in
+      // the room now, not by performances given, so pottering about costs him nothing: he
+      // can use the other things the child put in there and still leave with a full meter.
+      // Weighted toward the room's own act, because that is still what he came for.
+      const char *pick = ra;
+      if ((esp_random() % 100) < 45) {
+        const char *cand[SCENE_MAX_ANIMS];
+        int cn = 0;
+        for (int i = 0; i < g_scAnimN && cn < SCENE_MAX_ANIMS; i++) {
+          const char *a2 = g_scAnim[i].act;
+          if (!a2[0] || !strcmp(a2, ra)) continue;
+          if (!strcmp(a2, "walk_e") || !strcmp(a2, "walk_w") ||
+              !strcmp(a2, "sleep")  || !strcmp(a2, "wake")) continue;   // not mid-visit
+          bool dup = false;
+          for (int k = 0; k < cn; k++) if (!strcmp(cand[k], a2)) dup = true;
+          if (!dup) cand[cn++] = a2;
+        }
+        if (cn) pick = cand[esp_random() % (uint32_t)cn];
+      }
+      sceneErrandTo(pick);
       return;
     }
   }
@@ -4847,7 +4875,7 @@ static void runMenu(int i) {
             break;
     case 4: if (!S.sick) { sfxNo(); say("bunbun feels fine"); return; }
             S.sick = 0; S.health = min(100.0f, S.health + 35);
-            startAction(pa("love"), 2.0f); say("bunbun feels better"); break;
+            startAction(emoteClip("love", "love"), 2.0f); say("bunbun feels better"); break;
     case 5: {
               // CUDL, every age, no refusal ever — "bunbun is all snuggled"
               // turned affection away once, and the one thing a cuddle
@@ -4867,6 +4895,13 @@ static void runMenu(int i) {
                 // on the pak (the anim table can name a clip the installed
                 // pak has never heard of), falling back to the love clip
                 // exactly as before — so an old pak still cuddles.
+                // THE WORLD'S OWN HAPPY WINS THE CUDDLE. A child who drew a "feeling happy"
+                // and tagged it means that drawing, and CUDL is the button they press to say
+                // so ("i set it to feeling happy, but when i hit love it doesnt play the
+                // custom animation"). Only a world that authored none falls to the stock
+                // cuddle art below.
+                const char *own = sceneAnywhereActAnim("love");
+                if (own) { startAction(own, 2.4f); break; }
                 const char *ck = pa("cuddle");
                 const AnimDef *cd = findAnim(ck);
                 char f0[48];
@@ -13711,7 +13746,7 @@ void loop() {
         // Jon: petting is LOVE, not cuddles — the hearts animation at every
         // age (pa() picks each phase's own love clip), for as long as the
         // finger stays. The CUDL button keeps the cuddle clips for itself.
-        startAction(pa("love"), 1.2f);
+        startAction(emoteClip("love", "love"), 1.2f);
       }
       g_actionEnd = now + 700;           // rolling: the love clip holds while held
       g_love = min(100.0f, g_love + 2.0f * dt);

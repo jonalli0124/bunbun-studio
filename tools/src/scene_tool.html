@@ -2468,10 +2468,20 @@ function drawAnims(){
         const tint = room ? ['#e3edf9','#7ea6d6']
                    : anywhere ? ['#e9e3f7','#a68fd8']
                    : ['#ddf0e3','#79bb92'];
-        const tip = room ? 'counts as '+act+' \u2014 belongs to a room'
-                  : anywhere ? (act ? 'counts as '+act+' \u2014 happens anywhere'
+        // ONE WORD FOR ONE THING (Jon: "on the scene assembler it says loved but on the
+        // feeling as it says feeling happy"). The tooltip used the device's short act name
+        // while the counts-as list beside it used the child's words. Same words in both now.
+        const SAY_ACT={love:'feeling loved', bored:'being bored', tired:'being sleepy',
+                       hungry:'being hungry', angry:'being grumpy', sick:'feeling poorly',
+                       dance:'dancing', play:'playing', eat:'eating', bath:'bathing',
+                       wash:'washing up', toilet:'the potty', sleep:'sleeping',
+                       work:'his job', idle:'standing about', sit:'sitting down',
+                       walk_e:'walking', walk_w:'walking'};
+        const actWord=SAY_ACT[act]||act;
+        const tip = room ? 'counts as '+actWord+' \u2014 belongs to a room'
+                  : anywhere ? (act ? 'counts as '+actWord+' \u2014 happens anywhere'
                                     : 'happens anywhere he walks')
-                  : 'counts as '+act+' \u2014 needs a place here';
+                  : 'counts as '+actWord+' \u2014 needs a place here';
         const nm = a.name.length>18 ? a.name.slice(0,17)+'\u2026' : a.name;
         return '<button class="mini" data-force="'+i+'" title="'+tip+'" style="background:'+
           tint[0]+';border-color:'+tint[1]+';color:#241f1b;font-weight:600">'+nm+'</button>';
@@ -2625,7 +2635,7 @@ function drawAnims(){
         <option value="walk_e" ${a.actAs==='walk_e'?'selected':''}>how he walks (this way &rarr;)</option>
         <option value="walk_w" ${a.actAs==='walk_w'?'selected':''}>how he walks (&larr; that way)</option>
         <option value="dance" ${a.actAs==='dance'?'selected':''}>dancing</option>
-        <option value="love" ${a.actAs==='love'?'selected':''}>feeling happy</option>
+        <option value="love" ${a.actAs==='love'?'selected':''}>feeling loved (the cuddle button)</option>
         <option value="play" ${a.actAs==='play'?'selected':''}>playing</option>
         <option value="bored" ${a.actAs==='bored'?'selected':''}>being bored</option>
         <option value="tired" ${a.actAs==='tired'?'selected':''}>being sleepy</option>
