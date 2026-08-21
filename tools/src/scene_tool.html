@@ -3484,7 +3484,12 @@ const PROP_GROUPS=[
   }
   const rest=props.filter(k=>!placed.has(k)).sort((a,b)=>nice(a).localeCompare(nice(b)));
   if(rest.length) html+=`<optgroup label="everything else">${rest.map(opt).join('')}</optgroup>`;
-  const lights=byKind('light').sort((a,b)=>nice(a).localeCompare(nice(b)));
+  const LIGHT_ORDER=['floor lamp','table lamp','lamp','pendant light','sconce','desk lamp',
+                     'work light','garden lantern','festoon lights'];
+  const lights=byKind('light').sort((a,b)=>{
+    const ia=LIGHT_ORDER.indexOf(a), ib=LIGHT_ORDER.indexOf(b);
+    if(ia<0&&ib<0) return nice(a).localeCompare(nice(b));
+    return (ia<0?99:ia)-(ib<0?99:ib); });
   if(lights.length) html+=`<optgroup label="lights">${lights.map(opt).join('')}</optgroup>`;
   $('addSel').innerHTML=html; }
 // Three states in one button: all -> none -> back. "All" also opens every eye, so one click
