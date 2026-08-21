@@ -2591,6 +2591,7 @@ function drawAnims(){
       <button class="mini" data-ren="${i}" title="rename it">&#9998;</button>
       <button class="mini" data-exp="${i}" title="save this one as a file - it re-opens in Animation Creation for tweaking">&#128190;</button>
       <button class="mini" data-rep="${i}" title="swap in a re-exported file - the rule, place, facing and size here all stay">&#8635;</button>
+      <button class="mini" data-all="${i}" title="use this drawing in every room - every move that counts as the same thing takes it, and keeps its own place, rule, facing and size">&#8694;</button>
       <button class="mini" data-dup="${i}" title="a copy to point the other way, or place elsewhere">&#10697;</button>
       <button class="mini" data-del="${i}">&times;</button>
       <span style="flex-basis:100%;height:0"></span>
@@ -2703,6 +2704,44 @@ function drawAnims(){
     say('pick the re-exported file for "'+anims[replaceTarget].name+'" — its motion comes '+
         'in; the rule, place, facing and size here stay');
     $('fReplace').click() });
+  // ONE DRAWING, EVERY ROOM (Jon: "let's say i make a new love animation. how do i update
+  // it so all love animations reflect that? this same process will be necessary for the other
+  // any time animations"). Replacing it room by room is five trips and one forgotten kitchen.
+  // What travels is the DRAWING - the clip, its frames, its breathing, its speed. What stays
+  // is everything each room decided for itself: where it happens, what it is tied to, which
+  // way he faces, how big he is, how long it plays, what he says.
+  $('anims').querySelectorAll('[data-all]').forEach(b=>b.onclick=()=>{
+    const src=anims[+b.dataset.all];
+    const act=actOfAnim(src);
+    const art=()=>JSON.parse(JSON.stringify({clip:src.clip, order:src.order, fps:src.fps,
+                                             character:src.character, layers:src.layers||[]}));
+    // WHAT COUNTS AS THE SAME MOVE. The act first: a sit on a chair and a sit on the potty
+    // are called the same thing in two rooms and are emphatically not the same drawing, so
+    // whenever either side has been given an explicit counts-as, that has to agree. Only
+    // when nobody has said does the name get a vote.
+    const same=a=>{
+      if(a===src) return false;
+      if(src.actAs || a.actAs) return (a.actAs||actOfAnim(a))===(src.actAs||act);
+      return actOfAnim(a)===act || a.name===src.name;
+    };
+    let here=0, there=0, rooms=0; const without=[];
+    for(const a of anims) if(same(a)){ Object.assign(a, art()); here++ }
+    for(const k of Object.keys(worldSlots||{})){
+      try{
+        const q=JSON.parse(worldSlots[k]); let hit=0;
+        for(const a of (q.anims||[])) if(same(a)){ Object.assign(a, art()); hit++ }
+        if(hit){ worldSlots[k]=JSON.stringify(q); there+=hit; rooms++ }
+        else without.push(k||'home');
+      }catch(e){}
+    }
+    syncRule(); draw(); autosave();
+    const tot=here+there;
+    if(!tot) return say(`nothing else in this world counts as "${act}" — `+
+      `this is the only one`, true);
+    say(`"${src.name}" is now the ${act} everywhere — ${tot} move${tot===1?'':'s'} `+
+        `updated${rooms?` across ${rooms} other room${rooms===1?'':'s'}`:''}`+
+        (without.length?`; ${without.join(', ')} ${without.length===1?'has':'have'} no `+
+         `${act} of ${without.length===1?'its':'their'} own`:'')) });
   $('anims').querySelectorAll('[data-dup]').forEach(b=>b.onclick=()=>{
     const a=anims[+b.dataset.dup];
     // EVERYTHING comes with it - rule, place, size, depth, facing, breathing - because the
@@ -3698,24 +3737,42 @@ $('master').oninput=e=>{ const v=+e.target.value;
 // reading it while the script is still being evaluated throws ReferenceError from the
 // temporal dead zone - which killed every line after it and left the room and object lists
 // empty. A parse check cannot see this; only loading the page can.
-function masterReadout(){ const vals=new Set(anims.map(a=>Math.round((a.stage&&a.stage.scale)||100)));
+// ALWAYS A NUMBER (Jon: "the size needs to always show what size it is on"). It used to
+// give up and say "different in each room" the moment one animation was set apart on purpose
+// - his sleep at 35% - which left the dial showing nothing and no way to read the house size.
+// The house size is the one MOST of them are at; anything else is an exception, and is
+// counted rather than allowed to hide the number.
+function masterReadout(){
+  const counts=new Map();
+  const add=a=>{ const v=Math.round((a&&a.stage&&a.stage.scale)||100);
+                 counts.set(v,(counts.get(v)||0)+1) };
+  anims.forEach(add);
   for(const k of Object.keys(worldSlots||{})){
-    try{ (JSON.parse(worldSlots[k]).anims||[])
-           .forEach(a=>vals.add(Math.round((a.stage&&a.stage.scale)||100))) }catch(e){}
+    try{ (JSON.parse(worldSlots[k]).anims||[]).forEach(add) }catch(e){}
   }
-  const v=[...vals];
-  if(v.length===1 && Math.round(travelScale*100)===v[0]){
-    $('master').value=v[0]; $('msl').textContent=v[0]+'%'; gMasterScale=v[0]; }
-  else if(v.length===1){ $('msl').textContent=v[0]+'%'; gMasterScale=v[0]; }
-  else if(v.length>1) $('msl').textContent='different in each room';
-  else { // an empty world: say the size the next animation will actually be born at
-    $('master').value=MASTER_DEFAULT; $('msl').textContent=MASTER_DEFAULT+'%'; } }
+  if(!counts.size){                      // an empty world: the size the next one is born at
+    const d=gMasterScale||MASTER_DEFAULT;
+    $('master').value=d; $('msl').textContent=d+'%'; return; }
+  const rank=[...counts].sort((a,b)=>b[1]-a[1] || b[0]-a[0]);
+  const main=rank[0][0], odd=rank.slice(1).reduce((t,x)=>t+x[1],0);
+  gMasterScale=main; $('master').value=main;
+  $('msl').textContent = main+'%'+(odd?` — ${odd} set apart`:''); }
 setTimeout(masterReadout, 0);        // after this script has finished defining everything
 $('tsReset').onclick=()=>{ travelScale=1; $('ts').value=100; $('tsl').textContent='100%'; draw() };
+// SETTING A TIME MEANS YOU WANT TO SEE IT (Jon: "i set it to 2am and it isnt dark and the
+// lights didnt turn on"). His world had lighting switched off, so the clock ran and nothing
+// on screen ever answered. A control that does nothing when you use it is broken, so asking
+// for 2am turns the lighting on and says so.
 $('tod').oninput=e=>{ todMin=+e.target.value;
-  $('todl').textContent=hhmm(todMin); litCache.key=''; draw() };
+  if(!todOn){ todOn=true;
+    $('lightOff').textContent='lighting: on'; $('lightOff').classList.remove('pri');
+    say('lighting is on, so you can see the time of day'); }
+  $('todl').textContent=hhmm(todMin); litCache.key=''; draw(); autosave(); };
 $('lampM').onclick=()=>{ lampMode=lampMode==='auto'?'on':lampMode==='on'?'off':'auto';
-  $('lampM').textContent='lamps: '+lampMode; litCache.key=''; draw() };
+  // lamps only show against a lit room - the same reason as the clock above
+  if(!todOn && lampMode!=='off'){ todOn=true;
+    $('lightOff').textContent='lighting: on'; $('lightOff').classList.remove('pri'); }
+  $('lampM').textContent='lamps: '+lampMode; litCache.key=''; draw(); autosave(); };
 // weather with nowhere to fall is nothing at all - say so at the moment it happens
 function needSky(what){
   if((scene.zones||[]).some(z=>z.kind==='sky')) return;
@@ -5143,6 +5200,36 @@ async function restore(raw){
     if(fixed) setTimeout(()=>say(`${fixed} move${fixed===1?'':'s'} `+
       `now breathe${fixed===1?'s':''} — 2% every 8 frames, the same as a new one`), 1200);
   }
+  // ONE SIZE, INCLUDING THE WALKING ("1 master scaler that I don't have to fix for each
+  // room"). The dial writes the walking size into every room WHEN IT IS MOVED - so a room
+  // made before it was touched kept 1.0, and on the device he walked and showed his feelings
+  // at full size in that room while his authored moves were at 45% ("it sometimes looks like
+  // he is bigger in a passive emotion"). His kitchen shipped exactly that way: ts 1 where
+  // every other room said 0.4. The invariant is now restored on every load, not only when
+  // somebody drags the slider.
+  try{
+    const counts=new Map();
+    const add=a=>{ const v=Math.round((a&&a.stage&&a.stage.scale)||0);
+                   if(v>0) counts.set(v,(counts.get(v)||0)+1) };
+    anims.forEach(add);
+    for(const k of Object.keys(worldSlots||{})){
+      try{ (JSON.parse(worldSlots[k]).anims||[]).forEach(add) }catch(e){}
+    }
+    if(counts.size){
+      const main=[...counts].sort((a,b)=>b[1]-a[1] || b[0]-a[0])[0][0];
+      let fixed=0;
+      if(Math.round(travelScale*100)!==main){ travelScale=main/100; fixed++; }
+      $('ts').value=main; $('tsl').textContent=main+'%';
+      for(const k of Object.keys(worldSlots||{})){
+        try{ const q=JSON.parse(worldSlots[k]);
+          if(Math.round((q.travelScale||0)*100)!==main){ q.travelScale=main/100;
+            worldSlots[k]=JSON.stringify(q); fixed++; }
+        }catch(e){}
+      }
+      if(fixed) setTimeout(()=>say(`his walking size now matches his moves — ${main}% `+
+        `everywhere (${fixed} room${fixed===1?'':'s'} were set apart)`), 1600);
+    }
+  }catch(e){}
   rebuildClouds(); weatherInit(scene.room); litCache.key='';
   if(typeof syncRoleUI==='function') syncRoleUI();
   return {objects:scene.objects.length, anims:anims.length,
