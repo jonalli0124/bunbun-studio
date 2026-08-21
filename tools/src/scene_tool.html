@@ -2629,6 +2629,8 @@ function drawAnims(){
       <button class="mini" data-ren="${i}" title="rename it">&#9998;</button>
       <button class="mini" data-exp="${i}" title="save this one as a file - it re-opens in Animation Creation for tweaking">&#128190;</button>
       <button class="mini" data-rep="${i}" title="swap in a re-exported file - the rule, place, facing and size here all stay">&#8635;</button>
+      <label class="mini" title="he can do this in EVERY room - one copy, kept here, and the export gives it to the others. Untick and it is only this room's again." style="display:inline-flex;align-items:center;gap:3px;cursor:pointer;color:#241f1b">
+        <input type="checkbox" data-evr="${i}" ${a.everywhere?'checked':''} style="margin:0">every room</label>
       <button class="mini" data-all="${i}" title="use this drawing in every room - every move that counts as the same thing takes it, and keeps its own place, rule, facing and size">&#8694;</button>
       <button class="mini" data-dup="${i}" title="a copy to point the other way, or place elsewhere">&#10697;</button>
       <button class="mini" data-del="${i}">&times;</button>
@@ -2756,6 +2758,22 @@ function drawAnims(){
   // What travels is the DRAWING - the clip, its frames, its breathing, its speed. What stays
   // is everything each room decided for itself: where it happens, what it is tied to, which
   // way he faces, how big he is, how long it plays, what he says.
+  // ONE COPY, NOT FIVE (Jon: "can there just be a toggle instead of a duplicate across all
+  // rooms? what if i change it? i have to delete it everywhere now"). The everywhere BUTTON
+  // copies a drawing into the other rooms, and then every one of those copies has to be
+  // maintained by hand. This is the same idea done properly: the move stays here, once, and
+  // the EXPORT hands it to any room that has nothing of its own for that feeling. Change it
+  // here and every room changes; untick it and every room forgets it.
+  $('anims').querySelectorAll('[data-evr]').forEach(c=>{ c.onclick=e=>e.stopPropagation();
+    c.onchange=e=>{ const a=anims[+c.dataset.evr];
+      a.everywhere=!!e.target.checked;
+      if(a.everywhere && !isAnywhere(a))
+        say(`"${a.name}" needs a place in this room, so the other rooms can only take it if `+
+            `they have somewhere for it too — a feeling with no place travels best`, true);
+      else if(a.everywhere)
+        say(`"${a.name}" is now in every room — one copy, kept here; the others get it `+
+            `when you send the package`);
+      autosave(); drawAnims(); } });
   $('anims').querySelectorAll('[data-all]').forEach(b=>b.onclick=()=>{
     const src=anims[+b.dataset.all];
     const act=actOfAnim(src);
@@ -4255,10 +4273,14 @@ function hash4(str){ let h=0; for(let i=0;i<str.length;i++){ h=(h*31+str.charCod
 // the "already seen" guard, and one room silently performed the other's drawing. That is how a
 // kitchen ended up eating a love animation, hearts and all: "penguin Adult Love" and "penguin
 // Adult Eat (2)" both cut to "penguin-adult". Deduping per room could never have caught it.
-async function buildPortPayload(setB, takenSlugs){
+async function buildPortPayload(setB, takenSlugs, extras){
     // 2. bake the animations at 96px + encode; plan slugs, marks, the anims table
     const taken=takenSlugs||new Set(), plan={anims:[], marks:[]}, newEntries=[];
-    const on=anims.filter(a=>a.on);
+    // ...plus any move flagged "every room" elsewhere in the world, for the feelings this
+    // room has nothing of its own for. The child keeps ONE copy; the rooms are filled in here.
+    const mine=anims.filter(a=>a.on);
+    const haveAct=new Set(mine.map(a=>actOfAnim(a)));
+    const on=mine.concat((extras||[]).filter(x=>!haveAct.has(actOfAnim(x))));
     // NOTHING IS TRIMMED SILENTLY (council 8/17: "a child would just see the thing
     // missing"). Every cap says what did not fit, by name, before the port continues.
     // 14 authored + the two walks the export adds = the device's 16
@@ -4645,12 +4667,23 @@ async function exportDevicePackage(){
               todMin, todOn, lampMode, lightScale};
     const pinWx=()=>{ ({raining, clouding, cloudN, cloudStyle, starsOn, starN,
                        todMin, todOn, lampMode, lightScale}=wx); };
+    // gathered before the loop so every room sees the same list, and deduped by act so two
+    // rooms both flagging a love do not both travel
+    const everywhere=[]; { const byAct=new Set();
+      for(const rk of roles){
+        try{ const q=JSON.parse(keepW[rk]);
+          for(const a of (q.anims||[])) if(a.on!==false && a.everywhere){
+            const k=(a.actAs||actOfAnim(a)); if(byAct.has(k)) continue;
+            byAct.add(k); everywhere.push(a);
+          }
+        }catch(e){}
+      } }
     const worldSlugs=new Set();     // one namespace for the whole world - see buildPortPayload
     for(const rk of roles){
       setB(`packing the ${rk||'main room'}…`);
       await restore(keepW[rk]);
       pinWx();
-      const {plan, newEntries, body}=await buildPortPayload(setB, worldSlugs);
+      const {plan, newEntries, body}=await buildPortPayload(setB, worldSlugs, everywhere);
       const one=JSON.parse(body);
       if(body.length>8192) throw new Error(`the ${rk||'main'} scene is ${body.length} bytes; the device reads 8192`);
       scenes.push(one); planCount+=plan.anims.length;
@@ -5110,6 +5143,7 @@ function session(){
                           character:a.character, order:a.order, layers:a.layers,
                           stage:a.stage, place:a.place, depth:a.depth, facing:a.facing,
                           dur:a.dur, says:a.says, isWork:a.isWork, actAs:a.actAs,
+                          everywhere:a.everywhere,   // ...and this one, or the tick is lost
                           isIdle:a.isIdle, locked:a.locked,
                           savedAt:a.savedAt, fromFile:a.fromFile, hidden:a.hidden})),
     light:{todMin, todOn, lampMode, lightScale},
@@ -5277,6 +5311,7 @@ async function restore(raw){
     if(a.depth)  made.depth=a.depth;
     if(a.facing) made.facing=a.facing;
     if(a.isIdle) made.isIdle=true;
+    if(a.everywhere) made.everywhere=true;
     if(a.locked) made.locked=true;
     if(a.savedAt) made.savedAt=a.savedAt;
     if(a.fromFile) made.fromFile=a.fromFile;

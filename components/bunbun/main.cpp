@@ -2200,6 +2200,9 @@ static uint32_t g_workNextAt = 0;    // the stroll between reps ends, and the ne
 // a door or a running action. Guessing at this cost several flashes.
 static uint8_t  g_dspWhy = 0;
 bool isRaining();      // the shower is a world condition; think() asks from any room
+// "Full" for a room's gauge. Up here because moodAnim() asks it before the room code is
+// reached, and this file is one translation unit compiled top to bottom.
+static const float ACT_FULL = 98.0f;
 static bool actMeterFull(const char *act);        // both defined a few dozen lines below;
 static const char *roomOwnAct(uint8_t role);      // moodAnim asks them what this room is for
 static const char *moodAnim() {
@@ -2209,9 +2212,16 @@ static const char *moodAnim() {
   // filling he is BUSY, not miserable - a tick a second is going in - so what belongs between
   // goes is the room's own standing-about animation, or failing that the plain idle. Being
   // genuinely poorly still outranks it; that is the one state a room does not fix.
+  // OUTSIDE AND A GAME COUNT TOO. roomOwnAct() only names the three ERRAND rooms, but fun is
+  // being paid a tick a second in both of those as well - he is fixing something there just
+  // as much as he is in the kitchen, so the same silence applies. Every room that is not home
+  // is covered now, which is what was asked for.
   {
     const char *rn = roomOwnAct(g_scCurRole);
-    if (rn[0] && !actMeterFull(rn) && !S.sick) {
+    const bool busyRoom = (rn[0] && !actMeterFull(rn)) ||
+                          ((g_scCurRole == SCENE_ROLE_OUTSIDE || g_gamePanel) &&
+                           S.fun < ACT_FULL);
+    if (busyRoom && !S.sick) {
       const char *si = sceneAnywhereActAnim("idle");
       return si ? si : moodCustom("idle", pa("idle"));
     }
@@ -2279,6 +2289,12 @@ static char     g_doorAct[8] = "";
 static bool     g_outPending = false;   // "and then outside" - the second leg of a trip home
 static uint32_t g_workUntil = 0;     // the scene work session deadline; 0 = no session
 static char     g_repeatAct[8] = "";  // the act this visit keeps repeating until its meter fills
+// HOW MANY GOES THIS VISIT HAS HAD, which is NOT g_repeatN: that counter is reset every time
+// the act changes (sceneErrandTo clears the chain), so "have we done the thing he was sent
+// for yet" could never be read from it - it was almost always 1, the alternate-act roll
+// almost never happened, and he ate five times in a row without once sitting down. This one
+// counts the visit and is cleared only by arriving somewhere new.
+static uint8_t  g_visitGoes = 0, g_visitGoesRole = 255;
 // The pending command from a button or /api/debug/act. Declared up here because sceneDoorTo
 // has to know whether a trip was ASKED FOR before it may refuse one.
 static char     g_dbgAct[8] = "";
@@ -2291,7 +2307,6 @@ static uint8_t  g_repeatN   = 0;      // how many reps this visit has already do
 //
 // 98, not 100: a meter that ticks down while he works would never quite arrive, and he would
 // stand in the kitchen for ever one crumb short.
-static const float ACT_FULL = 98.0f;
 // ...and a hard cap all the same. A world where the meter cannot rise - a bath that credits
 // nothing, a scene whose act was mistagged - must end the visit rather than trap him in it.
 static const uint8_t REPEAT_CAP = 24;
@@ -2583,7 +2598,7 @@ extern "C" void bunbun_brain_snapshot(char *buf, int len) {
     "{\"role\":%d,\"avail\":%d,\"lights\":%d,\"tx\":%d,\"ty\":%d,"
     "\"visit\":%d,\"door\":%d,\"action\":%d,\"settle_ms\":%ld,"
     "\"x\":%d,\"y\":%d,\"anim\":\"%s\",\"potty\":%d,\"work\":%d,"
-    "\"food\":%d,\"fun\":%d,\"energy\":%d,\"clean\":%d,\"disc\":%d,\"dsp\":%d,"
+    "\"food\":%d,\"fun\":%d,\"energy\":%d,\"clean\":%d,\"disc\":%d,\"dsp\":%d,\"poopN\":%d,"
     "\"floorN\":%d,\"props\":%d,\"anims\":%d,\"sick\":%d,"
     "\"worldAnimal\":\"%s\",\"petAnimal\":\"%s\",\"wake\":\"%s\",\"rep\":\"%s\",\"repN\":%d,\"next\":%d,\"minStay\":%d}",
     (int)g_scCurRole,
@@ -2592,7 +2607,7 @@ extern "C" void bunbun_brain_snapshot(char *buf, int len) {
     S.lights?1:0, g_tx, g_ty, (int)g_visit, (int)g_doorTrip, g_action?1:0,
     (long)(millis()<g_settleUntil ? (g_settleUntil-millis()) : 0),
     (int)S.x, (int)S.y, g_anim?g_anim->key:"?", (int)g_pottySeq, g_workUntil?1:0,
-    (int)S.food, (int)S.fun, (int)S.energy, (int)S.clean, (int)S.disc, (int)g_dspWhy,
+    (int)S.food, (int)S.fun, (int)S.energy, (int)S.clean, (int)S.disc, (int)g_dspWhy, (int)S.poopN,
     (int)g_scFloorN, (int)g_scPropN, (int)g_scAnimN, (int)S.sick,
     g_scAnimal,
     (S.species_idx < CHARACTERS_N && CHARACTERS[S.species_idx].id)
@@ -3787,8 +3802,14 @@ static void think(float dt) {
   if (!sceneRoomHolds(g_scCurRole) && !g_doorTrip && g_visit < 0 && g_tx < 0 &&
       !g_action && !g_workUntil && g_workReps <= 0 && !g_sleepPending &&
       g_pottySeq == 0 && millis() >= g_roomMinStay) {
-    sceneDoorTo(SCENE_ROLE_MAIN, "");
-    return;
+    // THE FIFTH DOOR HOME - and the one that was actually freezing him. I made this same
+    // fix at four other sites and missed this backstop, which is precisely the branch that
+    // fires every tick once he is idle in a side room with nothing in flight: the door is
+    // refused because the room still owes him a meal, and it returned anyway, so think()
+    // never reached the dispatcher eight lines below and the next helping was never
+    // started. Measured: eating once and then standing for 85 seconds while the meter
+    // filled itself. A refusal is not an exit; it means carry on.
+    if (sceneDoorTo(SCENE_ROLE_MAIN, "")) return;
   }
 
   // a walk-to-bed that died (backstop, interruption) is re-issued the moment he is
@@ -3828,8 +3849,15 @@ static void think(float dt) {
       // a pet with a life of its own, it is a broken button ("eat just did my love animation
       // not my new eating animation"). Only once the room's own act has actually happened
       // does he start using the rest of the room.
+      if (g_visitGoesRole != g_scCurRole) { g_visitGoesRole = g_scCurRole; g_visitGoes = 0; }
+      if (g_visitGoes < 250) g_visitGoes++;
+      // EVERY ACT IN THE ROOM GETS A TURN (Jon: "he should be doing all actions in that
+      // room"). A 45% roll over the others meant the sit came up once in a whole visit and
+      // some rooms would never show a move at all. It is a rota instead: the act he came for
+      // on the odd goes, the next one of the room's other moves on the even ones. Half his
+      // time on the thing he was sent to do, and nothing in the room left unvisited.
       const char *pick = ra;
-      if (g_repeatN > 1 && (esp_random() % 100) < 45) {
+      if (g_visitGoes > 1 && (g_visitGoes % 2) == 0) {
         const char *cand[SCENE_MAX_ANIMS];
         int cn = 0;
         for (int i = 0; i < g_scAnimN && cn < SCENE_MAX_ANIMS; i++) {
@@ -3841,7 +3869,7 @@ static void think(float dt) {
           for (int k = 0; k < cn; k++) if (!strcmp(cand[k], a2)) dup = true;
           if (!dup) cand[cn++] = a2;
         }
-        if (cn) pick = cand[esp_random() % (uint32_t)cn];
+        if (cn) pick = cand[((g_visitGoes / 2) - 1) % (uint8_t)cn];
       }
       // AN ANYWHERE MOVE HAPPENS WHERE HE STANDS. sceneErrandTo walks him to a MARK, and
       // returns false when the act has none - which is exactly what an "anywhere" animation
@@ -5141,7 +5169,12 @@ enum {
   // messes and the disco. Appended rather than inserted so 16 still means what it meant in
   // every crash already recorded. 21 = the effects, 22 = the messes on the floor,
   // 23 = the disco spots inside the band pipeline.
-  BC_DRAWFX, BC_MESS, BC_DISCO
+  BC_DRAWFX, BC_MESS, BC_DISCO,
+  // ...and finer still, because BC_MESS turned out to mean "somewhere in drawing the room
+  // after the messes": with no disco up and the light map cached, nothing else stamps until
+  // the next frame's first crumb. 24 = loading his own sprite, 25 = the band compose loop,
+  // 26 = the push to the glass, 27 = the panel furniture on top.
+  BC_CHARSPRITE, BC_BANDS, BC_PUSH, BC_PANEL
 };
 static void bcMark(int where) { BC(where); }
 
@@ -8298,10 +8331,12 @@ static void composeRoom(int fx, int fy, float sc, int lampOn, bool cloudLit, flo
       }
     }
     g_tPixAcc += micros() - tPix0;
+    BC(BC_BANDS);
     if (!g_composeNoChar && !bunAway()) spriteBlit(g_band, by, fx, fy, sc);
     BC(BC_DISCO);
     discoBandStage(g_band, by, rows);
     { uint32_t t0 = micros();
+      BC(BC_PUSH);
       scene.pushImage(0, by, UI_W, rows, g_band);
       g_tPushAcc += micros() - t0; }
   }
@@ -8385,7 +8420,16 @@ static void composeRoom(int fx, int fy, float sc, int lampOn, bool cloudLit, flo
   // skins — and until the clothes/dishes art lands in the pak, the sprite
   // lookup falls back to the poop so nothing draws blank.
   BC(BC_MESS);
-  for (int i = 0; i < S.poopN; i++) {
+  // FOUR IS ALL THERE IS. game.h declares poopX[4]/poopY[4] and poopN is a byte off the
+  // SAVED state - so this loop walked off the end of both arrays for any value above four,
+  // reading whatever follows them in the struct as screen coordinates. The panic Jon hit the
+  // moment he connected his phone landed in this span (breadcrumb 22, BC_MESS), and an
+  // unclamped loop over a persisted byte is exactly the shape of a bug that only fires once
+  // something else - a stream starting, say - has moved the heap about. Clamped here, and at
+  // the two places that count on it below.
+  const int messN = (S.poopN > 4) ? 4 : (int)S.poopN;
+  if (S.poopN > 4) S.poopN = 4;              // and heal the state rather than re-clamping for ever
+  for (int i = 0; i < messN; i++) {
     const char *ms = (S.phase == PH_TEEN)  ? "items/clothes"
                    : (S.phase == PH_ADULT) ? "items/dishes"
                                            : "items/poop";
@@ -8455,6 +8499,7 @@ static void sheetLiftTick() {
 
 static void drawScene() {
   g_discoPulseFrame = beatPulse();    // snapshot: every band of this frame sees the same beat
+  BC(BC_CHARSPRITE);
   loadCharSprite();
   sheetLiftTick();                    // AFTER loadCharSprite: the clamp needs g_meta.h
   int fx = gx2s(S.x) + g_danceSway, fy = gy2s(S.y) - g_danceHop - g_sheetLift;
