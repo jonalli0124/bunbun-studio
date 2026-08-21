@@ -129,12 +129,19 @@ function readBundle(buf){
     throw new Error('that is not a .bunbun package - use "save a bunbun package" in the Scene Assembler');
   if(u8[4]!==1) throw new Error('this package is from a newer tool than this page understands');
   const sLen=dv.getUint32(8,true), fLen=dv.getUint32(12,true);
-  if(16+sLen+fLen!==buf.byteLength) throw new Error('the package file looks cut short - save it again');
+  // READ BY LENGTH, IGNORE THE REST - the same law the firmware reads by. A package now
+  // carries the child's whole project after the fragment ("so nothing can be lost"), so the
+  // file is deliberately LONGER than the two blocks. Demanding an exact match rejected every
+  // package saved since ("im still getting package file looks cut short"). Too SHORT is still
+  // a real error: the blocks would not be there to read.
+  if(16+sLen+fLen>buf.byteLength) throw new Error('the package file looks cut short - save it again');
   if(sLen>8192*5) throw new Error(`the scene block is ${sLen} bytes - too big even for a world`);
   const sceneBytes=u8.subarray(16,16+sLen);
   const sceneText=new TextDecoder().decode(sceneBytes);
   const sceneObj=JSON.parse(sceneText);
-  const fragBytes=u8.slice(16+sLen);
+  // ...and take exactly the fragment. Slicing to the end of the file used to be the same
+  // thing; with a trailer it would have sent the project JSON to the device as if it were art.
+  const fragBytes=u8.slice(16+sLen, 16+sLen+fLen);
   const frag=PakLib.parse(fragBytes.buffer);
   return {sceneText, sceneObj, frag, fragBytes};
 }

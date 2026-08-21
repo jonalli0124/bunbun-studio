@@ -850,7 +850,18 @@ const isRot=c=>!!(SD.clips[c]&&SD.clips[c].rotations);
 // The view that faces the camera, measured from the art when the pack was built - the compass
 // names are not consistent between states, so "south" is face on in the idle and angled in the
 // sit. Never assume a direction name means what it says.
-const faceOnOf=c=>(SD.clips[c]&&SD.clips[c].faceOn)||'south';
+// WHICH WAY A POSE FACES WHEN NOBODY HAS SAID. The pack ships a MEASURED answer - at build
+// time mkdata picks whichever southern view shows the most face - and for the cat it measured
+// Adult_Idle as south-east and Adult_Sit as south-west. So every fallback stood him at an
+// angle ("im still seeing random idle south east"), most visibly the sim's between-things
+// idle, which asks for this and ignores any authored facing.
+// A pet faces the room. If the set HAS a plain south view, that is the answer; the
+// measurement is only for sets that do not (and 'south' remains the last resort).
+const faceOnOf=c=>{
+  const fr=SD.clips[c]&&SD.clips[c].frames;
+  if(fr && fr.some(f=>f&&f.dir==='south')) return 'south';
+  return (SD.clips[c]&&SD.clips[c].faceOn)||'south';
+};
 function rotFrame(clip, want){
   const fr=SD.clips[clip].frames;
   const i=fr.findIndex(f=>f.dir===want);
@@ -1693,7 +1704,9 @@ function drawSim(){
     const c=idleClip(sim.a);
     // Adult_Idle is a rotation set too - hold it facing the way he last walked, rather than
     // letting him revolve while he thinks about what to do next.
-    const facing=faceOnOf(c);        // measured, not a compass point
+    // his own choice first, then the pose default - this used to take the measurement
+    // even when the animation said which way he stands
+    const facing=(sim.a&&sim.a.facing)||faceOnOf(c);
     // A real step, not 0. sin(0) is 0 forever, so the breath never moved - which is what
     // "its not breathing" was on this path.
     if(c && isRot(c)) drawChar({...sim.a, facing},
@@ -4413,6 +4426,12 @@ $('sceneRole').onchange=async e=>{
   $('st').classList.toggle('pri',starsOn); $('stn').value=starN; $('stnl').textContent=starN;
   rebuildClouds(); weatherInit(scene.room);
   scene.role=to||undefined;
+  // HE CANNOT STILL BE DOING THE LAST ROOM'S MOVE (Jon: "im still seeing random idle south
+  // east ... it is when i have act it out pressed and i click on another room"). The sim held
+  // an animation that no longer exists here, at a position from a different floor, and drew it
+  // through the stock fallback until it next chose. Clearing it makes him arrive in the new
+  // room and decide there, which is what walking through a door does anyway.
+  if(simOn) sim=null;
   syncRoleUI(); syncObj(); syncRule(); draw(); autosave();
   say(to ? `now building the ${to==='work'?'work room':to} — the other rooms are kept; \u{1F4E6} ships them all`
          : 'now building the main room — the other rooms are kept; \u{1F4E6} ships them all');
@@ -5614,12 +5633,16 @@ async function restore(raw){
   // click, not pointerdown: a finger that moves a pixel is still a tap, and this is a
   // selection rather than a drag
   cv.addEventListener('click', tapRoom);
-  const asked=new Set();
-  function thumb(rn){                          // that room's own picture, fetched once
+  const asked=new Map();
+  // ONE-SHOT ASKING WAS A TRAP: a picture that failed to arrive the first time was never
+  // asked for again, and the room sat dark for the rest of the session with no way to tell
+  // that from "this room has no picture". Ask again every few seconds until it is here.
+  function thumb(rn){                          // that room's own picture
     if(!rn) return null;
     const k='room|'+rn;
     if(imgs[k]) return imgs[k];
-    if(!asked.has(k) && SD.rooms && SD.rooms[rn]){ asked.add(k);
+    const now=(performance&&performance.now)?performance.now():0;
+    if(SD.rooms && SD.rooms[rn] && now-(asked.get(k)||-1e9)>4000){ asked.set(k, now);
       try{ load(SD.rooms[rn], k) }catch(e){} }
     return null;
   }
@@ -5694,6 +5717,11 @@ async function restore(raw){
         if(!isHere){ g.globalAlpha=.45; g.fillStyle='#6f6a63'; g.fillRect(x,y,W,H); }
       } else {
         g.globalAlpha=live?.35:.18; g.fillStyle='#000'; g.fillRect(x,y,W,H);
+        // SAY WHAT IT THINKS IT IS. A blank tile reads as "the map is wrong"; the room's own
+        // name on it says whether the map has the wrong room or just no picture for it yet.
+        if(live && rn){ g.globalAlpha=.85; g.fillStyle='#fff';
+          g.font='9px system-ui,sans-serif'; g.textAlign='center'; g.textBaseline='middle';
+          g.fillText(rn.slice(0,13), x+W/2, y+H/2); }
       }
       g.restore();
       // the outline: bright for the room he is in, a dashed hint for one that is missing
