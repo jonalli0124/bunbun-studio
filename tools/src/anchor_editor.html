@@ -1,0 +1,386 @@
+<title>Anchor Editor</title>
+<style>
+  /* Jon works on his phone in dark mode, and today a pale chip with inherited ink went
+     invisible there. Every colour is a token defined on bare :root, redefined for dark, and
+     anything that hard-codes a background hard-codes its foreground too. */
+  :root{
+    --bg:#f7f1e4; --panel:#fffdf8; --ink:#241f1b; --soft:#6d635a; --line:#ddd3c4;
+    --accent:#8a6ee6; --accent-ink:#ffffff; --warn:#a8341a; --ok:#1c7a46;
+    --dot-head:#e8392d; --dot-face:#e07b1a; --dot-hand:#2f8fd8; --dot-foot:#1c9a52;
+  }
+  :root:not([data-theme="light"]){ @media (prefers-color-scheme: dark){ } }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#191614; --panel:#231f1c; --ink:#f2ece2; --soft:#a89c8e; --line:#3a332d;
+      --accent:#a78bfa; --accent-ink:#1a1512;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#191614; --panel:#231f1c; --ink:#f2ece2; --soft:#a89c8e; --line:#3a332d;
+    --accent:#a78bfa; --accent-ink:#1a1512;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:15px/1.45 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+  header{display:flex;gap:12px;align-items:baseline;flex-wrap:wrap;
+         padding:12px 16px;border-bottom:1px solid var(--line);background:var(--panel)}
+  header h1{margin:0;font-size:17px;letter-spacing:.01em}
+  header .sub{color:var(--soft);font-size:13px}
+  .wrap{display:grid;gap:14px;padding:14px;align-items:start;
+        grid-template-columns:250px minmax(500px,1fr) 250px}
+  @media (max-width:1120px){ .wrap{grid-template-columns:250px minmax(400px,1fr)} }
+  @media (max-width:760px){ .wrap{grid-template-columns:1fr} }
+  .col{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px}
+  .col h2{margin:0 0 8px;font-size:14px;letter-spacing:.02em;color:var(--ink)}
+  .col h2 span{font-weight:400;color:var(--soft);font-size:12px}
+  button{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);
+         border-radius:8px;padding:5px 10px;cursor:pointer}
+  button.on{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);
+            font-weight:600}
+  button.go{background:var(--ok);border-color:var(--ok);color:#fff;font-weight:700}
+  .pick{display:flex;flex-wrap:wrap;gap:6px;max-width:250px}
+  .clips{max-height:330px;overflow:auto;display:flex;flex-direction:column;gap:4px;width:230px}
+  .clips button{text-align:left;display:flex;justify-content:space-between;gap:8px}
+  .tag{font-size:11px;color:var(--soft)}
+  .tag.edited{color:var(--accent);font-weight:700}
+  #stage{background:
+      repeating-conic-gradient(from 0deg, #00000010 0 25%, #00000000 0 50%) 0 0/16px 16px;
+      border:1px solid var(--line);border-radius:10px;touch-action:none;display:block}
+  .strip{display:flex;gap:5px;flex-wrap:wrap;max-width:520px;margin-top:8px}
+  .strip button{padding:3px 7px;font-size:12px}
+  .anchors{display:flex;flex-direction:column;gap:5px;width:230px}
+  .arow{display:flex;align-items:center;gap:8px;font-size:13px}
+  .swatch{width:13px;height:13px;border-radius:50%;border:2px solid #00000055;flex:0 0 auto}
+  .arow .val{margin-left:auto;color:var(--soft);font-variant-numeric:tabular-nums;font-size:12px}
+  .hint{color:var(--soft);font-size:12.5px;margin:6px 0 0;max-width:56ch}
+  #toast{position:fixed;left:12px;right:12px;bottom:14px;margin:0 auto;max-width:520px;
+    z-index:99;background:var(--ok);color:#fff;font-weight:600;padding:12px 15px;
+    border-radius:11px;box-shadow:0 10px 30px rgba(0,0,0,.3);visibility:hidden;opacity:0;
+    transition:opacity .18s,visibility .18s;text-align:center}
+  #toast.show{visibility:visible;opacity:1}
+  #toast.bad{background:var(--warn)}
+</style>
+
+<header>
+  <h1>Anchor Editor</h1>
+  <span class="sub">where his head, face, hands and feet are &mdash; place once, fix the odd
+    one over time</span>
+</header>
+
+<div class="wrap">
+  <div class="col">
+    <h2>Animal</h2>
+    <div class="pick" id="animals"></div>
+    <h2 style="margin-top:14px">Animation <span id="clipCount"></span></h2>
+    <div class="clips" id="clips"></div>
+  </div>
+
+  <div class="col">
+    <h2 id="frameTitle">&mdash;</h2>
+    <canvas id="stage" width="480" height="480"></canvas>
+    <div class="strip" id="strip"></div>
+    <p class="hint"><b>Fast way:</b> press <b>1&ndash;6</b> to pick a point, then <b>click</b>
+      where it goes. Arrows nudge it (hold shift for 5). <b>[</b> and <b>]</b> step the frames,
+      <b>&minus;</b> and <b>=</b> step the animations, <b>m</b>/<b>c</b>/<b>f</b> choose whether
+      you are changing the master, this animation, or this frame.<br>
+      1 head &middot; 2 face &middot; 3 left hand &middot; 4 right hand &middot; 5 left foot
+      &middot; 6 right foot</p>
+  </div>
+
+  <div class="col">
+    <h2>The points</h2>
+    <div class="anchors" id="anchors"></div>
+
+    <h2 style="margin-top:14px">What am I changing?</h2>
+    <div class="pick" id="scope"></div>
+    <p class="hint" id="scopeWhy"></p>
+
+    <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap">
+      <button id="fromMaster">copy the master here</button>
+      <button id="clearOne">drop this override</button>
+    </div>
+
+    <h2 style="margin-top:14px">Save</h2>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+      <button id="save" class="go">&#128190; save this animal</button>
+      <button id="saveAll">save every animal</button>
+    </div>
+    <p class="hint">Your work is kept in this browser as you go. Saving downloads a file;
+      <b>py tools/install_anchors.py &lt;file&gt;</b> puts it into the pack.</p>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>/*ANCHOR_DATA*/</script>
+<script>
+(function(){
+const $=id=>document.getElementById(id);
+const D=(window.ANCHOR_DATA||{species:{}}).species;
+const POINTS=[
+  {k:'head',   label:'head',    col:'var(--dot-head)'},
+  {k:'face',   label:'face',    col:'var(--dot-face)'},
+  {k:'hand_l', label:'hand (his left)',  col:'var(--dot-hand)'},
+  {k:'hand_r', label:'hand (his right)', col:'var(--dot-hand)'},
+  {k:'foot_l', label:'foot (his left)',  col:'var(--dot-foot)'},
+  {k:'foot_r', label:'foot (his right)', col:'var(--dot-foot)'},
+];
+const SCOPES=[
+  ['master','the whole animal', 'Every animation starts from this. Place it once here and the rest inherit it.'],
+  ['clip',  'this animation',   'Only this animation differs from the master — every frame of it.'],
+  ['frame', 'this frame only',  'Just this one picture. Use it sparingly; a frame nobody looks at is not worth an override.'],
+];
+
+let sp=Object.keys(D)[0]||'', clip='', frameIdx=0, scope='master', sel='head';
+let dragging=null;
+const imgCache={};
+
+// ---------- the store: master, then per-clip, then per-frame ----------
+const KEY='bunbun-anchors';
+function loadAll(){ try{ return JSON.parse(localStorage.getItem(KEY)||'{}') }catch(e){ return {} } }
+function saveAll(a){ try{ localStorage.setItem(KEY, JSON.stringify(a)) }catch(e){} }
+let A=loadAll();
+// seed from whatever the pack already carries, so a second session continues the first
+for(const k of Object.keys(D)) if(!A[k]) A[k]=JSON.parse(JSON.stringify(D[k].attach||{}));
+
+const clipsOf=s=>Object.keys(D[s].clips);
+const framesOf=(s,c)=>D[s].clips[c].names;
+const frameKey=()=>clip+'#'+framesOf(sp,clip)[frameIdx];
+
+// A STARTING GUESS, NOT A CLAIM. The first drag should be a nudge, not a hunt, so an animal
+// with nothing placed yet gets its points laid out on the sprite's own bounding box. It is
+// deliberately crude - the whole point of this tool is that a human corrects it.
+function guess(im){
+  const c=document.createElement('canvas'); c.width=im.width; c.height=im.height;
+  const g=c.getContext('2d',{willReadFrequently:true}); g.drawImage(im,0,0);
+  const d=g.getImageData(0,0,c.width,c.height).data;
+  let x0=1e9,y0=1e9,x1=-1,y1=-1;
+  for(let y=0;y<c.height;y++) for(let x=0;x<c.width;x++)
+    if(d[(y*c.width+x)*4+3]>8){ if(x<x0)x0=x; if(x>x1)x1=x; if(y<y0)y0=y; if(y>y1)y1=y; }
+  if(x1<0){ x0=0;y0=0;x1=c.width-1;y1=c.height-1 }
+  const w=x1-x0, h=y1-y0, cx=(x0+x1)/2;
+  return { head:[Math.round(cx), Math.round(y0+h*0.10)],
+           face:[Math.round(cx), Math.round(y0+h*0.22)],
+           hand_l:[Math.round(x0+w*0.10), Math.round(y0+h*0.58)],
+           hand_r:[Math.round(x1-w*0.10), Math.round(y0+h*0.58)],
+           foot_l:[Math.round(cx-w*0.18), Math.round(y1-h*0.03)],
+           foot_r:[Math.round(cx+w*0.18), Math.round(y1-h*0.03)] };
+}
+
+function resolve(){
+  const a=A[sp]||{};
+  return a[frameKey()] || a[clip] || a._master || null;
+}
+function whereItComesFrom(){
+  const a=A[sp]||{};
+  if(a[frameKey()]) return 'this frame';
+  if(a[clip]) return 'this animation';
+  if(a._master) return 'the master';
+  return 'a first guess';
+}
+function target(){
+  const a=A[sp]||(A[sp]={});
+  const key = scope==='master' ? '_master' : scope==='clip' ? clip : frameKey();
+  if(!a[key]) a[key]=JSON.parse(JSON.stringify(resolve()||{}));
+  return a[key];
+}
+
+// ---------- images ----------
+function frameSrc(){ return D[sp].clips[clip].frames[framesOf(sp,clip)[frameIdx]]; }
+function getImg(src){
+  return new Promise(res=>{
+    if(imgCache[src]) return res(imgCache[src]);
+    const im=new Image(); im.onload=()=>{ imgCache[src]=im; res(im) }; im.src=src;
+  });
+}
+
+// ---------- drawing ----------
+let Z=5, curImg=null;
+async function draw(){
+  const cv=$('stage'), g=cv.getContext('2d');
+  if(!sp||!clip){ g.clearRect(0,0,cv.width,cv.height); return }
+  const im=await getImg(frameSrc()); curImg=im;
+  Z=Math.max(1, Math.floor(Math.min(cv.width/im.width, cv.height/im.height)));
+  const ox=Math.round((cv.width-im.width*Z)/2), oy=Math.round((cv.height-im.height*Z)/2);
+  cv.dataset.ox=ox; cv.dataset.oy=oy;
+  g.clearRect(0,0,cv.width,cv.height);
+  g.imageSmoothingEnabled=false;
+  g.drawImage(im, ox, oy, im.width*Z, im.height*Z);
+  if(!resolve()){ const a=A[sp]||(A[sp]={}); a._master=guess(im); }
+  // the master shown faintly behind an override, so you can see what you are departing from
+  const m=(A[sp]||{})._master, cur=resolve();
+  if(m && cur!==m) drawPoints(g,m,ox,oy,true);
+  drawPoints(g,cur,ox,oy,false);
+  paintAnchorList();
+}
+function css(v){ return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
+function drawPoints(g,pts,ox,oy,ghost){
+  for(const p of POINTS){
+    const v=pts&&pts[p.k]; if(!v) continue;
+    const x=ox+(v[0]+.5)*Z, y=oy+(v[1]+.5)*Z;
+    g.globalAlpha = ghost ? .30 : 1;
+    g.beginPath(); g.arc(x,y, ghost?5:7, 0, 6.284);
+    g.fillStyle=css(p.col.replace('var(','').replace(')','')); g.fill();
+    g.lineWidth=2; g.strokeStyle= (!ghost && p.k===sel) ? '#fff' : '#00000088'; g.stroke();
+    if(!ghost && p.k===sel){ g.beginPath(); g.arc(x,y,11,0,6.284);
+      g.lineWidth=1.5; g.strokeStyle='#ffffffcc'; g.stroke(); }
+    g.globalAlpha=1;
+  }
+}
+
+// ---------- panels ----------
+function paintAnimals(){
+  $('animals').innerHTML=Object.keys(D).map(k=>
+    `<button data-sp="${k}" class="${k===sp?'on':''}">${D[k].display}</button>`).join('');
+  $('animals').querySelectorAll('[data-sp]').forEach(b=>b.onclick=()=>{
+    sp=b.dataset.sp; clip=clipsOf(sp)[0]; frameIdx=0; paintAll(); });
+}
+function paintClips(){
+  const a=A[sp]||{};
+  $('clipCount').textContent='('+clipsOf(sp).length+')';
+  $('clips').innerHTML=clipsOf(sp).map(c=>{
+    const own=a[c]?'set here':Object.keys(a).some(k=>k.startsWith(c+'#'))?'a frame set':'';
+    return `<button data-clip="${c}" class="${c===clip?'on':''}">
+      <span>${c.replace(/^Adult_/,'')}</span>
+      <span class="tag ${own?'edited':''}">${own||D[sp].clips[c].kind}</span></button>`;
+  }).join('');
+  $('clips').querySelectorAll('[data-clip]').forEach(b=>b.onclick=()=>{
+    clip=b.dataset.clip; frameIdx=0; paintAll(); });
+}
+function paintStrip(){
+  const names=framesOf(sp,clip);
+  $('frameTitle').innerHTML=clip.replace(/^Adult_/,'')+
+    ' <span style="font-weight:400;color:var(--soft);font-size:12px">&mdash; '+
+    names[frameIdx]+', from '+whereItComesFrom()+'</span>';
+  $('strip').innerHTML=names.map((n,i)=>
+    `<button data-f="${i}" class="${i===frameIdx?'on':''}">${n}</button>`).join('');
+  $('strip').querySelectorAll('[data-f]').forEach(b=>b.onclick=()=>{
+    frameIdx=+b.dataset.f; paintStrip(); draw(); });
+}
+function paintAnchorList(){
+  const pts=resolve()||{};
+  $('anchors').innerHTML=POINTS.map(p=>{
+    const v=pts[p.k];
+    return `<div class="arow"><span class="swatch" style="background:${p.col}"></span>
+      <button data-pt="${p.k}" class="${p.k===sel?'on':''}" style="flex:1;text-align:left">${p.label}</button>
+      <span class="val">${v?v[0]+', '+v[1]:'&mdash;'}</span></div>`;
+  }).join('');
+  $('anchors').querySelectorAll('[data-pt]').forEach(b=>b.onclick=()=>{
+    sel=b.dataset.pt; paintAnchorList(); draw(); });
+}
+function paintScope(){
+  $('scope').innerHTML=SCOPES.map(([k,l])=>
+    `<button data-sc="${k}" class="${k===scope?'on':''}">${l}</button>`).join('');
+  $('scope').querySelectorAll('[data-sc]').forEach(b=>b.onclick=()=>{
+    scope=b.dataset.sc; paintScope(); });
+  $('scopeWhy').textContent=(SCOPES.find(s=>s[0]===scope)||[])[2]||'';
+}
+function paintAll(){ paintAnimals(); paintClips(); paintScope();
+  draw().then(paintStrip); }
+
+// ---------- dragging ----------
+function toImage(ev){
+  const cv=$('stage'), r=cv.getBoundingClientRect();
+  const sx=cv.width/r.width, sy=cv.height/r.height;
+  const px=(ev.clientX-r.left)*sx, py=(ev.clientY-r.top)*sy;
+  return [ (px-+cv.dataset.ox)/Z - .5, (py-+cv.dataset.oy)/Z - .5 ];
+}
+$('stage').addEventListener('pointerdown', ev=>{
+  if(!curImg) return;
+  const [ix,iy]=toImage(ev); const pts=resolve()||{};
+  let best=null, bd=1e9;
+  for(const p of POINTS){ const v=pts[p.k]; if(!v) continue;
+    const d=Math.hypot(v[0]-ix, v[1]-iy); if(d<bd){ bd=d; best=p.k } }
+  if(best && bd < 14){ sel=best; dragging=best; $('stage').setPointerCapture(ev.pointerId); }
+  else {
+    // nowhere near a dot: put the SELECTED one here. One tap, one point placed.
+    const t=target();
+    t[sel]=[Math.max(0,Math.min(curImg.width-1,Math.round(ix))),
+            Math.max(0,Math.min(curImg.height-1,Math.round(iy)))];
+    saveAll(A); paintClips(); paintStrip();
+  }
+  paintAnchorList(); draw();
+});
+$('stage').addEventListener('pointermove', ev=>{
+  if(!dragging||!curImg) return;
+  const [ix,iy]=toImage(ev); const t=target();
+  t[dragging]=[Math.max(0,Math.min(curImg.width-1,Math.round(ix))),
+               Math.max(0,Math.min(curImg.height-1,Math.round(iy)))];
+  draw();
+});
+function endDrag(){ if(dragging){ dragging=null; saveAll(A); paintClips(); paintStrip(); } }
+$('stage').addEventListener('pointerup', endDrag);
+$('stage').addEventListener('pointercancel', endDrag);
+addEventListener('keydown', ev=>{
+  if(ev.target && /INPUT|TEXTAREA/.test(ev.target.tagName)) return;
+  const k=ev.key;
+  // 1..6 - which point am I placing
+  const num=parseInt(k,10);
+  if(num>=1 && num<=POINTS.length){ sel=POINTS[num-1].k; ev.preventDefault();
+    paintAnchorList(); draw(); return; }
+  // [ ] - the frames of this animation, - = the animations
+  const names=clip?framesOf(sp,clip):[];
+  if(k==='[' || k===']'){ ev.preventDefault();
+    frameIdx=(frameIdx + (k===']'?1:names.length-1)) % names.length;
+    paintStrip(); draw(); return; }
+  if(k==='-' || k==='=' ){ ev.preventDefault();
+    const cs=clipsOf(sp), i=cs.indexOf(clip);
+    clip=cs[(i + (k==='='?1:cs.length-1)) % cs.length]; frameIdx=0; paintAll(); return; }
+  // m / c / f - what a nudge changes
+  if(k==='m'||k==='c'||k==='f'){ ev.preventDefault();
+    scope = k==='m'?'master':k==='c'?'clip':'frame'; paintScope(); return; }
+  const N={ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]}[k];
+  if(!N||!curImg) return;
+  ev.preventDefault();
+  const step=ev.shiftKey?5:1;
+  const t=target(); const v=(t[sel]||(resolve()||{})[sel]||[0,0]).slice();
+  t[sel]=[Math.max(0,Math.min(curImg.width-1,v[0]+N[0]*step)),
+          Math.max(0,Math.min(curImg.height-1,v[1]+N[1]*step))];
+  saveAll(A); draw(); paintClips();
+});
+
+// ---------- buttons ----------
+$('fromMaster').onclick=()=>{
+  const m=(A[sp]||{})._master; if(!m) return say('nothing on the master yet',true);
+  const t=target(); for(const p of POINTS) if(m[p.k]) t[p.k]=m[p.k].slice();
+  saveAll(A); paintAll(); say('copied the master onto '+(scope==='clip'?'this animation':'this frame'));
+};
+$('clearOne').onclick=()=>{
+  const a=A[sp]||{};
+  const key = scope==='master' ? '_master' : scope==='clip' ? clip : frameKey();
+  if(key==='_master') return say('the master is what everything falls back to — it cannot be dropped',true);
+  if(!a[key]) return say('there is no override here to drop',true);
+  delete a[key]; saveAll(A); paintAll(); say('dropped it — back to what it inherits');
+};
+async function download(name, obj){
+  const text=JSON.stringify(obj,null,2);
+  // Published as an artifact, a plain <a download> is inert - the viewer never grants a page
+  // download permission. Ask for the real thing when it is there, fall back to the link when
+  // this is just a file on Jon's machine.
+  try{
+    const dl = (typeof claude!=='undefined' && claude.use) ? await claude.use('downloads') : null;
+    if(dl){ await dl.save({filename:name, data:text}); return true }
+  }catch(e){ say('the save was declined', true); return false }
+  const b=new Blob([text],{type:'application/json'});
+  const u=URL.createObjectURL(b), a=document.createElement('a');
+  a.href=u; a.download=name; document.body.appendChild(a); a.click();
+  setTimeout(()=>{ URL.revokeObjectURL(u); a.remove() }, 400);
+  return true;
+}
+$('save').onclick=async()=>{ if(await download('attach-'+sp+'.json',{animal:sp,attach:A[sp]||{}}))
+  say('saved attach-'+sp+'.json — run py tools/install_anchors.py on it'); };
+$('saveAll').onclick=async()=>{ if(await download('attach-all.json',{all:A}))
+  say('saved attach-all.json — every animal in one file'); };
+
+let tT=null;
+function say(msg,bad){ const t=$('toast'); t.textContent=msg;
+  t.className='show'+(bad?' bad':''); clearTimeout(tT);
+  tT=setTimeout(()=>{ t.className=bad?'bad':'' }, 3200); }
+
+// ---------- go ----------
+if(!sp){ document.body.innerHTML='<p style="padding:20px">No character art was baked into '+
+  'this page. Run <b>py tools/build.py</b>.</p>'; return }
+clip=clipsOf(sp)[0];
+paintAll();
+})();
+</script>

@@ -48,6 +48,7 @@ def inline(page, marker, data_file, out_name):
 os.makedirs(BUILD, exist_ok=True)
 run("mkdata.py")
 run("mkscene.py")
+run("mkanchors.py")
 
 print("--- pages")
 # THE DEVICE'S OWN PAGE IS A PAGE TOO. It is served from the bunbun's SPIFFS, so building it
@@ -65,6 +66,8 @@ io.open(os.path.join(BUILD, "_attach_data.js"), "w", encoding="utf-8").write(
 inline("attach_editor.html", "/*ATTACH_DATA*/", "_attach_data.js", "attach_editor.html")
 inline("scene_shell.html", "/*SCENE_DATA*/", "scene_data.js", "playhouse.html")
 inline("scene_tool.html", "/*ATTACH_DATA*/", "_attach_data.js", "scene_tool.html")
+inline("anchor_editor.html", "/*ANCHOR_DATA*/", "anchor_data.js",
+       "anchor_editor.html")
 
 print("\nBuilt into tools/build/ - open either .html directly, or publish it.")
 
