@@ -471,6 +471,7 @@ const SD=window.ATTACH_DATA;
 // which animal this world is FOR - the select when set, else whatever the
 // room's animations were drawn with
 var gWorldAnimal='';                 // the whole house's animal, across every room
+var gMasterScale=0;                  // ...and its one size. 0 = nobody has set it yet
 function worldAnimalId(){
   if(scene && scene.animal) return scene.animal;     // what the world was switched to
   if(gWorldAnimal) return gWorldAnimal;              // ...and what the OTHER rooms are
@@ -2376,6 +2377,9 @@ function setIf(id, html){
 function isSleepAct(a){ try{ return actOfAnim(a)==='sleep' }catch(e){ return false } }
 function drawAnims(){
   ensureAcodes();
+  // the size readout is refreshed from here because this runs on every add, delete and room
+  // switch - it used to be computed once at load and then quietly went stale
+  try{ if(typeof masterReadout==='function') setTimeout(masterReadout,0) }catch(e){}
   // DIRECT HIM: one button per live animation. Click - he stops deliberating and goes.
   // THE EMOTIONS THE SCENE DOESN'T HAVE fall back to the stock clips - Adult only for
   // now. They are preview-only: never in anims[], never saved, never exported.
@@ -2919,7 +2923,7 @@ function addAnim(name, p){
   }
   const a={name, clip, rule, on:true, fps:p.fps||7,
     stage:{x:+st.x||null, y:+st.y||null, z:+st.z||null,
-           scale:authored?st.scale:(inherited||100), authored,
+           scale:authored?st.scale:(inherited||gMasterScale||100), authored,
            inheritedFrom: inherited ? sized.name : null},
     place, ...(facing?{facing}:{}),
     order: order.length?order:SD.clips[clip].frames.map((_,i)=>({i,cs:100})),
@@ -3346,6 +3350,7 @@ $('ts').oninput=e=>{ travelScale=+e.target.value/100;
 // one size wherever he is and whatever he does. Per-animation sizes still exist underneath
 // for the rare deliberate exception - this dial simply sets them all.
 $('master').oninput=e=>{ const v=+e.target.value;
+  gMasterScale=v;                     // every room from here on is born this size
   travelScale=v/100; $('ts').value=v; $('tsl').textContent=v+'%';
   for(const a of anims){ a.stage=a.stage||{}; a.stage.scale=v; a.stage.authored=true; }
   // ...AND EVERY OTHER ROOM. The rooms he is not standing in are parked as JSON in
@@ -3375,7 +3380,8 @@ function masterReadout(){ const vals=new Set(anims.map(a=>Math.round((a.stage&&a
   }
   const v=[...vals];
   if(v.length===1 && Math.round(travelScale*100)===v[0]){
-    $('master').value=v[0]; $('msl').textContent=v[0]+'%'; }
+    $('master').value=v[0]; $('msl').textContent=v[0]+'%'; gMasterScale=v[0]; }
+  else if(v.length===1){ $('msl').textContent=v[0]+'%'; gMasterScale=v[0]; }
   else $('msl').textContent = v.length>1 ? 'different in each room' : 'mixed'; }
 setTimeout(masterReadout, 0);        // after this script has finished defining everything
 $('tsReset').onclick=()=>{ travelScale=1; $('ts').value=100; $('tsl').textContent='100%'; draw() };
@@ -4004,7 +4010,8 @@ function freshSlot(role){
              : role==='outside'  ? (SD.rooms['meadow']?'meadow'
                                    :SD.rooms['garden']?'garden':Object.keys(SD.rooms)[0])
              : (SD.rooms['farmhouse']?'farmhouse':Object.keys(SD.rooms)[0]);
-  return {v:1, scene:{room, role:role||undefined, objects:[], zones:[],
+  return {v:1, travelScale: gMasterScale ? gMasterScale/100 : undefined,
+          scene:{room, role:role||undefined, objects:[], zones:[],
                       animal:gWorldAnimal||undefined,
                       character:{x:160,y:200,scalePercent:145}},
           sceneName:'', anims:[],
