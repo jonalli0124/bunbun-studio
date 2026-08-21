@@ -4309,10 +4309,19 @@ async function buildPortPayload(setB){
           ['angry-anim',5,'Adult_Angry',null], ['love-anim',5,'Adult_Love',null],
           ['play/anim',9,'Adult_Love',null], ['adult-cuddle',9,'Adult_Love',null],
         ];
-        // 50% WHEN NOBODY SAID (Jon). Falling back to 100 baked the animal at the full
-        // 96x136 cell, and on the device a croc filled the room wall to wall. An authored
-        // size still wins - this is only the answer when the world never gave one.
-        const kitScale2=(on.find(x=>x.stage&&x.stage.authored&&x.stage.scale)||{stage:{}}).stage.scale||50;
+        // FIFTY, ALWAYS - THIS ONE IS THE FIRMWARE'S NUMBER, NOT THE CHILD'S.
+        // The kit is the art the DEVICE reaches for when nobody authored a move: walking,
+        // and every feeling he shows by himself. The firmware sizes those frames with
+        //     travelFactor() = scene.ts / 0.5
+        // so the pak has to be baked at exactly 0.5 and let ts do the sizing. Baking it at
+        // the world's own size instead meant the size was applied TWICE: at 70% the kit
+        // shipped at 70% and the device multiplied it by 1.4, so every passive animation
+        // came out 1.4x larger than the moves beside it. That is the whole of "he keeps
+        // going bigger than the default on passive animations", "he just got bigger on his
+        // heart is full", and "i turned on dance mode and he is really big the whole time" -
+        // and no master setting could have fixed it, because the error is a ratio, not an
+        // offset. The master dial still sizes him everywhere; it does it through ts.
+        const kitScale2=50;
         let made=0;
         for(const [folder,count,clipName,dir] of SPEC){
           const cd=CH.clips[clipName];

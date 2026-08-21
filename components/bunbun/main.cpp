@@ -1676,6 +1676,21 @@ static float travelFactor() {
   if (S.species_idx == 0 || g_scTravel <= 0) return 1.0f;
   return g_scTravel / 0.5f;
 }
+// ...AND ONLY TO A FRAME THAT REALLY CAME FROM THE SPECIES PACK. The factor above exists
+// because a species pack is baked at half size; the BASE pack is not. pa() falls back to the
+// base key whenever the pack has no art for a clip - and the five-pack cast has no
+// walk-south/walk-north, so every vertical step, and dance's stroll between bursts, drew the
+// BUNNY's own full-size art and then multiplied it by 1.4 on top. That is "he still keeps
+// getting bigger sometimes and i cant tell what emotion is happening" (it was not an emotion:
+// it was him walking up or down the room) and it is the same bunny Jon caught a glimpse of
+// mid-flash. A fallback frame is drawn at its own size, which is what the base pack has always
+// been drawn at.
+static bool spriteIsSpecies() {
+  if (S.species_idx <= 0 || S.species_idx >= CHARACTERS_N) return false;
+  const char *id = CHARACTERS[S.species_idx].id;
+  const size_t n = strlen(id);
+  return n > 0 && !strncmp(g_sprName, id, n) && g_sprName[n] == '/';
+}
 static Bounds bounds() {
   // an uploaded scene describes the floor it drew; with no scene, the room is the built-in one
   Bounds b;
@@ -1738,6 +1753,10 @@ static uint32_t g_homeAt = 0;
 static const int TREAT_X = 160, TREAT_Y = FLOOR_Y + 6;
 static inline bool bunComingHome() { return g_homeStage != 0; }
 static uint32_t g_sleepAtMs = 0;       // when lights last went out (evening hold)
+// How long a trip outside lasts at minimum, however full his fun already is. Long enough to
+// be a visit rather than a doorstep turnaround.
+static const uint32_t OUTSIDE_MIN_MS = 45000;
+static uint32_t g_outsideSince = 0;    // when this trip outside began; 0 = he is not out
 static void loveSave() {
   if (millis() - g_loveSavedMs < 30000) return;
   g_loveSavedMs = millis();
@@ -3168,7 +3187,9 @@ static void think(float dt) {
   // once express a preference about the one place he is free to linger.
   if (g_scRoleAvail[SCENE_ROLE_OUTSIDE] && S.lights && !S.sick && !g_action &&
       !g_doorTrip && g_visit < 0 && g_pottySeq == 0 && !g_sleepPending &&
-      sceneRoomHolds(g_scCurRole) && g_scCurRole != SCENE_ROLE_OUTSIDE) {
+      sceneRoomHolds(g_scCurRole) && g_scCurRole != SCENE_ROLE_OUTSIDE &&
+      S.fun < 70.0f) {   // asking to go out with a nearly full fun meter is asking for
+                         // a trip that ends the moment it starts - see the stay below
     if (!g_outWishAt) g_outWishAt = millis() + 90000 + esp_random() % 120000;
     else if (millis() >= g_outWishAt) {
       g_outWishAt = millis() + 180000 + esp_random() % 180000;
@@ -8160,7 +8181,8 @@ static void drawScene() {
   sheetLiftTick();                    // AFTER loadCharSprite: the clamp needs g_meta.h
   int fx = gx2s(S.x) + g_danceSway, fy = gy2s(S.y) - g_danceHop - g_sheetLift;
   float sc = spriteScale() * customBreathe();   // the editor's breathing, feet-pinned
-  if (!g_canimAnchor) sc *= travelFactor();     // the master dial sizes the traveller
+  // the master dial sizes the traveller - but only a frame the species pack really supplied
+  if (!g_canimAnchor && spriteIsSpecies()) sc *= travelFactor();
   // THE EAR CLAMP GUARDS THE RENDERED POSITION (review 8/14, BUG-2). It used to clamp the
   // lift's TARGET, so the 7px dance hop — subtracted here, after the clamp — carried his
   // ears to y23, inside the y4..28 chip row, where PAUSE/DANCE/gear paint straight over
@@ -11697,7 +11719,15 @@ void loop() {
       // ...and when the gauge is full, the visit is over. Outside says its own line; work
       // keeps the one it has always said.
       if (!g_action && g_visit < 0 && !g_doorTrip && g_pottySeq == 0 && !g_gamePanel) {
-        if (g_scCurRole == SCENE_ROLE_OUTSIDE && S.fun >= ACT_FULL) {
+        // A TRIP OUTSIDE IS WORTH MAKING (Jon: "it just said he wanted to go outside and i
+        // did, but he was almost full on fun so he went out and just came back in"). The
+        // meter rule was right to the letter and wrong in spirit: arriving with fun at 96
+        // meant two seconds of fresh air and a walk home. He stays a while whatever the
+        // gauge says, and only then does the gauge get to end it.
+        if (g_scCurRole == SCENE_ROLE_OUTSIDE && !g_outsideSince) g_outsideSince = millis();
+        if (g_scCurRole != SCENE_ROLE_OUTSIDE) g_outsideSince = 0;
+        const bool hadHisAir = g_outsideSince && (millis() - g_outsideSince >= OUTSIDE_MIN_MS);
+        if (g_scCurRole == SCENE_ROLE_OUTSIDE && S.fun >= ACT_FULL && hadHisAir) {
           char line[64];
           snprintf(line, sizeof(line), "%s has had enough fresh air", petName());
           say(line);
