@@ -5704,6 +5704,7 @@ static void wishDoneCb(bool ok) { g_wishDone = ok ? 1 : -1; }
 
 #include "whatsnew.h"
 #include "esp_app_desc.h"
+#include "improv.h"   // wifi over the USB cable, from the flasher page
 static void say(const char *t);
 static Preferences &whatsNewPrefs();
 // Once, ~8s after the first boot of a NEW firmware version: bunbun announces
@@ -12955,6 +12956,7 @@ void loop() {
       g_nextCatAt = millis() + 180000 + (esp_random() % 120000);   // 3-5 min (Jon 8/22:
       // "i want her to come more often"). Note this re-arms on EVERY boot, so a night of
       // reflashing is a night of never seeing her - true for the bench, not for a child.
+    improvTick();   // only does anything while a join is in flight
     BC(BC_EVENTS); updateEvents(dt);   // the old fleet-beacon suspect lives in here -
                                        // stamped so the next panic names it or clears it
     if (millis() >= g_holdUntil) g_animT += dt;   // held still for a beat after arriving
@@ -13242,6 +13244,17 @@ void loop() {
   //   z = zero the power log
   if (Serial.available()) {
     int c = Serial.read();
+    // Improv packets share this port with the debug log and these one-letter commands. The
+    // feeder returns true for any byte that is part of a packet (or that started a header
+    // match), so 'd', 'p', 't' and friends keep working for everything else.
+    if (improvFeed((uint8_t)c)) {
+      // DRAIN THE REST OF THE PACKET NOW. This loop reads one byte per frame, and at ~16Hz a
+      // 50-byte packet would take three seconds to arrive - long enough for the client to give
+      // up mid-handshake. Bounded so a wedged port can never hold the pet still.
+      uint32_t guard = 0;
+      while (Serial.available() && guard++ < 512) improvFeed((uint8_t)Serial.read());
+      c = 0;      // matches none of the debug letters below
+    }
     // The 'a' (force portal), 'j' (transmit test) and 'k' (scan) diagnostics are gone here.
     // They were written to diagnose a board whose WiFi transmitter turned out to be dead, and
     // they drive Arduino's WiFi class — which this build deliberately does not compile, because
