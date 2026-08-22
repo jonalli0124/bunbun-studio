@@ -1,0 +1,485 @@
+<!doctype html>
+<!-- The bunbun package importer - lives ON the device at /build (SPIFFS
+     /spiffs/www/builder.html). Served same-origin, so it may fetch and write the
+     unit's own pak with no CORS, no mixed-content, no PC in the loop.
+
+     Jon: "I want the tools to export something that i can import to update the
+     device via its web interface like I do to update the bins."
+
+     The Scene Assembler's "save a bunbun package" button writes a .bunbun file:
+       "BNDL" ver(1) pad(3) | u32 sceneLen | u32 fragLen | scene.json | fragment BUNP
+     The fragment holds ONLY new/replacing sprites. This page does what the Send
+     button does, from the device's own origin: fetch current pak, merge (fragment
+     wins on same name; whole canim/<slug>/ folders being replaced are dropped),
+     write pak (unit reboots itself), write scene, restart, and verify the pet
+     never moved. PakLib parse/build below are copied verbatim from the assembler.
+
+     Install (survives OTA, wiped only by a serial flash):
+       curl --data-binary @tools/device_import.html \
+         "http://DEVICE-IP/api/fs/upload?path=/spiffs/www/builder.html"
+-->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Give your bunbun a package</title>
+<style>
+  :root{--bg:#fdf6e9;--card:#fff;--ink:#4a3b2a;--soft:#8a7a64;--line:#e8d9bd;
+        --go:#3f9d5f;--bad:#c0392b;--accent:#e8964b}
+  body{font:16px/1.55 system-ui,sans-serif;background:var(--bg);color:var(--ink);
+       margin:0;padding:1.2em;display:flex;justify-content:center}
+  main{max-width:30em;width:100%}
+  h1{font-size:1.35em;margin:.2em 0 .1em}
+  .sub{color:var(--soft);margin:0 0 1em}
+  #drop{background:var(--card);border:3px dashed var(--line);border-radius:14px;
+        padding:2em 1em;text-align:center;cursor:pointer;transition:border-color .15s}
+  #drop.hot{border-color:var(--accent)}
+  #drop b{font-size:1.1em}
+  #drop .hint{color:var(--soft);font-size:.9em;margin-top:.4em}
+  #inside{background:var(--card);border:1px solid var(--line);border-radius:10px;
+          padding:.8em 1em;margin:.8em 0;display:none}
+  #go{display:none;width:100%;font:inherit;font-size:1.15em;font-weight:600;
+      background:var(--go);color:#fff;border:0;border-radius:10px;padding:.7em;
+      cursor:pointer;margin:.2em 0 .6em}
+  #go:disabled{opacity:.55;cursor:default}
+  #steps{list-style:none;padding:0;margin:.6em 0}
+  #steps li{padding:.28em 0 .28em 1.7em;position:relative;color:var(--soft)}
+  #steps li::before{content:"\25CB";position:absolute;left:.2em}
+  #steps li.doing{color:var(--ink)} #steps li.doing::before{content:"\27F3"}
+  #steps li.done{color:var(--go)} #steps li.done::before{content:"\2713"}
+  #steps li.bad{color:var(--bad)} #steps li.bad::before{content:"\2717"}
+  #msg{min-height:1.5em;font-weight:600}
+  #msg.bad{color:var(--bad)} #msg.ok{color:var(--go)}
+  .pet{color:var(--soft);font-size:.9em}
+</style>
+<main>
+  <h1>Give your bunbun a package &#x1F430;&#x1F4E6;</h1>
+  <p class="sub">Made a world in the Scene Assembler? Press <b>&#x1F4E6; save a bunbun
+  package</b> there, then bring the <b>.bunbun</b> file here.</p>
+  <div id="drop" tabindex="0"><b>Drop your .bunbun file here</b>
+    <div class="hint">or tap to choose it</div>
+    <input id="file" type="file" accept=".bunbun" hidden>
+  </div>
+  <div id="inside"></div>
+  <button id="go">Give it to bunbun!</button>
+  <ul id="steps"></ul>
+  <div id="rescueBox" style="display:none;margin:10px 0;padding:10px 12px;border:2px solid #27ae60;
+       border-radius:10px;background:#f2fbf3;font-size:14px"></div>
+  <p id="msg"></p>
+  <p class="pet" id="pet"></p>
+</main>
+<script>
+'use strict';
+// ---- PakLib parse/build: copied VERBATIM from the Scene Assembler (byte-identical) ----
+const PakLib=(()=>{
+  function parse(buf){
+    const dv=new DataView(buf), u8=new Uint8Array(buf);
+    if(u8[0]!==0x42||u8[1]!==0x55||u8[2]!==0x4E||u8[3]!==0x50) throw new Error('not a BUNP pak');
+    const ver=dv.getUint16(4,true), count=dv.getUint16(6,true);
+    const entries=[];
+    for(let i=0;i<count;i++){
+      const at=8+i*56; let name='';
+      for(let j=0;j<32;j++){ const c=u8[at+j]; if(!c) break; name+=String.fromCharCode(c); }
+      entries.push({name, off:dv.getUint32(at+32,true), size:dv.getUint32(at+36,true),
+        origW:dv.getUint16(at+40,true), origH:dv.getUint16(at+42,true),
+        w:dv.getUint16(at+44,true), h:dv.getUint16(at+46,true),
+        offX:dv.getInt16(at+48,true), offY:dv.getInt16(at+50,true), fmt:u8[at+52],
+        data:u8.subarray(dv.getUint32(at+32,true), dv.getUint32(at+32,true)+dv.getUint32(at+36,true))});
+    }
+    return {ver, entries};
+  }
+  function build(entries){
+    const HEAD=8, E=56; let off=HEAD+entries.length*E;
+    let total=off; for(const e of entries) total+=e.data.length;
+    const buf=new Uint8Array(total), dv=new DataView(buf.buffer);
+    buf[0]=0x42;buf[1]=0x55;buf[2]=0x4E;buf[3]=0x50;
+    dv.setUint16(4,2,true); dv.setUint16(6,entries.length,true);
+    entries.forEach((e,i)=>{
+      const at=HEAD+i*E;
+      for(let j=0;j<Math.min(31,e.name.length);j++) buf[at+j]=e.name.charCodeAt(j);
+      dv.setUint32(at+32,off,true); dv.setUint32(at+36,e.data.length,true);
+      dv.setUint16(at+40,e.origW,true); dv.setUint16(at+42,e.origH,true);
+      dv.setUint16(at+44,e.w,true); dv.setUint16(at+46,e.h,true);
+      dv.setInt16(at+48,e.offX,true); dv.setInt16(at+50,e.offY,true);
+      buf[at+52]=e.fmt;
+      buf.set(e.data,off); off+=e.data.length;
+    });
+    return buf;
+  }
+  return {parse, build};
+})();
+
+const $=id=>document.getElementById(id);
+let bundle=null;   // {sceneText, sceneObj, frag: {ver,entries}, fragBytes}
+
+async function petInfo(timeoutMs){
+  const c=new AbortController(); const t=setTimeout(()=>c.abort(),timeoutMs||3000);
+  try{
+    const j=await (await fetch('/api/system/info',{signal:c.signal})).json();
+    clearTimeout(t);
+    const i=j.info||j;
+    return {age:i.pet_age_min, phase:i.pet_phase};
+  }finally{ clearTimeout(t); }
+}
+petInfo(4000).then(p=>{
+  $('pet').textContent=`This is your bunbun's own page. He is ${p.age} minutes old (phase ${p.phase}) and nothing here may change that.`;
+}).catch(()=>{ $('pet').textContent='(could not read the pet just now - it will be checked again before anything happens)'; });
+
+function readBundle(buf){
+  const u8=new Uint8Array(buf), dv=new DataView(buf);
+  if(buf.byteLength<16||u8[0]!==0x42||u8[1]!==0x4E||u8[2]!==0x44||u8[3]!==0x4C)
+    throw new Error('that is not a .bunbun package - use "save a bunbun package" in the Scene Assembler');
+  if(u8[4]!==1) throw new Error('this package is from a newer tool than this page understands');
+  const sLen=dv.getUint32(8,true), fLen=dv.getUint32(12,true);
+  // READ BY LENGTH, IGNORE THE REST - the same law the firmware reads by. A package now
+  // carries the child's whole project after the fragment ("so nothing can be lost"), so the
+  // file is deliberately LONGER than the two blocks. Demanding an exact match rejected every
+  // package saved since ("im still getting package file looks cut short"). Too SHORT is still
+  // a real error: the blocks would not be there to read.
+  if(16+sLen+fLen>buf.byteLength) throw new Error('the package file looks cut short - save it again');
+  if(sLen>8192*5) throw new Error(`the scene block is ${sLen} bytes - too big even for a world`);
+  const sceneBytes=u8.subarray(16,16+sLen);
+  const sceneText=new TextDecoder().decode(sceneBytes);
+  const sceneObj=JSON.parse(sceneText);
+  // ...and take exactly the fragment. Slicing to the end of the file used to be the same
+  // thing; with a trailer it would have sent the project JSON to the device as if it were art.
+  const fragBytes=u8.slice(16+sLen, 16+sLen+fLen);
+  const frag=PakLib.parse(fragBytes.buffer);
+  return {sceneText, sceneObj, frag, fragBytes};
+}
+
+function pickFile(f){
+  const rd=new FileReader();
+  rd.onload=()=>{
+    try{
+      bundle=readBundle(rd.result);
+      const s=bundle.sceneObj;
+      if(s.world){
+        const names=s.world.map(w=>w.role||'main').join(' + ');
+        $('inside').style.display='block';
+        $('inside').innerHTML=`a whole <b>world</b> is inside: ${names} — `+
+          `${s.world.length} rooms, ${bundle.frag.entries.length} pieces of art.`;
+        $('go').style.display='block'; $('go').disabled=false;
+        $('go').textContent='Give him the whole world!';
+        $('msg').textContent=''; $('msg').className='';
+        return;
+      }
+      if(s.species){   // a new body for the same friend - say so before they press it
+        $('inside').style.display='block';
+        $('inside').innerHTML=`a whole new body is inside: <b>the ${s.species}</b>. `+
+          `Your bunbun keeps his name, his age and everything he knows — he just wears `+
+          `this animal now. `+
+          `Your bunbun will BECOME it - same age, same memories, new look. `+
+          `The animal he is now moves out to make room (one animal lives here at a time).`;
+        $('go').style.display='block'; $('go').disabled=false;
+        $('go').textContent='Become the '+s.species+'!';
+        $('msg').textContent=''; $('msg').className='';
+        return;
+      }
+      $('go').textContent='Give it to bunbun!';
+      const nAnim=(s.anims||[]).length, nProp=(s.props||[]).length;
+      $('inside').style.display='block';
+      $('inside').innerHTML=`<b>${(s.name||'your scene')}</b> is inside: `+
+        `${s.room?('the '+s.room.replace('rooms/room-','')+' room, '):''}`+
+        `${nProp} thing${nProp===1?'':'s'}, ${nAnim} animation${nAnim===1?'':'s'}, `+
+        `${bundle.frag.entries.length} pieces of art.`;
+      $('go').style.display='block'; $('go').disabled=false;
+      $('msg').textContent=''; $('msg').className='';
+    }catch(err){
+      bundle=null; $('inside').style.display='none'; $('go').style.display='none';
+      $('msg').textContent=err.message; $('msg').className='bad';
+    }
+  };
+  rd.readAsArrayBuffer(f);
+}
+$('drop').onclick=()=>$('file').click();
+$('file').onchange=e=>{ if(e.target.files[0]) pickFile(e.target.files[0]); };
+$('drop').ondragover=e=>{ e.preventDefault(); $('drop').classList.add('hot'); };
+$('drop').ondragleave=()=>$('drop').classList.remove('hot');
+$('drop').ondrop=e=>{ e.preventDefault(); $('drop').classList.remove('hot');
+  if(e.dataTransfer.files[0]) pickFile(e.dataTransfer.files[0]); };
+
+const STEPS=['finding your bunbun','reading his art','saving what he has now','mixing in yours',
+             'giving him the art (he restarts once)','giving him the room',
+             'one more restart','making sure he is still himself'];
+function drawSteps(){ $('steps').innerHTML=STEPS.map((s,i)=>`<li id="st${i}">${s}</li>`).join(''); }
+function mark(i,cls){ const el=$('st'+i); if(el) el.className=cls; }
+
+// NOBODY'S WORLD IS EVER LOST (panel item 3: "one sister's upload silently erases the
+// other's months of work"). Before an install overwrites anything, the page rebuilds
+// what is ON the device right now into a real .bunbun and hands it to the child's
+// Downloads folder. It re-imports like any other package, so yesterday is always one
+// file away - and it costs the device nothing: the art comes from the pak already
+// fetched, the rooms from files it already serves.
+const ROLE_FILES=[['','/spiffs/scene.json'],['kitchen','/spiffs/scene-kitchen.json'],
+                  ['bathroom','/spiffs/scene-bathroom.json'],['work','/spiffs/scene-work.json'],
+                  ['outside','/spiffs/scene-outside.json']];
+async function rescueBundle(pak){
+  const scenes=[];
+  for(const [role,path] of ROLE_FILES){
+    try{
+      const r=await fetch('/api/fs/download?path='+path);   // RAW: the device does not percent-decode
+      if(!r.ok) continue;
+      const o=JSON.parse(await r.text());
+      if(role && !o.role) o.role=role;
+      scenes.push(o);
+    }catch(e){}
+  }
+  if(!scenes.length) return null;
+  // the art those scenes stand on: every custom animation, plus each room's picture
+  // and every thing they put in it
+  const want=new Set();
+  for(const sc of scenes){
+    if(sc.room) want.add(sc.room);
+    for(const pr of (sc.props||[])) if(pr.n) want.add(pr.n);
+  }
+  const entries=pak.entries.filter(e=>e.name.startsWith('canim/')||want.has(e.name));
+  if(!entries.length) return null;
+  const body=JSON.stringify(scenes.length>1?{world:scenes}:scenes[0]);
+  const sc=new TextEncoder().encode(body);
+  const frag=PakLib.build(entries);
+  const out=new Uint8Array(16+sc.length+frag.length);
+  out.set([0x42,0x4E,0x44,0x4C,1,0,0,0],0);           // "BNDL" ver 1
+  const dv=new DataView(out.buffer);
+  dv.setUint32(8,sc.length,true); dv.setUint32(12,frag.length,true);
+  out.set(sc,16); out.set(frag,16+sc.length);
+  return out;
+}
+function saveRescue(bytes){
+  const d=new Date(), z=n=>String(n).padStart(2,'0');
+  const stamp=d.getFullYear()+z(d.getMonth()+1)+z(d.getDate())+'-'+z(d.getHours())+z(d.getMinutes());
+  const name='bunbun-before-'+stamp+'.bunbun';
+  const url=URL.createObjectURL(new Blob([bytes],{type:'application/octet-stream'}));
+  // A synthetic click this far from the child's own press is dropped by Chrome without
+  // transient activation, and a.click() never throws - so the old code could believe a
+  // save happened when nothing was written. Try it, then ALWAYS leave a real link the
+  // child can press, and never claim the file exists.
+  try{ const a=document.createElement('a'); a.href=url; a.download=name; a.click(); }catch(e){}
+  const box=document.getElementById('rescueBox');
+  if(box){
+    box.innerHTML='';
+    const t=document.createElement('div');
+    t.textContent='Before this, here is everything that was on your bunbun:';
+    const a2=document.createElement('a');
+    a2.href=url; a2.download=name; a2.textContent='\u{1F4BE} save '+name;
+    a2.style.cssText='display:inline-block;margin-top:6px;font-weight:700';
+    box.appendChild(t); box.appendChild(a2);
+    box.style.display='block';
+  }
+  return name;
+}
+
+async function waitBack(){
+  await new Promise(r=>setTimeout(r,9000));
+  for(let i=0;i<20;i++){
+    try{ return await petInfo(3000); }
+    catch(e){ await new Promise(r=>setTimeout(r,2500)); }
+  }
+  throw new Error('the unit did not come back - give it a minute and refresh this page');
+}
+
+
+// WHICH ANIMAL IS THIS FOR? Three answers, not two: make him match, put it on anyway, or stop.
+// The middle one is only honest when the right animal's art is actually present - otherwise
+// switching would leave him falling back to art that is not there.
+function askAnimal(want, pet, have){
+  return new Promise(resolve=>{
+    const box=document.createElement('div');
+    box.style.cssText='margin:14px 0;padding:14px 16px;border:2px solid #d08b2c;'+
+      'border-radius:12px;background:#fff8ec;text-align:left';
+    box.innerHTML =
+      `<div style="font-weight:700;font-size:17px;margin-bottom:6px">`+
+      `This world was made for the ${want}</div>`+
+      `<div style="margin-bottom:10px;line-height:1.45">Your bunbun is a <b>${pet}</b>. `+
+      (have
+        ? `He would do the ${want}'s moves but walk and stand as a ${pet}, which looks odd. `+
+          `The ${want} is already here, so he can just <b>be</b> one.`
+        : `He would do the ${want}'s moves but walk and stand as a ${pet}, which looks odd. `+
+          `You do not have the ${want}'s art yet - get the <b>${want} animal package</b> first `+
+          `and give it to him, then put this world on.`)+
+      `</div><div id="animPick" style="display:flex;gap:8px;flex-wrap:wrap"></div>`;
+    $('go').insertAdjacentElement('afterend', box);
+    const row=box.querySelector('#animPick');
+    const btn=(label,val,primary)=>{
+      const b=document.createElement('button');
+      b.textContent=label;
+      b.style.cssText='padding:10px 14px;border-radius:10px;font-size:15px;cursor:pointer;'+
+        'border:1px solid '+(primary?'#1c7a46':'#bbb')+';'+
+        (primary?'background:#1c7a46;color:#fff;font-weight:700':'background:#fff');
+      b.onclick=()=>{ box.remove(); resolve(val); };
+      row.appendChild(b);
+    };
+    if(have) btn(`Make him a ${want} too`,'switch',true);
+    btn('Put the world on anyway','anyway',!have);
+    btn('Stop','cancel',false);
+  });
+}
+
+const ANIMALS=['capybara','bunny','cat','dog','frog','penguin','croc'];
+$('go').onclick=async()=>{
+  if(!bundle) return;
+  $('go').disabled=true; drawSteps();
+  try{
+    mark(0,'doing');
+    const pet0=await petInfo(4000);
+    mark(0,'done'); mark(1,'doing');
+    const pak=PakLib.parse(await (await fetch('/api/ota/assets')).arrayBuffer());
+    mark(1,'done'); mark(2,'doing');
+    let rescued=null;
+    try{ const bak=await rescueBundle(pak); if(bak) rescued=saveRescue(bak); }catch(e){}
+    if(rescued){
+      mark(2,'done');
+    } else {
+      // NEVER claim a save that did not happen (rehearsal S2): the old code printed
+      // "saved ... into your Downloads first" unconditionally, inside an empty catch.
+      mark(2,'bad');
+      $('msg').textContent='could not save a copy of what is on him first \u2014 carrying on, '+
+        'but there is no undo for this install';
+      $('msg').className='bad';
+    }
+    mark(3,'doing');
+    if(bundle.sceneObj.species){
+      // ONE ANIMAL AT A TIME (the owner's rule): the incoming animal's art replaces
+      // every other animal's; the base pack and everything else stay untouched.
+      const sp=bundle.sceneObj.species;
+      const kept=pak.entries.filter(e=>!ANIMALS.some(a2=>e.name.startsWith(a2+'/')));
+      const merged=PakLib.build(kept.concat(bundle.frag.entries));
+      mark(3,'done'); mark(4,'doing');
+      const r1=await fetch('/api/ota/assets',{method:'POST',body:merged});
+      if(!r1.ok) throw new Error('art upload failed: '+r1.status);
+      await waitBack();
+      mark(4,'done'); mark(5,'doing');
+      const r2=await fetch('/api/pet/species?id='+sp,{method:'POST'});
+      if(!r2.ok) throw new Error('species switch failed: '+r2.status);
+      mark(5,'done'); mark(6,'done'); mark(7,'doing');
+      const pet1=await petInfo(5000);
+      if(pet1.phase!==pet0.phase ||
+         (typeof pet1.age==='number'&&typeof pet0.age==='number'&&pet1.age<pet0.age-1)){
+        mark(7,'bad');
+        $('msg').textContent=`!!! THE PET MOVED (was ${pet0.age}/${pet0.phase}, now ${pet1.age}/${pet1.phase}) - tell a grown-up`;
+        $('msg').className='bad';
+      }else{
+        mark(7,'done');
+        $('msg').textContent=`He is the ${sp} now - and he is STILL YOUR SAME FRIEND: same `+
+          `name, same age (${pet1.age} minutes old), same everything he remembers. He just `+
+          `looks like a ${sp} today.`;
+        $('msg').className='ok';
+      }
+      $('go').disabled=false;
+      return;
+    }
+    // THE PACKAGE IS THE WHOLE STORY for animations (Jon: "all animations should be
+    // replaced when you upload the new bunbun package"): every canim/ entry already on
+    // the device goes, and only the package's own come in - a package with no animations
+    // still clears the shelf. Rooms and species art merge by name as before.
+    const newNames=new Set(bundle.frag.entries.map(e=>e.name));
+    // WHAT THE ROOMS THIS PACKAGE DOES NOT REPLACE STILL NEED (rehearsal S1). The old
+    // rule cleared EVERY canim/ folder, so installing one room left the other rooms'
+    // animations pointing at deleted art - and charSpriteKey deliberately refuses to
+    // fall back for canim/ names, so the pet drew NOTHING in those rooms. Read the
+    // scene files that are staying and keep the folders they name.
+    const incomingRoles=new Set((bundle.sceneObj.world||[bundle.sceneObj])
+      .map(w=>(w.role||'main')));
+    const ROLE_PATH={main:'/spiffs/scene.json', kitchen:'/spiffs/scene-kitchen.json',
+                     bathroom:'/spiffs/scene-bathroom.json', work:'/spiffs/scene-work.json',
+                     outside:'/spiffs/scene-outside.json'};
+    const stillNeeded=new Set();
+    for(const [role,path] of Object.entries(ROLE_PATH)){
+      if(incomingRoles.has(role)) continue;              // this package replaces it
+      try{
+        const r=await fetch('/api/fs/download?path='+path);
+        if(!r.ok) continue;
+        const o=JSON.parse(await r.text());
+        for(const a of (o.anims||[])) if(a && a.f) stillNeeded.add(a.f+'/');
+        if(o.room) stillNeeded.add(o.room);
+        for(const pr of (o.props||[])) if(pr.n) stillNeeded.add(pr.n);
+      }catch(e){}
+    }
+    // ONE ANIMAL AT A TIME, HERE TOO (the owner's rule). The species installer has always
+    // filtered every other animal's art out before merging; this path never did, because a
+    // world used to carry no species art at all. Now that a world brings its own animal,
+    // installing three worlds would have left three animals in a pak that is never garbage
+    // collected - and the two install paths would disagree about a rule that was set once.
+    // Only fires when the incoming world actually brings an animal: a world without one must
+    // not strip the pet down to nothing.
+    const wantAnimal=(bundle.sceneObj.world||[bundle.sceneObj]).map(w=>w.animal).find(Boolean);
+    const bringsAnimal=!!(wantAnimal &&
+      bundle.frag.entries.some(e=>e.name.startsWith(wantAnimal+'/')));
+    const kept=pak.entries.filter(e=>!newNames.has(e.name)
+      && (!e.name.startsWith('canim/') ||
+          [...stillNeeded].some(n=>e.name.startsWith(n)))
+      && (!bringsAnimal ||
+          !ANIMALS.some(a2=>a2!==wantAnimal && e.name.startsWith(a2+'/'))));
+    if(bringsAnimal){
+      const dropped=pak.entries.filter(e=>
+        ANIMALS.some(a2=>a2!==wantAnimal && e.name.startsWith(a2+'/'))).length;
+      if(dropped) $('msg').textContent=
+        `the ${wantAnimal} moves in - ${dropped} pieces of the old animal move out`;
+    }
+    const merged=PakLib.build(kept.concat(bundle.frag.entries));
+    const room=bundle.sceneObj.room;
+    if(room && !kept.concat(bundle.frag.entries).some(e=>e.name===room))
+      $('msg').textContent=`heads up: this bunbun has no "${room}" art - the room will fall back`;
+    // A QUESTION, NOT A LINE THAT SCROLLS AWAY (rehearsal M11). The old warning was
+    // overwritten seconds later by the next message, so the one admission that this
+    // world belongs to another animal never survived long enough to be read.
+    {const want=(bundle.sceneObj.world||[bundle.sceneObj]).map(w=>w.animal).find(Boolean);
+     if(want){
+       let pet='';
+       try{ const j=await (await fetch('/api/system/info')).json(); pet=(j.info||{}).species_id||''; }catch(e){}
+       if(pet && pet!==want){
+         // OFFER THE FIX, DO NOT JUST NAME THE PROBLEM. Installing a cat's world on a penguin
+         // gave a penguin who stands and walks as a penguin but performs the child's moves as
+         // a cat - correct by the data model, nonsense on the screen. The page already knows
+         // both animals; it can also know whether the right one's art is HERE, and if it is,
+         // fixing it is one byte of pet state away.
+         const all = kept.concat(bundle.frag.entries);
+         const have = all.some(e=>e.name.startsWith(want+'/'));
+         const choice = await askAnimal(want, pet, have);
+         if(choice==='cancel'){
+           $('msg').textContent='nothing was changed - get the '+want+' first, then try again';
+           $('msg').className='ok';
+           $('go').disabled=false;
+           return;
+         }
+         if(choice==='switch'){
+           const rs=await fetch('/api/pet/species?id='+want,{method:'POST'});
+           if(!rs.ok) throw new Error('could not make him a '+want+': '+rs.status);
+           $('msg').textContent='he is a '+want+' now - same bunbun, same age';
+         }
+       }
+     } }
+    mark(3,'done'); mark(4,'doing');
+    const r1=await fetch('/api/ota/assets',{method:'POST',body:merged});
+    if(!r1.ok) throw new Error('art upload failed: '+r1.status);
+    await waitBack();
+    mark(4,'done'); mark(5,'doing');
+    const worldScenes = bundle.sceneObj.world || [bundle.sceneObj];
+    for(const s2 of worldScenes){
+      const role=s2.role;
+      const rolePath=(role&&role!=='main')?`/spiffs/scene-${role}.json`:'/spiffs/scene.json';
+      const r2=await fetch('/api/fs/upload?path='+rolePath,
+        {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(s2)});
+      if(!r2.ok) throw new Error('scene upload failed: '+r2.status);
+    }
+    mark(5,'done'); mark(6,'doing');
+    await fetch('/api/system/restart',{method:'POST'}).catch(()=>{});
+    const pet1=await waitBack();
+    mark(6,'done'); mark(7,'doing');
+    if(pet1.phase!==pet0.phase ||
+       (typeof pet1.age==='number'&&typeof pet0.age==='number'&&pet1.age<pet0.age-1)){
+      mark(7,'bad');
+      $('msg').textContent=`!!! THE PET MOVED (was ${pet0.age}/${pet0.phase}, now ${pet1.age}/${pet1.phase}) - tell a grown-up before anything else`;
+      $('msg').className='bad';
+    }else{
+      mark(7,'done');
+      $('msg').textContent=`All done! Your world is on his screen - and he is still your same bunbun (${pet1.age} minutes old).`;
+      $('msg').className='ok';
+      $('pet').textContent='';
+    }
+  }catch(err){
+    for(let i=0;i<STEPS.length;i++){ const el=$('st'+i); if(el&&el.className==='doing') el.className='bad'; }
+    $('msg').textContent=err.message; $('msg').className='bad';
+  }finally{
+    $('go').disabled=false;
+  }
+};
+</script>
