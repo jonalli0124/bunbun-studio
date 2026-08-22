@@ -115,6 +115,24 @@ a{color:var(--accent)}
     <p class="hint">A small window will ask which device to use — see below for which one.</p>
   </div>
 
+  <div class="cta" id="wifi-card">
+    <h2 style="margin:0 0 6px">Already flashed? Put it on your wifi</h2>
+    <p style="font-size:.95rem;color:var(--ink-2);margin-bottom:14px">Use this straight after the
+    install finishes — it saves joining the toy's own network. Leave the cable in.</p>
+    <div id="wifi-form" style="display:flex;flex-direction:column;gap:10px;max-width:22rem;margin:0 auto">
+      <input id="wifi-ssid" placeholder="Network name" autocomplete="off"
+             style="font:15px 'Public Sans',sans-serif;padding:11px 13px;border:1px solid var(--rule);
+                    border-radius:7px;background:var(--surface);color:var(--ink)">
+      <input id="wifi-pass" placeholder="Password" type="password" autocomplete="off"
+             style="font:15px 'Public Sans',sans-serif;padding:11px 13px;border:1px solid var(--rule);
+                    border-radius:7px;background:var(--surface);color:var(--ink)">
+      <button id="wifi-go" style="font:600 16px 'Public Sans',sans-serif;background:var(--accent);
+              color:#fff;border:0;border-radius:8px;padding:13px 20px;cursor:pointer">
+        Send it to the toy</button>
+    </div>
+    <p id="wifi-msg" class="hint" style="margin-top:12px"></p>
+  </div>
+
   <div class="pick">
     <span class="lbl">Which one do I pick?</span>
     <p>The window that opens lists everything plugged into your computer. The toy is the one
@@ -189,5 +207,100 @@ a{color:var(--accent)}
   </div>
 
 </div>
+
+<script>
+// Improv Wi-Fi Serial, written out here rather than leaning on the installer's own attempt.
+//
+// ESP Web Tools probes for Improv by REUSING the port handle it flashed through. On an
+// ESP32-S3 the USB is on the chip itself, so the reset at the end of flashing re-enumerates the
+// device and that handle dies — the COM name comes back, the stream does not. Its probe then
+// times out, `_client` stays null, and the wifi step is skipped without saying why. That is the
+// "Next → Complete, no wifi" you get on this board.
+//
+// Picking the port again gives a brand-new handle, which works. So this is the same protocol,
+// driven from a fresh connection, after the install is over.
+const HDR = [73,77,80,82,79,86];               // "IMPROV"
+const T_STATE=1, T_ERROR=2, T_RPC=3, T_RESULT=4;
+const C_WIFI=1, C_STATE=3;
+
+function frame(type, data){
+  const b=[...HDR,1,type,data.length,...data];
+  return new Uint8Array([...b, b.reduce((a,c)=>(a+c)&255,0)]);
+}
+function parse(buf){
+  const out=[]; let i=0;
+  while(i<buf.length){
+    let j=-1;
+    for(let k=i;k<=buf.length-10;k++){ if(HDR.every((h,n)=>buf[k+n]===h)){ j=k; break; } }
+    if(j<0) break;
+    const len=buf[j+8], end=j+9+len+1;
+    if(end>buf.length) break;
+    const p=buf.slice(j,end);
+    let sum=0; for(let k=0;k<p.length-1;k++) sum=(sum+p[k])&255;
+    if(sum===p[p.length-1]) out.push({type:p[7], data:p.slice(9,9+len)});
+    i=end;
+  }
+  return out;
+}
+function strs(d){                               // RPC result payload -> array of strings
+  const out=[]; let p=2;
+  while(p<d.length){ const n=d[p++]; if(p+n>d.length) break;
+    out.push(new TextDecoder().decode(d.slice(p,p+n))); p+=n; }
+  return out;
+}
+
+const msg=(t,c)=>{ const e=document.getElementById('wifi-msg'); e.textContent=t;
+                   e.style.color = c==='err' ? 'var(--warn)' : c==='ok' ? 'var(--safe)' : 'var(--ink-3)'; };
+
+document.getElementById('wifi-go').addEventListener('click', async ()=>{
+  const ssid=document.getElementById('wifi-ssid').value.trim();
+  const pass=document.getElementById('wifi-pass').value;
+  if(!ssid){ msg('Type the network name first.','err'); return; }
+  if(!('serial' in navigator)){ msg('This needs Chrome or Edge on a computer.','err'); return; }
+  let port;
+  try{
+    port = await navigator.serial.requestPort();
+    await port.open({baudRate:115200});
+  }catch(e){ msg('No device chosen.','err'); return; }
+
+  const w=port.writable.getWriter(), r=port.readable.getReader();
+  let acc=[];
+  const readFor=async(ms)=>{
+    const stop=Date.now()+ms;
+    while(Date.now()<stop){
+      const t=setTimeout(()=>r.cancel().catch(()=>{}),Math.max(50,stop-Date.now()));
+      try{ const {value,done}=await r.read(); clearTimeout(t);
+           if(done) break; if(value) acc.push(...value); }
+      catch(e){ clearTimeout(t); break; }
+      const got=parse(acc); if(got.length) return got;
+    }
+    return parse(acc);
+  };
+  try{
+    msg('Talking to the toy…');
+    await w.write(frame(T_RPC,[C_STATE,0]));
+    let got=await readFor(6000);
+    if(!got.length){ msg('The toy did not answer. Unplug it, plug it back in, and try again.','err'); }
+    else{
+      acc=[];
+      msg('Sending your wifi…');
+      const enc=new TextEncoder(), s=enc.encode(ssid), p=enc.encode(pass);
+      await w.write(frame(T_RPC,[C_WIFI, s.length+p.length+2, s.length,...s, p.length,...p]));
+      got=await readFor(30000);
+      const err=got.find(g=>g.type===T_ERROR);
+      const res=got.find(g=>g.type===T_RESULT && g.data[0]===C_WIFI);
+      if(res){ const u=strs(res.data)[0]||'';
+               document.getElementById('wifi-msg').innerHTML =
+                 'Connected. Your bunbun is at <a href="'+u+'">'+u+'</a>';
+               document.getElementById('wifi-msg').style.color='var(--safe)'; }
+      else if(err){ msg('It could not join — check the password and that it is a 2.4GHz network.','err'); }
+      else msg('No answer. Give it a moment and try once more.','err');
+    }
+  }catch(e){ msg('Something went wrong: '+e.message,'err'); }
+  finally{
+    try{ r.releaseLock(); w.releaseLock(); await port.close(); }catch(e){}
+  }
+});
+</script>
 </body>
 </html>
