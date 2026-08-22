@@ -2933,6 +2933,20 @@ extern "C" void bunbun_debug_act(const char *a) {
     g_tx = g_ty = -1;          // and abandon a walk that was heading for the bed
     return;
   }
+  // SLEEP IS BEDTIME, NOT AN ERRAND.
+  //
+  // Traced on hardware 2026-08-22 at 0.7s resolution: this fell through to the generic
+  // dispatcher as sceneErrandTo("sleep"), which walks him to the bed, plays the clip, settles
+  // - and leaves S.lights at 1 for ever. He performed sleeping with the lights on and then got
+  // up again. Meanwhile the LIGHTS button sets S.lights = 0 and never plays the clip. Two
+  // buttons, each doing half of going to bed, which is precisely what "sleep / wake up is
+  // still broken and not consistently working" looks like from the sofa.
+  //
+  // g_sleepPending is the real bedtime and has been all along - it is what the schedule and
+  // the energy drop both raise. Raising it here makes the button mean the same thing they do:
+  // go to the bed, lie down in the child's own pose, and put the lights out. bunbun_debug_act
+  // is called from the web task, so it may only SET the flag; think() owns the rest.
+  if (a && !strcmp(a, "sleep")) { g_sleepPending = 1; return; }
   if (a && !strcmp(a, "treats")) { g_treatsOutMs = millis(); return; }   // brings him home
   if (a && !strcmp(a, "lights")) { S.lights = S.lights ? 0 : 1; return; }
   if (a && !strcmp(a, "play")) { g_dbgOpenPlay = true; return; }   // open the PLAY shelf
@@ -4181,7 +4195,22 @@ static void think(float dt) {
   // free - g_sleepPending must never dangle with the lights still on
   if (g_sleepPending && g_tx < 0 && g_visit < 0 && !g_doorTrip && !g_action && S.lights) {
     whyFor(WHY_SCHEDULE, "energy");
-    if (!sceneErrandTo("sleep")) {
+    // ALREADY THERE IS NOT A REASON TO SET OFF. sceneErrandTo() picks a place to stand and
+    // approach FROM, so asking it to send him to a bed he is already lying on chose a spot
+    // 60px east and walked him off it - then the trip aborted and he stood there awake.
+    // Traced: he began at (128,230), the exact sleep mark, and was sent to (191,214).
+    //
+    // The energy-driven bedtime has always guarded this with the same 12px test; the flag
+    // path never did. Same radius, so both routes agree on what "at the bed" means.
+    bool atBed = false;
+    {
+      const int sm = sceneActMark("sleep");
+      if (sm >= 0) {
+        const int dx = g_scBun[sm].x - (int)g_fx, dy = g_scBun[sm].y - (int)g_fy;
+        atBed = (dx * dx + dy * dy <= 144);
+      }
+    }
+    if (atBed || !sceneErrandTo("sleep")) {
       // HE STILL HAS TO LIE DOWN (Jon 2026-08-22: "i just clicked sleep on d468 and it didnt
       // do my sleep animation").
       //
