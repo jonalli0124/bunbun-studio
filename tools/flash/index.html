@@ -261,6 +261,13 @@ document.getElementById('wifi-go').addEventListener('click', async ()=>{
   try{
     port = await navigator.serial.requestPort();
     await port.open({baudRate:115200});
+    // HANDS OFF DTR AND RTS. On an ESP32-S3 those two lines are wired to reset and boot-mode
+    // select. Opening a port asserts them by default, which either resets the chip or drops it
+    // into ROM download mode — where it runs no application at all and answers nothing, which
+    // is exactly the silent nothing this page produced before. esptool and ESP Web Tools both
+    // clear them for the same reason.
+    try{ await port.setSignals({dataTerminalReady:false, requestToSend:false}); }catch(e){}
+    await new Promise(r=>setTimeout(r,200));
   }catch(e){ msg('No device chosen.','err'); return; }
 
   const w=port.writable.getWriter(), r=port.readable.getReader();
@@ -277,9 +284,14 @@ document.getElementById('wifi-go').addEventListener('click', async ()=>{
     return parse(acc);
   };
   try{
+    // Ask more than once. If the chip did get bumped by the port opening it needs about two
+    // seconds to come back, and a single question sent into that gap looks like silence.
     msg('Talking to the toy…');
-    await w.write(frame(T_RPC,[C_STATE,0]));
-    let got=await readFor(6000);
+    let got=[];
+    for(let attempt=0; attempt<6 && !got.length; attempt++){
+      await w.write(frame(T_RPC,[C_STATE,0]));
+      got=await readFor(1500);
+    }
     if(!got.length){ msg('The toy did not answer. Unplug it, plug it back in, and try again.','err'); }
     else{
       acc=[];
