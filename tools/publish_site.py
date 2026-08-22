@@ -28,6 +28,14 @@ def main():
     sp = REPO / "tools" / "build" / "species"
     if sp.exists():
         shutil.copytree(sp, site / "species")
+    # THE WEB FLASHER, at /flash/. This copy list is an allowlist, so a directory that is not
+    # named here reaches the public REPO through sync_public.py and still never appears on the
+    # SITE - which is exactly how the setup link a family is sent would 404 while every file
+    # looked present in git. It carries ~9MB of firmware images; the page is useless without
+    # them, so they travel together.
+    fl = REPO / "tools" / "flash"
+    if fl.exists():
+        shutil.copytree(fl, site / "flash")
     index = REPO / "tools" / "site_index.html"
     shutil.copy(index, site / "index.html")
     env = dict(os.environ, GIT_AUTHOR_NAME="Bunbun Studio", GIT_COMMITTER_NAME="Bunbun Studio",

@@ -51,7 +51,21 @@ static const char *emoteLineFor(const char *key) {
         break;
       }
   }
-  return !strcmp(b2, "angry")  ? "bunbun is not pleased"            :
+  // THIRTEEN LINES NOBODY COULD EDIT (Jon 2026-08-22: "it just said RK cannot keep still but
+  // i dont know where to edit that").
+  //
+  // sceneLine()'s sixteen moments have been authorable since this morning, but these - the
+  // caption a clip announces itself with - were plain string literals with no route to them
+  // at all. A child could rename every big life event and still be told "bunbun cannot keep
+  // still" for ever.
+  //
+  // They go through sceneLine() now, under a "do_" prefix. The prefix is not decoration: the
+  // moments already own the keys "bath", "eat" and "love", and those mean DIFFERENT things
+  // here - "bath" the moment is after a bath, "do_bath" is while he is in it. Sharing a
+  // namespace would have silently merged three pairs. "do_" + the longest act ("hungry") is
+  // 9 characters, which is exactly what SceneLine::key holds.
+  const char *stock =
+       !strcmp(b2, "angry")  ? "bunbun is not pleased"            :
        !strcmp(b2, "love")   ? "bunbun's heart is full"           :
        !strcmp(b2, "bored")  ? "bunbun has run out of ideas"      :
        !strcmp(b2, "hungry") ? "bunbun could really eat"          :
@@ -68,6 +82,18 @@ static const char *emoteLineFor(const char *key) {
        !strcmp(b2, "jump")   ? (g_danceMode ? "bunbun is dancing!"
                                             : "bunbun cannot keep still")  :
        !strcmp(b2, "work")   ? "bunbun is being very industrious" : nullptr;
+  // WALKING IS ONE LINE, NOT ONE PER ROOM (Jon 2026-08-22: "drop the walk east/west since
+  // that would be redundant for all rooms... i would generally just have it says nothing or
+  // he starts to wander"). Both directions, in every room, resolve to the same do_walk key,
+  // and its stock is nullptr - so by default walking stays silent exactly as it always has,
+  // and one line written once covers every walk in the world.
+  if (!strcmp(b2, "walk_e") || !strcmp(b2, "walk_w") ||
+      !strncmp(b2, "walk_", 5))
+    return sceneLine("do_walk", nullptr);
+  if (!stock) return nullptr;          // an act with no caption stays silent, as before
+  char k[10];
+  snprintf(k, sizeof(k), "do_%s", b2);
+  return sceneLine(k, stock);
 }
 #include "ui.h"
 #include "music.h"
@@ -139,6 +165,13 @@ static bool g_blManual = false;
 // than inside GameState: that struct is length- and version-checked on load, so growing it by
 // even one field would make every existing save fail the size test and hatch a new egg.
 static char g_petName[13] = "";
+// SHE GETS A NAME TOO (Jon 2026-08-22: "can we also name the cat?"). Same 12 characters the
+// pet gets, same NVS namespace, and the same fallback shape: catName() answers "the cat" when
+// nobody has named her, so every line reads properly either way.
+static char g_catName[13] = "";
+// Defined here, not beside petName(): say() is ~1500 lines above that and calls this on
+// every ticker line, and this file is one translation unit compiled top to bottom.
+static const char *catName() { return g_catName[0] ? g_catName : "the cat"; }
 static char g_airName[24] = "bunbun";
 static bool g_nameAsk = false;          // the naming screen is up
 // Whether it has actually been PAINTED. Setting g_nameAsk only routes the touches; without
@@ -165,6 +198,9 @@ static float g_discoDrop = 0.0f;    // 0 = stowed above the ceiling, 1 = fully l
 // pause — as opposed to merely having the toggle on while it is still on its way down.
 static inline bool discoDown() { return g_danceMode && g_discoDrop > 0.9f; }
 
+// S is declared further down, and this runs above it. A tiny accessor keeps the sleep test
+// here without moving the game state.
+static bool petLightsOff();
 static void backlightTick(bool /*charging*/) {
   if (g_blManual) return;
   uint32_t idle = millis() - g_lastTouchMs;
@@ -172,6 +208,12 @@ static void backlightTick(bool /*charging*/) {
   // is touching precisely BECAUSE they are watching it rather than poking at it — the one case
   // where "no input" is the strongest evidence that the screen is being looked at.
   if (g_danceMode)       g_blTarget = BL_BRIGHT;
+  // HE IS ASLEEP: the screen settles back down quickly instead of sitting at full for the
+  // usual 20s (Jon, 2026-08-22: "if it restarts while he is asleep he stays asleep but the
+  // room gets full brightness"). This function only ever looked at dance mode and the touch
+  // clock, so a restart - which stamps g_lastTouchMs fresh - lit the room at BL_BRIGHT over a
+  // sleeping bunny. A real finger still brightens it; it just does not stay lit.
+  else if (petLightsOff() && idle >= 3000) g_blTarget = BL_LOW;
   else if (idle < 20000) g_blTarget = BL_BRIGHT;
   else if (idle < 90000) g_blTarget = BL_MID;
   else                   g_blTarget = BL_LOW;
@@ -377,6 +419,17 @@ static PakEntry *g_index = nullptr;
 // lock, no one to wait for.
 static const uint8_t *g_pakMap = nullptr;
 
+// IS THIS ENTRY ACTUALLY INSIDE THE PARTITION? Every field of a pak entry arrives over
+// POST /api/ota/assets, which checks only the BUNP magic and the entry count - so offset and
+// size are attacker-chosen, and pakRead below is a straight memcpy from the mapping. Bounding
+// w and h (which roomLoad and spriteLoad do) never helped if the read STARTS outside.
+// Called before the first pakRead of any entry.
+static bool pakEntryInRange(const PakEntry *e) {
+  if (!e || !g_assets) return false;
+  const uint64_t off = (uint64_t)e->offset, sz = (uint64_t)e->size;
+  return off + sz <= (uint64_t)g_assets->size;
+}
+
 static inline void pakRead(uint32_t off, void *dst, size_t n) {
   if (g_pakMap) { memcpy(dst, g_pakMap + off, n); return; }
   esp_partition_read(g_assets, off, dst, n);        // fallback if the mmap ever fails
@@ -458,6 +511,18 @@ static bool roomLoad(const char *n) {
   if (fw_assets_writing()) return false;    // same standdown as spriteLoad
   if (!strncmp(g_roomName, n, 32)) return true;
   const PakEntry *e = pakFind(n); if (!e) return false;
+  // THE WIDTH IS UNTRUSTED. Every room band is read one scanline at a time into a 240-byte
+  // `row` buffer (see composeRoom and its siblings) with the length taken straight from this
+  // entry, so a pak declaring w=65535 writes 65,535 attacker-chosen bytes into 240 bytes of
+  // .bss. The pak arrives over POST /api/ota/assets, and a .bunbun a child was given is exactly
+  // the thing that carries one. spriteLoad has checked its own w and h for months; this path
+  // never did. Every shipped room is 240x180, so the buffer size IS the legitimate maximum.
+  if (e->w == 0 || e->w > 240 || e->h == 0 || e->h > 240) return false;
+  // ...AND THE OFFSET. pakRead is a memcpy from g_pakMap + off with off taken straight from the
+  // uploaded index; bounding w and h does not help if the read starts outside the mapping. A
+  // valid header with one entry at offset 0xFFFF0000 installs, reboots, and takes a
+  // LoadProhibited on the first draw - a boot loop with no serial-free way out.
+  if (!pakEntryInRange(e)) return false;
   uint16_t c = 0; pakRead(e->offset, &c, 2);
   if (c > 256) return false;
   pakRead(e->offset + 2, g_pal, c * 2);
@@ -903,15 +968,25 @@ static bool spriteLoad(const char *n) {
   // indexes with an si derived from g_meta.w — clamped on the write, not on the read — so a
   // sprite wider than 128 reads past both arrays. Only the height was ever checked, and a
   // child-imported prop is exactly the thing that can be 200px wide.
-  if (!e || e->size > SPR_BUF_SZ || e->h > 128 || e->w > 128) {
+  if (!e || e->size > SPR_BUF_SZ || e->h > 128 || e->w > 128 || !pakEntryInRange(e)) {
     g_sprOK = false; g_sprName[0] = 0; return false;
   }
   pakRead(e->offset, g_spr, e->size);
   g_meta = *e;
+  // ...AND THE ROW TABLE MUST STAY INSIDE IT. The dimensions are checked above, but this walk
+  // was not: 128 rows x 255 segments x 255-pixel runs advances p by ~130KB against a 24KB
+  // buffer, so a crafted entry reads clean off the end of the allocation. Bail on the first
+  // row that would leave the sprite and refuse the whole thing - a half-decoded row table
+  // indexes garbage for every later blit.
   uint32_t p = 0;
   for (int y = 0; y < e->h; y++) {
+    if (p >= e->size) { g_sprOK = false; g_sprName[0] = 0; return false; }
     g_rowOff[y] = p; uint8_t s = g_spr[p++];
-    for (int i = 0; i < s; i++) { p++; uint8_t l = g_spr[p++]; p += l * 2; }
+    for (int i = 0; i < s; i++) {
+      if (p + 1 >= e->size) { g_sprOK = false; g_sprName[0] = 0; return false; }
+      p++; uint8_t l = g_spr[p++]; p += (uint32_t)l * 2;
+    }
+    if (p > e->size) { g_sprOK = false; g_sprName[0] = 0; return false; }
   }
   strncpy(g_sprName, n, 32); g_sprGen++; g_sprOK = true;
   return true;
@@ -1142,6 +1217,12 @@ static const AnimDef ANIMS[] = {
   {"tired","tired-anim",5,4,M_LOOP}, {"bored","bored-anim",5,4,M_LOOP},
   {"hungry","hungry-anim",5,4,M_LOOP}, {"sick","sick-anim",5,4,M_LOOP},
   {"play","play/anim",9,6,M_PINGPONG}, {"angry","angry-anim",5,5,M_LOOP},
+  // A REAL DANCE, at last. Dancing used to resolve to "jump", and jump/anim is itself the
+  // idle rotation repeated five times with the arc applied as a transform - so dancing,
+  // jumping and standing still were the same picture with different motion on top. Every
+  // pack except the croc has carried a 7-frame Adult_Happy since 2026-08-18 that no recipe
+  // in mkspecies.py named, so it had never been installed on any device. 7 frames at 7fps.
+  {"dance","dance/anim",7,7,M_LOOP},
   {"love","love-anim",5,4,M_LOOP}, {"idle_n","adult-idle-n",1,1,M_LOOP},
   // 9 frames, not 5: regenerated front-on (the old art faced south-east, inherited from the
   // Baby state's own three-quarter `south` rotation). fps dropped 5 -> 4 so the longer cycle
@@ -1290,6 +1371,8 @@ static int currentFrame() {
 
 // ---------------- state ----------------
 static GameState S;
+static bool petLightsOff() { return !S.lights; }
+static bool clockIsSet();   // defined with g_clockSet, far below; simulate() asks before it
 static bool tickerAwake() { return S.lights != 0; }
 
 // The editor's breathing, at last a device behaviour: while a custom animation shows, the
@@ -1490,7 +1573,29 @@ static const char *petFrameKey(uint8_t phase) {
   return charSpriteKey(base, buf, sizeof(buf));
 }
 
+// THE EXACT PAK ENTRY THE PET IS DRAWN FROM, this frame.
+//
+// A reader outside the device cannot work this out. The brain reports g_anim->key ("jump"),
+// but the pak stores folders ("baby-jump/3"), and charSpriteKey() then rewrites that again
+// for the species ("dog/baby-jump/3") with a two-step idle fallback when the pack lacks the
+// clip. Three transforms, one of them conditional on what is IN the pak. The /control page
+// guessed at the first of them, matched nothing, and drew the pet as empty space (Jon 8/22:
+// "i dont see any art so he is just walking in white space"). So the device publishes what
+// it actually loaded and no one downstream has to reimplement a mapping that can drift.
+static char g_artKey[64] = "";
+// ...and hers. Same reason, and hers is worse: drawCat() picks a clip, derives the frame from
+// its own fps and hold flag, and then falls back through two stills. Nothing outside the
+// device can reproduce that. She was simply absent from /control (Jon 8/22, "the cat is
+// missing from the control page") because nothing published where she was or what she was.
+static char g_catArtKey[64] = "";
+// main.cpp is ONE translation unit compiled top to bottom and every cat global lives ~4500
+// lines BELOW the brain snapshot, so the snapshot cannot name them. A forward-declared
+// accessor is the fix; reaching for the globals directly is the mistake this file has made
+// four times today alone.
+static void catSnapshot(int *on, int *x, int *y, int *flip, float *k, float *pad);
 static float g_fx = 160, g_fy = FLOOR_Y;
+
+
 static Preferences prefs;
 static Preferences &whatsNewPrefs() { return prefs; }
 static char g_ticker[64] = "";
@@ -1547,25 +1652,33 @@ static void sayMood(const char *t) {
   }
 }
 
+// One bounded token swap. This was written out by hand inside say() for "bunbun"; the cat
+// needed the identical thing for "kitty", and two hand-rolled copies of a bounds-checked
+// string splice is how one of them ends up off by one.
+//
+// Keeps the sentence's own capitalisation: a line that opens with the token gets the name as
+// the kid typed it either way, but a mid-sentence swap must not shout.
+static void tokSwap(char *out, size_t outN, const char *in,
+                    const char *tok, const char *rep) {
+  const char *hit = (rep && rep[0]) ? strstr(in, tok) : nullptr;
+  if (!hit || strcasecmp(rep, tok) == 0) {
+    strncpy(out, in, outN - 1); out[outN - 1] = 0; return;
+  }
+  size_t n = 0, pre = (size_t)(hit - in);
+  for (size_t i = 0; i < pre && n < outN - 1; i++) out[n++] = in[i];
+  for (size_t i = 0; rep[i] && n < outN - 1; i++) out[n++] = rep[i];
+  const char *rest = hit + strlen(tok);
+  while (*rest && n < outN - 1) out[n++] = *rest++;
+  out[n] = 0;
+}
+
 static void say(const char *t) {
   sayMood(t);
-  const char *nm = g_petName;
-  const char *tok = nm[0] ? strstr(t, "bunbun") : nullptr;
-  if (tok && strcasecmp(nm, "bunbun") != 0) {
-    size_t pre = (size_t)(tok - t);
-    if (pre > 62) pre = 62;
-    size_t n = pre;
-    memcpy(g_ticker, t, n);
-    // Keep the sentence's own capitalisation: a line that opened with
-    // "bunbun" gets the name as the kid typed it either way, but a
-    // mid-sentence swap must not shout.
-    for (size_t i = 0; nm[i] && n < 63; i++) g_ticker[n++] = nm[i];
-    const char *rest = tok + 6;
-    while (*rest && n < 63) g_ticker[n++] = *rest++;
-    g_ticker[n] = 0;
-  } else {
-    strncpy(g_ticker, t, 63); g_ticker[63] = 0;
-  }
+  // "bunbun" becomes his name, "kitty" becomes hers. catName() never returns empty, so a
+  // world that has not named her still reads "the cat came to visit!".
+  char tmp[80];
+  tokSwap(tmp, sizeof(tmp), t, "bunbun", g_petName);
+  tokSwap(g_ticker, sizeof(g_ticker), tmp, "kitty", catName());
   g_tickUntil = millis() + 4000;
   g_tickX = 4;
 }
@@ -1653,6 +1766,32 @@ static const char *pa(const char *base) {
   return base;
 }
 
+// WHICH SLEEP CLIP BELONGS HERE, given where he is standing right now.
+//
+// Three sites picked this with sceneActAnimFree("sleep"), whose comment says FREE clips only,
+// because a PINNED pose drawn away from its mark is the kitchen-idle bug. True - but every one
+// of those sites is reached exactly when the errand did NOT send him, and the commonest reason
+// for that is that he is ALREADY STANDING ON THE MARK. The rule does not apply there: at the
+// bed, the bed's own pose is the right one and the only one the child authored.
+//
+// So a world whose only sleep animation is pinned - which is the normal shape, since a bed is
+// a place - got no free clip, fell through to pa("sleep"), and played the STOCK kit sleep
+// instead of the child's (Jon 2026-08-22: "i just did sleep on the control and it was the
+// wrong sleep"). His clip is 1 frame, pinned at the rug, and it never once played from these
+// paths.
+//
+// Order: the mark's own clip when he is at it, else any free clip, else the kit's. 144 is the
+// same 12px radius the energy path already uses to decide he has arrived.
+static const char *sleepClipHere() {
+  const int sm = sceneActMark("sleep");
+  if (sm >= 0) {
+    const int dx = g_scBun[sm].x - (int)g_fx, dy = g_scBun[sm].y - (int)g_fy;
+    if (dx * dx + dy * dy <= 144 && g_scBun[sm].anim[0]) return g_scBun[sm].anim;
+  }
+  const char *free = sceneActAnimFree("sleep");
+  return free ? free : pa("sleep");
+}
+
 static Phase phaseOf() {
   // ADULT-ONLY (Jon 8/18: "he stays an adult since we got rid of the aging") - a
   // fresh egg, a restored save, a clock hiccup: none of them may show a baby again.
@@ -1664,7 +1803,17 @@ static bool babyWalksOnly() { return ageMin() >= WALKER_AT; }
 static const PhaseRates &rates() {
   return S.phase == PH_BABY ? RATES_BABY : S.phase == PH_TEEN ? RATES_TEEN : RATES_ADULT;
 }
+// A NEWLY HATCHED PET IS TINY. Applied only while the egg is showing him (see loadCharSprite);
+// the shell frames keep their own art at its own size, and an ordinary pet is untouched.
+// 0.45 of adult. The arithmetic, because "tiny" is deceptive here: spriteScale returns
+// SCALE_ADULT * this * VIEW = 1.45 * 0.45 * 0.75 = 0.489, applied to an idle whose INK is
+// 78-86px tall - so he hatches about 39px, against 86px grown. 0.20 was tried first and drew
+// a 17px smudge ("too small"); the old baby phase was 0.78, which at 67px was barely smaller
+// than an adult and is why the egg never read as a beginning.
+static const float SCALE_EGG_PET = 0.45f;
+static bool g_eggShowsPet;
 static float spriteScale() {
+  if (g_eggShowsPet) return SCALE_ADULT * SCALE_EGG_PET * VIEW;
   float s = S.phase == PH_BABY ? SCALE_BABY : S.phase == PH_TEEN ? SCALE_TEEN : SCALE_ADULT;
   return s * VIEW;
 }
@@ -1678,6 +1827,32 @@ static float spriteScale() {
 // authored nothing for this feeling falls back to the kit the package ships with.
 // This is "master update for passive emotions": tag a drawing as feeling happy in the
 // assembler and it becomes the happy he has by himself, in every room, at once.
+// Does the kit actually carry this clip, for THIS pet?
+//
+// charSpriteKey() cannot answer it: when a species pack lacks a clip it deliberately falls
+// back to that species' idle, so asking it "is dance there?" gets a yes built out of idle
+// frames. This asks the pak directly, species name first, then the base pack - no fallback,
+// no substitution.
+//
+// It matters because a missing clip on the BASE pet is not a graceful degrade: species_idx 0
+// skips charSpriteKey's idle rescue entirely, both spriteLoad attempts fail, and the pet
+// draws NOTHING. A new stock clip must therefore never be reached without checking first.
+static bool kitHasClip(const char *folder) {
+  char n[64];
+  if (S.species_idx && S.species_idx < CHARACTERS_N && CHARACTERS[S.species_idx].id &&
+      CHARACTERS[S.species_idx].id[0]) {
+    snprintf(n, sizeof(n), "%s/%s/0", CHARACTERS[S.species_idx].id, folder);
+    if (pakFind(n)) return true;
+  }
+  snprintf(n, sizeof(n), "%s/0", folder);
+  return pakFind(n) != NULL;
+}
+// Cached: the pak cannot change without a restart, and this is asked every dance frame.
+static int8_t g_hasDanceClip = -1;
+static const char *danceKitKey() {
+  if (g_hasDanceClip < 0) g_hasDanceClip = kitHasClip("dance/anim") ? 1 : 0;
+  return g_hasDanceClip ? "dance" : "jump";     // "jump" is the pre-2026-08-22 behaviour
+}
 static const char *emoteClip(const char *act, const char *kitKey) {
   const char *k = sceneAnywhereActAnim(act);
   return k ? k : pa(kitKey);
@@ -1775,6 +1950,11 @@ static void loveSave() {
   prefs.end();
 }
 static int g_tx = -1, g_ty = -1;
+// A CUDDLE IS NOT A CHANGE OF PLAN (Jon, 2026-08-22: "i cuddled him on his way to the home room
+// and he stopped going"). startAction() clears g_tx/g_ty because most actions ARE the
+// destination - but an emote happens wherever he is standing, so wiping the target stranded him
+// mid-journey. Emotes go through startEmote(), which puts the trip back when the emote ends.
+static int g_emoteResumeX = -1, g_emoteResumeY = -1;
 static float g_wanderT = 0, g_emoteT = 9;
 static int      g_hopsLeft = -1;      // hops left in this flurry; -1 = start a fresh one
 static uint32_t g_restUntil = 0;      // flopped until this, and nothing performs
@@ -1884,7 +2064,10 @@ static void freshState() {
 static void loadName() {
   prefs.begin("bunbun", true);
   String n = prefs.getString("petname", "");
+  String c = prefs.getString("catname", "");
   prefs.end();
+  strncpy(g_catName, c.c_str(), sizeof(g_catName) - 1);
+  g_catName[sizeof(g_catName) - 1] = 0;
   strncpy(g_petName, n.c_str(), sizeof(g_petName) - 1);
   g_petName[sizeof(g_petName) - 1] = 0;
   buildAirName();
@@ -1893,6 +2076,7 @@ static void loadName() {
 static void saveName() {
   prefs.begin("bunbun", false);
   prefs.putString("petname", g_petName);
+  prefs.putString("catname", g_catName);
   prefs.end();
   buildAirName();
 }
@@ -2184,11 +2368,19 @@ static void startAction(const char *a, float secs) {
   // press that produced a motionless character would read as the game having hung.
   g_holdUntil = 0;
 }
+// An action that happens where he stands and must not cancel a walk.
+static void startEmote(const char *a, float secs) {
+  const int keepX = g_tx, keepY = g_ty;
+  startAction(a, secs);
+  g_emoteResumeX = keepX; g_emoteResumeY = keepY;
+}
 static bool contentMood() { return !S.sick && S.food >= 35 && S.energy >= 35 && S.fun >= 35; }
 
 // mood ordering copied from the HTML's moodAnim()
 static const char *moodCustom(const char *act, const char *fb) {
-  const char *k = sceneActAnim(act);
+  // FREE clips only. Whatever this returns is drawn where he is standing, so a pose the child
+  // pinned to a mark cannot come from here - see sceneActAnimFree.
+  const char *k = sceneActAnimFree(act);
   return k ? k : fb;
 }
 // Declared up here because moodAnim() consults both: he is not bored in a game, and a room
@@ -2265,6 +2457,17 @@ static const char *moodAnim() {
 // animation carries this act, walk to its doorstep, settle onto the authored spot, perform.
 // False = the scene has no such place; the caller keeps its old in-place behaviour.
 static void catDismissIfAway();
+// Is her art on this device at all? Declared here because startCat() and the brain snapshot
+// both ask long before drawCat() defines it.
+static bool catArtPresent();
+// HE WAITS FOR HER. True while she is still on the spot he has walked to; asks her to move the
+// first time it is called. Defined with the rest of her code far below; declared here because
+// his arrival at a mark happens first in this translation unit.
+static bool catYieldSpot(int mx, int my);
+// Is this mark one of the places she is allowed to sleep - i.e. a sit or a sleep? He only ever
+// waits for her at those; she has no business on the tub or the workbench, and waiting at one
+// would be him standing about for no reason.
+static bool markIsRest(const char *key);
 // THE DOOR IS THE SIDE OF THE SCREEN. An act whose room exists somewhere else sends him
 // to the edge, the room swaps, he walks in from the mirror edge and does the thing.
 // After the act (or a work session) he comes home the same way. If a room is not
@@ -2594,13 +2797,35 @@ static bool sceneDoorTo(uint8_t tgt, const char *act) {
 // screenshots: which room, which rooms exist, whether the lights are on, and what
 // he is currently trying to do ("he is just staying still doing the idle pose").
 extern "C" void bunbun_brain_snapshot(char *buf, int len) {
+  int catOn = 0, catX = 0, catY = 0, catFlip = 0;
+  float catK = 1.0f, catPad = 0.0f;
+  catSnapshot(&catOn, &catX, &catY, &catFlip, &catK, &catPad);
   snprintf(buf, len,
     "{\"role\":%d,\"avail\":%d,\"lights\":%d,\"tx\":%d,\"ty\":%d,"
     "\"visit\":%d,\"door\":%d,\"action\":%d,\"settle_ms\":%ld,"
     "\"x\":%d,\"y\":%d,\"anim\":\"%s\",\"potty\":%d,\"work\":%d,"
     "\"food\":%d,\"fun\":%d,\"energy\":%d,\"clean\":%d,\"disc\":%d,\"dsp\":%d,\"poopN\":%d,"
-    "\"floorN\":%d,\"props\":%d,\"anims\":%d,\"sick\":%d,"
-    "\"worldAnimal\":\"%s\",\"petAnimal\":\"%s\",\"wake\":\"%s\",\"rep\":\"%s\",\"repN\":%d,\"next\":%d,\"minStay\":%d}",
+    "\"floorN\":%d,\"props\":%d,\"anims\":%d,\"lines\":%d,\"catArt\":%d,\"sick\":%d,"
+    "\"says\":\"%s\","
+    "\"worldAnimal\":\"%s\",\"petAnimal\":\"%s\",\"wake\":\"%s\",\"rep\":\"%s\",\"repN\":%d,\"next\":%d,\"minStay\":%d,"
+    // The room's own pak key. role tells you which of the five rooms he is in; this tells a
+    // reader WHICH ART that is, which is the one thing needed to draw the same room he is
+    // standing in (the /control page paints it from the same pak the device runs).
+    // ...and the rate that entry is stepping at. Every clip carries its OWN fps (AnimDef.fps,
+    // 3 for an idle, 9 for an adult walk), so a viewer that picked one number for all of them
+    // would play half the world at the wrong speed.
+    // HER, and the two constants her placement needs. catK and catPad are sent rather than
+    // copied into the page because drawCat() anchors her by the CANVAS CENTRE and then lifts
+    // her onto her feet - a rule with no equivalent anywhere else - and a second hand-copied
+    // copy of it is precisely how the pet's key mapping drifted into drawing nothing.
+    // HIS NAME, already carrying its own fallback. petName() returns the child's name or the
+    // literal "bunbun" when there isn't one - the same rule say() uses when it swaps the token
+    // out of a ticker line - so a reader can render a stock line exactly as the toy will speak
+    // it without reimplementing the fallback and getting it subtly different.
+    "\"pet\":\"%s\","
+    "\"room\":\"%s\",\"art\":\"%s\",\"fps\":%d,"
+    "\"cat\":{\"on\":%d,\"x\":%d,\"y\":%d,\"art\":\"%s\",\"flip\":%d,\"name\":\"%s\","
+    "\"k\":%.5f,\"pad\":%.1f}}",
     (int)g_scCurRole,
     (g_scRoleAvail[0]?1:0)|(g_scRoleAvail[1]?2:0)|(g_scRoleAvail[2]?4:0)|(g_scRoleAvail[3]?8:0)|
     (g_scRoleAvail[4]?16:0),
@@ -2608,14 +2833,19 @@ extern "C" void bunbun_brain_snapshot(char *buf, int len) {
     (long)(millis()<g_settleUntil ? (g_settleUntil-millis()) : 0),
     (int)S.x, (int)S.y, g_anim?g_anim->key:"?", (int)g_pottySeq, g_workUntil?1:0,
     (int)S.food, (int)S.fun, (int)S.energy, (int)S.clean, (int)S.disc, (int)g_dspWhy, (int)S.poopN,
-    (int)g_scFloorN, (int)g_scPropN, (int)g_scAnimN, (int)S.sick,
+    (int)g_scFloorN, (int)g_scPropN, (int)g_scAnimN, (int)g_scLineN,
+    catArtPresent() ? 1 : 0, (int)S.sick,
+    g_ticker,
     g_scAnimal,
     (S.species_idx < CHARACTERS_N && CHARACTERS[S.species_idx].id)
       ? CHARACTERS[S.species_idx].id : "",
     g_wakeDid,
     g_repeatAct, (int)g_repeatN,
     (int)(g_workNextAt ? (millis() < g_workNextAt ? g_workNextAt - millis() : 0) : -1),
-    (int)(millis() < g_roomMinStay ? g_roomMinStay - millis() : 0));
+    (int)(millis() < g_roomMinStay ? g_roomMinStay - millis() : 0),
+    petName(),
+    g_roomName, g_artKey, (int)(g_anim && g_anim->fps > 0.1f ? g_anim->fps : 7.0f),
+    catOn, catX, catY, g_catArtKey, catFlip, catName(), catK, catPad);
 }
 // /api/debug/act - the remote lever the door-walk tests (and future layers) need.
 // Set from the web task, consumed on the game task the next tick.
@@ -2624,6 +2854,37 @@ extern "C" void bunbun_brain_snapshot(char *buf, int len) {
 // task would race the renderer for the glass.
 static volatile bool g_dbgOpenPlay = false;
 static volatile bool g_dbgOutside = false;
+// GET /api/debug/say?k=<moment> - hear one of the child's own lines, now.
+//
+// The feedback loop the whole /control words editor exists for: type it, press try, hear it
+// come out of the toy. Before this, judging a line meant exporting the world, uploading 2.5MB,
+// rebooting and walking him into the room - minutes, for one sentence.
+//
+// A KEY, NOT A STRING. An arbitrary-text version would have been simpler and is what this
+// nearly became, but a plain GET carries no Origin, so nothing can distinguish this page's
+// call from an <img> tag on any site in the house - and that version would let a stranger put
+// chosen words on a child's screen. A key can only ever replay one of the sixteen lines the
+// child wrote themselves.
+//
+// sceneLine(k, "") returns "" when the room has nothing for that moment, which is the honest
+// answer: there is no line to hear yet. The stock wording is NOT duplicated here on purpose -
+// it lives at the 18 call sites, and a second copy is a second thing to keep in step.
+extern "C" bool bunbun_debug_say(const char *k) {
+  if (!k || !*k) return false;
+  const char *t = sceneLine(k, "");
+  if (!t || !t[0]) return false;
+  say(t);
+  return true;
+}
+// GET/POST /api/pet/catname. A name, or "" to forget it; 12 characters like the pet's.
+extern "C" void bunbun_cat_name(char *out, int n) {
+  snprintf(out, (size_t)n, "%s", g_catName);
+}
+extern "C" void bunbun_set_cat_name(const char *n) {
+  strncpy(g_catName, n ? n : "", sizeof(g_catName) - 1);
+  g_catName[sizeof(g_catName) - 1] = 0;
+  saveName();
+}
 extern "C" void bunbun_debug_act(const char *a) {
   // stat pokes apply IMMEDIATELY (the queued version raced the next meal - "it says
   // he is full"); everything that moves him still goes through think()'s consumption
@@ -2641,7 +2902,37 @@ extern "C" void bunbun_debug_act(const char *a) {
   // THE LEVERS THAT UNSTICK HIM (rehearsal M10): while sick, away or asleep every act
   // was swallowed with ok:true and nothing happened, with no route to the MEDS button.
   if (a && !strcmp(a, "meds")) { S.sick = 0; S.health = min(100.0f, S.health + 35); return; }
-  if (a && !strcmp(a, "wake")) { S.lights = 1; g_sleepPending = 0; g_nightSleep = false; return; }
+  if (a && !strcmp(a, "wake")) {
+    S.lights = 1; g_sleepPending = 0; g_nightSleep = false;
+    // ...AND STOP THE BEDTIME THAT WAS ALREADY RUNNING. Clearing the three flags only told
+    // the brain not to START going to bed; it said nothing about the tuck-in already in
+    // flight. So waking him mid-tuck left g_action set with the tuck-in clip still playing,
+    // and he stood there performing bedtime with the lights back on - read from outside as
+    // "he is doing a different and incorrect sleep animation" (Jon, 2026-08-22). The tell was
+    // the ticker still saying "is tucking in" several seconds AFTER the wake.
+    //
+    // Ending the action rather than waiting for g_actionEnd matters because a tuck-in is one
+    // of the long ones; the next decision would not have been taken for seconds.
+    if (g_action) {
+      g_action = false; g_actionEnd = 0; g_actAct[0] = 0; g_actIsWork = false;
+      g_performBehind = false;
+    }
+    // ...AND THE SETTLE, WHICH IS NOT AN ACTION. This was the half I got wrong first time:
+    // everything above lived inside `if (g_action)`, but pressing SLEEP does not start an
+    // action - it sends him on an errand to the sleep mark, and on arrival he SETTLES, held
+    // by `if (millis() < g_settleUntil) return;` near the top of think(). So with action == 0
+    // the whole rescue was skipped and he lay there until the settle timed out on its own,
+    // about fifteen seconds later (Jon 2026-08-22: "wake him didnt actually wake him up").
+    // Measured on hardware: a=sleep, then a=wake, and the sleep clip held for 15s.
+    //
+    // Cleared unconditionally, along with the errand and the visit that put him there -
+    // otherwise the next tick simply sends him back to the same mark.
+    g_settleUntil = 0;
+    g_visit = -1;
+    g_dbgAct[0] = 0;           // drop a queued command that has not been dispatched yet
+    g_tx = g_ty = -1;          // and abandon a walk that was heading for the bed
+    return;
+  }
   if (a && !strcmp(a, "treats")) { g_treatsOutMs = millis(); return; }   // brings him home
   if (a && !strcmp(a, "lights")) { S.lights = S.lights ? 0 : 1; return; }
   if (a && !strcmp(a, "play")) { g_dbgOpenPlay = true; return; }   // open the PLAY shelf
@@ -2668,7 +2959,8 @@ static const char *sceneTravelAnim(float dx, bool horiz) {
   // faces, however small it is.
   const char *k = sceneActAnim(dx > 0 ? "walk_e" : "walk_w");
   if (!k) k = sceneActAnim(dx > 0 ? "walk_w" : "walk_e");   // only one direction drawn
-  if (!k) k = sceneActAnim("idle");                         // ...and only then, standing still
+  if (!k) k = sceneActAnimFree("idle");   // ...and only then, standing still - and never a
+                                          // pinned pose, which would travel with him
   return k;
 }
 // Can this act happen anywhere in this world at all? (rehearsal S10) - the same
@@ -2920,7 +3212,7 @@ static void danceStep(float dt) {
     g_danceHop  = (int)(3.0f * sinf(ph * 3.14159265f));
     g_danceSway = 0;
   } else {
-    clip = emoteClip("dance", "jump");
+    clip = emoteClip("dance", danceKitKey());
     // The hop that made this read as dancing in the first place: a full arc every beat.
     g_danceHop  = (int)(7.0f * sinf(ph * 3.14159265f));
     g_danceSway = (int)(4.0f * sinf(g_dancePos * 3.14159265f));
@@ -2962,6 +3254,21 @@ static void keepLegal() {
   // already stood down for g_workStage for the same reason.
   if (!alive() || g_workStage || bunAway()) return;
   if (!sceneActive()) return;
+  // A CHILD PUT HIM UP THERE ON PURPOSE. An authored mark can legitimately sit ABOVE the floor
+  // polygon - a sofa seat, a bed, the top of a beanbag - and this clamp dragged him straight back
+  // down to the floor line every frame. Measured on D468 (2026-08-22): the sofa's sit mark is
+  // y=195, the floor lane at x=242 starts at 204, and he sat at exactly 204. x was always exact;
+  // only y was wrong, which is why it read as "low but not significantly".
+  // Narrow on purpose: only while he is actually performing AT that mark (settle still running)
+  // and standing on its x, so a stale mark cannot exempt him from the floor for anything else.
+  // Bounded in BOTH axes. x alone was not enough: g_markAnim is written and never cleared, so
+  // any later settle that happened to share the last mark's x inherited the exemption - and with
+  // no y bound a mark authored at y=10 would hold him in the sky for a whole rest with nothing
+  // to correct it, because this clamp WAS the backstop.
+  if (g_markAnim[0] && millis() < g_settleUntil &&
+      fabsf(g_fx - (float)g_markX) < 6.0f &&
+      fabsf(g_fy - (float)g_markY) < 6.0f)
+    return;
   int top, bot;
   if (!sceneFloorLane((int)g_fx, &top, &bot)) return;   // doorway, or no floor drawn: leave him
   if (g_fy >= (float)top && g_fy <= (float)bot) return;
@@ -3293,6 +3600,35 @@ static void stepAwayFromSpot() {
     }
   }
 }
+// WEAR THE WORLD'S ANIMAL — and be able to do it before the first frame.
+//
+// This was inline in think() and could therefore only ever run once the pet was ALIVE. A wiped
+// device seeded with a world hatches its egg before think() has ticked even once, and
+// freshState() runs ahead of sceneEnsure(), so g_scAnimal is still empty when species_idx is
+// chosen. The result: a child hatches a brand-new penguin world and meets a base-pack BUNNY for
+// the first seconds of its life, which then silently turns into a penguin. Jon, twice, watching
+// a fresh flash: "the restart had the bunny in the egg and not the penguin", "the baby bunny
+// came back".
+//
+// Returns true ONLY when it actually changed species, so think() can still warn when the world
+// names an animal whose frames are not in the pak. Safe to call at any time: it re-checks the
+// world, the pet and the pak, and does nothing when they already agree.
+static bool adoptWorldAnimal() {
+  if (!g_scAnimal[0]) return false;
+  const int ci = (S.species_idx < CHARACTERS_N) ? S.species_idx : 0;
+  const char *mine = CHARACTERS[ci].id ? CHARACTERS[ci].id : "";
+  if (strcmp(g_scAnimal, mine) == 0) return false;
+  int want = -1;
+  for (int i = 1; i < CHARACTERS_N; i++)
+    if (!strcasecmp(CHARACTERS[i].id, g_scAnimal)) { want = i; break; }
+  char probe[40];
+  snprintf(probe, sizeof(probe), "%s/idle-anim/0", g_scAnimal);
+  if (want <= 0 || !pakFind(probe)) return false;   // no frames: nothing to wear
+  S.species_idx = (uint8_t)want;
+  saveState();
+  return true;
+}
+
 static void think(float dt) {
   // The job drives his position and animation itself, so ordinary behaviour must stand down
   // for the duration — otherwise setAnim() runs every frame and the sequence never shows.
@@ -3331,14 +3667,7 @@ static void think(float dt) {
       // really carries that animal - checked, not assumed - adopting it is what the child
       // meant by sending the world. If the frames are NOT there the warning still stands,
       // because then there genuinely is nothing to wear.
-      int want = -1;
-      for (int i = 1; i < CHARACTERS_N; i++)
-        if (!strcasecmp(CHARACTERS[i].id, g_scAnimal)) { want = i; break; }
-      char probe[40];
-      snprintf(probe, sizeof(probe), "%s/idle-anim/0", g_scAnimal);
-      if (want > 0 && pakFind(probe)) {
-        S.species_idx = (uint8_t)want;
-        saveState();
+      if (adoptWorldAnimal()) {
         char line[64];
         snprintf(line, sizeof(line), "%s is a %s now", petName(), g_scAnimal);
         say(line);
@@ -3366,7 +3695,12 @@ static void think(float dt) {
   }
   if (g_wakeUntil == 1 && g_scOK && !g_action && g_visit < 0 && !g_doorTrip) {
     g_wakeUntil = 0;
-    const char *k = sceneActAnim("wake");
+    // FREE CLIPS ONLY, like every other thing that plays where he stands. This one resolved
+    // through sceneActAnim and then startAction'd on the spot, so a wake clip the child had
+    // pinned to a mark would be drawn wherever he happened to wake up - the kitchen idle bug
+    // in another costume (Jon, 2026-08-22: "whatever you did in the kitchen ... needs to be
+    // present everywhere for all animations in all rooms").
+    const char *k = sceneActAnimFree("wake");
     snprintf(g_wakeDid, sizeof(g_wakeDid), "%s", k ? k : "none-idled");
     if (k) {
       const AnimDef *ad = findAnim(k);
@@ -3433,6 +3767,10 @@ static void think(float dt) {
     }
     if (millis() >= g_actionEnd) {
       g_action = false;
+      // ...and carry on where he was going, if an emote interrupted a walk and nothing else
+      // has claimed him since.
+      if (g_emoteResumeX >= 0 && g_tx < 0 && g_visit >= 0) { g_tx = g_emoteResumeX; g_ty = g_emoteResumeY; }
+      g_emoteResumeX = g_emoteResumeY = -1;
       if (g_actIsWork) { g_actIsWork = false; creditWork(); }
       // a helping, a wash: smaller than the care button's one big top-up, because several
       // of them are meant to fill the meter while he stands there doing it
@@ -3484,7 +3822,7 @@ static void think(float dt) {
           g_wanderT = 0.5f;
           return;
         }
-        if (g_workUntil) { g_workUntil = 0; say("work is all done!"); }
+        if (g_workUntil) { g_workUntil = 0; say(sceneLine("workdone", "work is all done!")); }
       }
       // EVERY ROOM STAYS THE SAME WAY, WORK INCLUDED. I generalised eat and bathe and then
       // excluded work here, on the belief that the block above still owned it - but that block
@@ -3560,8 +3898,10 @@ static void think(float dt) {
           if (dx * dx + dy * dy > 144 && sceneErrandTo("sleep")) return;
         }
       }
-      const char *cs = sceneActAnim("sleep");   // the child's sleep, if the scene brought one
-      setAnim(cs ? cs : pa("sleep"));
+      // The mark's own pose when he is at it, a free clip when he is not, the kit's as a last
+      // resort - see sleepClipHere(). This site used to ask for a free clip unconditionally
+      // and so never played a pinned bed's animation at all.
+      setAnim(sleepClipHere());
       g_tx = g_ty = -1;
       return;
     }
@@ -3722,7 +4062,7 @@ static void think(float dt) {
           if (love) sfxPurr(); else sfxHomeAgain();
         }
       }
-      startAction(love ? emoteClip("love", "love") : emoteClip("dance", "jump"), 2.0f);
+      startEmote(love ? emoteClip("love", "love") : emoteClip("dance", danceKitKey()), 2.0f);
       return;
     }
   }
@@ -3770,7 +4110,7 @@ static void think(float dt) {
         g_wanderT = 0.5f;
         return;
       }
-      if (g_workUntil) { g_workUntil = 0; say("work is all done!"); }
+      if (g_workUntil) { g_workUntil = 0; say(sceneLine("workdone", "work is all done!")); }
     }
     // THE ROOM STILL HAS A CLAIM ON HIM. There are two places a performance can end - the
     // action clock in think(), and this one, the mark/settle path - and only the other one
@@ -3842,6 +4182,22 @@ static void think(float dt) {
   if (g_sleepPending && g_tx < 0 && g_visit < 0 && !g_doorTrip && !g_action && S.lights) {
     whyFor(WHY_SCHEDULE, "energy");
     if (!sceneErrandTo("sleep")) {
+      // HE STILL HAS TO LIE DOWN (Jon 2026-08-22: "i just clicked sleep on d468 and it didnt
+      // do my sleep animation").
+      //
+      // This is the fallback for a bed he cannot get to - no reachable sleep mark, or he is
+      // already standing on it, which is the ordinary case when the button is pressed twice
+      // or pressed while he is on the spot. It set the lights out and returned, and nothing
+      // in it ever called setAnim, so he went dark holding whatever pose he happened to be
+      // in. The child's authored sleep clip simply never played.
+      //
+      // The energy-driven sleep a few hundred lines up has always done this correctly; this
+      // path is the same decision reached a different way, so it gets the same two lines.
+      // FREE clips only, exactly as there: a pinned sleep pose drawn wherever he is standing
+      // is the kitchen-idle bug, and this branch is precisely the case where he is NOT at the
+      // mark.
+      setAnim(sleepClipHere());
+      g_tx = g_ty = -1;
       S.lights = 0; g_sleepAtMs = millis();
       if (g_sleepPending == 2) { g_nightSleep = true; saveSleepState(3); }
       g_sleepPending = 0;
@@ -3957,6 +4313,11 @@ static void think(float dt) {
       g_doorTrip = 0; g_workUntil = 0; g_pottySeq = 0;
       if (g_scCurRole != SCENE_ROLE_MAIN && sceneDoorTo(SCENE_ROLE_MAIN, "")) return;
       if (g_sleepPending) {          // bed unreachable: sleep where he stands, never strand it
+        // ...LYING DOWN. Second of the two places that put the lights out without ever asking
+        // for the sleep clip; "sleep where he stands" was literal, and he stood there in the
+        // dark holding a walk frame. Same two lines as the other one, and same reason for
+        // FREE clips only: this branch exists precisely because he never reached the mark.
+        setAnim(sleepClipHere());
         S.lights = 0; g_sleepAtMs = millis();
         if (g_sleepPending == 2) { g_nightSleep = true; saveSleepState(3); }
         g_sleepPending = 0; saveState();
@@ -4076,6 +4437,36 @@ static void think(float dt) {
     // doorstep is enough: the settle below snaps him onto the authored spot anyway,
     // exactly as it always has.
     if (d < 9 && g_visit >= 0 && g_visit != 5) {
+      // SHE WAS THERE FIRST (Jon, 2026-08-22: "he also needs to wait for her to move before
+      // sitting or sleeping"). He has walked to the mark and she is settled on it - so he stands
+      // where he is and waits while she moves to another of his spots. Only for a sit or a sleep;
+      // eating, bathing and the rest are nowhere she sleeps. Re-checked every tick, and the
+      // moment she is physically clear this falls through and he settles as he always did.
+      // ...BUT NEVER FOREVER. This wait had no bound, so anything that stopped her clearing -
+      // her own walk pausing near the spot, a re-pick that lands close by, the 30px test simply
+      // staying true - left him standing against her for good (Jon, 2026-08-22: "he got stuck
+      // walking into the cat"). There is no pet<->cat collision anywhere in this firmware, so a
+      // wait is the ONLY thing that can pin him. Six seconds is longer than her wake-stretch-
+      // climb-down takes and short enough that a jam reads as a pause; after that he settles
+      // anyway. Him sitting near her occasionally is a far smaller fault than him freezing.
+      if (g_visit == 3 && markIsRest(g_markAnim)) {
+        // ARM ON ENTERING THE WAIT, not on the mark's x changing. Keying the timer to g_markX
+        // meant any exit that was not the fall-through - a button, a door, bedtime - left it
+        // pinned with a stale start, so the next approach to a mark at the same x gave up
+        // instantly and he never waited for her there again. Two different marks sharing an x
+        // collided the same way.
+        static uint32_t waitFrom = 0;
+        static bool     waiting  = false;
+        const bool blocked = catYieldSpot(g_markX, g_markY);
+        if (blocked && !waiting) { waiting = true; waitFrom = millis(); }
+        if (!blocked) waiting = false;
+        if (blocked && millis() - waitFrom < 6000UL) {
+          setAnim(moodAnim());
+          return;
+        }
+        if (blocked) whyNote(WHY_SCHEDULE, "waited", "");   // gave up on her; taking the spot
+        waiting = false;
+      }
       // arrived at the furniture: settle in
       g_tx = g_ty = -1;
       g_settleUntil = millis() + 4000 + esp_random() % 6000;
@@ -4165,10 +4556,17 @@ static void think(float dt) {
     if (d < 4) {
       g_tx = g_ty = -1;
       g_performBehind = false;       // he has arrived somewhere plain; nothing covers him
-      // 18-42s between journeys. The ANIMATION speeds are separate (see the fps column in
-      // ANIMS) — this is only how often he decides to go somewhere, which is what read as
-      // restless. He should look like he is mostly just there.
-      g_wanderT = 18.0f + (esp_random() % 2400) / 100.0f;
+      // 5-20s between journeys (Jon 8/22: "cut down that idle length for home to something
+      // like 5-20s"). The ANIMATION speeds are separate (see the fps column in ANIMS) - this is
+      // only how often he decides to go somewhere.
+      //
+      // The old 18-42s was right for a world that was ONE room, where standing still was the
+      // content and going somewhere too often read as restless. With five rooms, a rota and a
+      // meter that owns him until it fills, he now has somewhere to be, and an 18-second floor
+      // read as him ignoring it. Measured on D468 before the change: the main-room idle held a
+      // median 8.5s and a worst 35.1s, against an authored 2s that this path never reads.
+      g_wanderT = 5.0f + (esp_random() % 1500) / 100.0f;
+      scenePickAgain();   // a new stretch: he may show a different one of this room's idles
       // Arrival-freeze KILLED (Jon 8/12: "it keeps stopping on the wrong
       // animation. should we just kill that?" — yes). When the mood clip was
       // already showing, setAnim didn't reset the frame, so the hold froze a
@@ -4417,7 +4815,7 @@ static void simulate(float dt) {
         S.poopX[S.poopN] = S.x; S.poopY[S.poopN] = S.y; S.poopN++;
         S.clean = max(0.0f, S.clean - 8.0f);
         sfxPlop();                       // W-046, per Piper: "PLOP. hehehehe."
-        say("bunbun made a mess");
+        say(sceneLine("mess", "bunbun made a mess"));
       }
     }
   }
@@ -4450,12 +4848,18 @@ static void simulate(float dt) {
     // Overnight sleep holds through the energy-full wake and ends at the CLOCK, not the
     // meter: 6am on the room clock, with the same window test as bedtime so a clock set
     // backwards past midnight can't strand him asleep.
-    if (g_nightSleep) {
+    // NOT BEFORE THE CLOCK IS REAL. Every wake decision below is a judgement about the TIME,
+    // and at boot clockNowMin() answers from an unset clock - so a restart during the night
+    // could wake him on a default hour, or (via the energy branch) turn the lights on while the
+    // sleep byte had not been restored yet, leaving him asleep in a lit room and needing two
+    // presses of SLEEP to actually wake. g_clockSet is checked nowhere else in this block.
+    if (!clockIsSet()) { /* hold everything until NTP answers */ }
+    else if (g_nightSleep) {
       int cm = clockNowMin();
       if (cm >= g_bedEndMin && cm < 18 * 60) {
         g_nightSleep = false; S.lights = 1; saveSleepState(0);
         g_quietGreet = true;               // W-059: silent until someone says hello
-        say("good morning! bunbun slept the whole night");
+        say(sceneLine("morning", "good morning! bunbun slept the whole night"));
       }
     } else if (S.energy >= 100) {
       // Evening sleeps HOLD (Jon, launch night): after 6pm, a bunbun put
@@ -4466,7 +4870,7 @@ static void simulate(float dt) {
       bool evening = (cmw >= 18 * 60 || cmw < g_bedEndMin);
       if (!(evening && millis() - g_sleepAtMs < 1800000UL)) {
         S.lights = 1;
-        say("bunbun woke up refreshed!");
+        say(sceneLine("refresh", "bunbun woke up refreshed!"));
       }
     }
   } else {
@@ -4615,7 +5019,7 @@ static void simulate(float dt) {
       sfxTuckIn();                     // W-046, per Maya: "a music box - the
                                        // last note takes forever." The
                                        // night's LAST sound (Ivy's rule).
-      say("bunbun tucked himself in for the night");
+      say(sceneLine("tuckin", "bunbun tucked himself in for the night"));
     }
   }
   // W-036: the away screen's help text — Lou's grandmother sentence,
@@ -4684,7 +5088,7 @@ static void simulate(float dt) {
       g_love = min(100.0f, g_love + 30);
       loveSave();
       sfxHomeAgain();
-      say("bunbun came home! he missed you so much");
+      say(sceneLine("home", "bunbun came home! he missed you so much"));
     }
   }
   // The walk in, and the meal at the end of it.
@@ -4991,11 +5395,11 @@ static void runMenu(int i) {
   // the button unable to ever turn them off.
   if (!S.lights && i != 6) {
     S.lights = 1;
-    say("bunbun woke up");
+    say(sceneLine("wake", "bunbun woke up"));
   }
   bool b = (S.phase == PH_BABY);
   switch (i) {
-    case 0: if (S.food >= 98) { sfxNo(); say("bunbun is full"); return; }
+    case 0: if (S.food >= 98) { sfxNo(); say(sceneLine("full", "bunbun is full")); return; }
             // NOTHING IS EATEN IF THERE IS NOWHERE TO EAT (rehearsal S10): the meter
             // used to fill first, so a world with no meal fed him anyway - and the
             // blocked line that would have told the child was overwritten one line
@@ -5015,7 +5419,7 @@ static void runMenu(int i) {
               startAction(pa("eat"), 3.4f);
               S.food = min(100.0f, S.food + 35); S.fun = min(100.0f, S.fun + 2);
             }
-            say("bunbun ate a meal");
+            say(sceneLine("eat", "bunbun ate a meal"));
             // Meals are followed by a mess a while later (babies more often). "A while" was
             // 15-35 SECONDS, so every feed produced a mess almost immediately and the floor
             // was never clean — it's minutes now, and less of a certainty.
@@ -5046,7 +5450,7 @@ static void runMenu(int i) {
               startAction(pa("bath"), 4.2f);
               S.clean = min(100.0f, S.clean + 45); S.fun = min(100.0f, S.fun + 6);
             }
-            say("bunbun took a bath"); break;
+            say(sceneLine("bath", "bunbun took a bath")); break;
     case 3: if (!S.poopN) { sfxNo(); say("nothing to sweep"); return; }
             S.poopN = 0; S.clean = min(100.0f, S.clean + 12);
             say(S.phase == PH_TEEN  ? "you picked up the laundry"
@@ -5055,7 +5459,7 @@ static void runMenu(int i) {
             break;
     case 4: if (!S.sick) { sfxNo(); say("bunbun feels fine"); return; }
             S.sick = 0; S.health = min(100.0f, S.health + 35);
-            startAction(emoteClip("love", "love"), 2.0f); say("bunbun feels better"); break;
+            startEmote(emoteClip("love", "love"), 2.0f); say("bunbun feels better"); break;
     case 5: {
               // CUDL, every age, no refusal ever — "bunbun is all snuggled"
               // turned affection away once, and the one thing a cuddle
@@ -5088,7 +5492,7 @@ static void runMenu(int i) {
                 snprintf(f0, sizeof(f0), "%s/0", cd->folder);
                 startAction((hasAnim(ck) && pakFind(f0)) ? ck : pa("love"), 2.4f);
               }
-              say("cuddles!");
+              say(sceneLine("cuddle", "cuddles!"));
               sfxPurr();                        // W-047: the love is audible now
               hapticPurrStart(2400);            // W-022: the headline behaviour
               break;
@@ -5103,7 +5507,7 @@ static void runMenu(int i) {
               // its job for the full work length - what was missing was the recall.
               if (g_workUntil || g_workReps > 0) {
                 g_workUntil = 0; g_workReps = 0; g_workNextAt = 0; g_repeatAct[0] = 0; g_repeatN = 0;
-                say("work is done for today - heading home");
+                say(sceneLine("workhome", "work is done for today - heading home"));
                 if (g_scCurRole != SCENE_ROLE_MAIN && !g_doorTrip) sceneDoorTo(SCENE_ROLE_MAIN, "");
                 break;
               }
@@ -5249,6 +5653,7 @@ int wish_uploader_pct(void);
 int wish_uploader_take_event(void);
 bool wish_uploader_online(void);
 int wish_uploader_pending(void);
+bool wish_uploader_present(void);
 // W-020: arm the USB card-reader boot mode (main/usb_msc_mode.c; stubbed on
 // targets without OTG). C linkage — an in-function extern mangled and broke
 // the link once already.
@@ -5415,6 +5820,7 @@ static void hostSetMusicVolume(int level) {
 static int  g_clockBaseMin = 9 * 60;          // wall-clock minutes at boot
 static uint32_t g_clockBaseMs = 0;
 static bool g_clockSet = false;
+static bool clockIsSet() { return g_clockSet; }
 // W-015: the set-time screen is a FALLBACK now, not the boot default. On a
 // cold boot the pet lives on a provisional (NVS-seeded) clock while the
 // internet gets 30s to answer; only silence opens the prompt. g_clockPrompt
@@ -7140,11 +7546,23 @@ static void catSetClip(uint8_t c) {
   g_catClip = c; g_catClipT = 0;
 }
 static uint32_t g_nextCatAt = 0;
+// A spot she has just been asked to give up, so the next pick avoids it. Declared up here
+// because catDismissIfAway() clears it and that comes first in this file.
+static int16_t g_catAvoidX = -1, g_catAvoidY = -1;
+// A NAP IS A BUDGET, NOT A POSITION (Jon, 2026-08-22: "nap for 3-5 minutes but after 2 minutes in
+// the same spot move to a different spot - for example the rug"). g_catNapEndsAt is the end of the
+// whole sleep; g_catSpotSince is when she settled on the spot she is on now. Two minutes on one
+// spot and she gets up, moves to another of his marks, and sleeps out the REMAINDER there - so a
+// nap is 3-5 minutes of sleeping spread over one or more places, never five minutes of one couch.
+static uint32_t g_catNapEndsAt = 0, g_catSpotSince = 0;
+static bool     g_catRelocate  = false;   // woken to move, not to end the visit
 static inline bool catHere() { return g_catPhase != 0; }
 // Jon: "if we have a bathroom / kitchen / work scene the cat should never show up."
 static void catDismissIfAway() {
   if (g_scCurRole == SCENE_ROLE_MAIN) return;
   if (g_catPhase) { g_catPhase = 0; g_catPetted = false; }
+  g_catAvoidX = g_catAvoidY = -1;
+  g_catNapEndsAt = 0; g_catSpotSince = 0; g_catRelocate = false;
   g_birdPhase = 0; g_birdReacted = false; g_birdLeaveAt = 0;   // "nor the bird"
 }
 // Mid-visit and still working on the room: walking in, waiting, being fussed over, crossing to
@@ -7188,8 +7606,29 @@ static void catPickSpot() {
     // compensating pair always looks like a regression.
     return;
   }
+  // ANYWHERE HE MAY SIT OR SLEEP. A world that declares scene.cat.sleep[] is honoured above;
+  // otherwise her places are his marks, minus one she has just been moved off.
+  {
+    int16_t xs[SCENE_MAX_CATSPOTS], ys[SCENE_MAX_CATSPOTS];
+    int cnt = sceneRestSpots(xs, ys, SCENE_MAX_CATSPOTS);
+    if (cnt > 0 && g_catAvoidX >= 0) {
+      int w = 0;
+      for (int i = 0; i < cnt; i++) {
+        const int dx = xs[i] - g_catAvoidX, dy = ys[i] - g_catAvoidY;
+        if (dx * dx + dy * dy < 26 * 26) continue;      // that is the one he wants
+        xs[w] = xs[i]; ys[w] = ys[i]; w++;
+      }
+      cnt = w;                     // if that leaves none, she has nowhere else - see catYieldSpot
+    }
+    if (cnt > 0) {
+      const int pick = (int)(esp_random() % (uint32_t)cnt);
+      g_catSpotX = xs[pick]; g_catSpotY = ys[pick];
+      return;
+    }
+  }
   catChairSpotDefault(&g_catSpotX, &g_catSpotY);
 }
+
 // Where bunbun stands to reach her — beside her, never on top of her.
 static void catPetSpot(int *x, int *y) {
   *x = (int)g_catX - 26;
@@ -7326,14 +7765,25 @@ static void catWokeOnFloor() {
 }
 static int catDecide() {
   const int toy = looseToy();
-  const bool canRest = (g_scCatN > 0 || g_scPerchN > 0);
+  const bool canRest = (g_scCatN > 0 || g_scPerchN > 0 || sceneHasRestSpot());
   float v[3] = { toy >= 0 ? g_urge[U_PLAY] : -1.0f,
                  canRest  ? g_urge[U_REST] : -1.0f,
                  g_urge[U_LOOK] };
   int best = 0;
   for (int i = 1; i < 3; i++) if (v[i] > v[best]) best = i;
-  if (v[best] < 0.55f) return 7;                 // "she has had enough, and lets herself out"
+  // 0.42, not the builder's 0.55 (Jon 8/22: "stay a bit longer"). This is the bar an urge must
+  // clear for her to bother; below it she lets herself out. Lowering it means she keeps finding
+  // one more thing to look at before she goes.
+  if (v[best] < 0.42f) return 7;                 // "she has had enough, and lets herself out"
 
+  // WOKEN TO MOVE, NOT TO STOP. She is mid-nap and owes herself the rest of it somewhere else.
+  if (g_catRelocate) {
+    g_catRelocate = false;
+    g_catAvoidX = (int16_t)g_catSpotX; g_catAvoidY = (int16_t)g_catSpotY;
+    catPickSpot();
+    g_catRouteN = 0; g_catStep = 0; g_catChecked = false; g_catRungT = 0;
+    return 4;
+  }
   if (best == U_PLAY) { g_catToy = toy; g_catPlayDir = 0; return 10; }
   if (best == U_REST) { catPickSpot(); g_catRouteN = 0; g_catStep = 0; g_catChecked = false;
                         g_catRungT = 0;
@@ -7348,6 +7798,45 @@ static int catDecide() {
   }
   return 13;
 }
+static bool markIsRest(const char *key) {
+  if (!key || !key[0]) return false;
+  for (int i = 0; i < g_scAnimN; i++)
+    if (!strcmp(g_scAnim[i].key, key))
+      return !strcmp(g_scAnim[i].act, "sit") || !strcmp(g_scAnim[i].act, "sleep");
+  return false;
+}
+// Is she on the spot he has walked to? Only from phase 4 on: before that she is still wandering
+// and is not committed to anywhere, so he has no reason to wait for her.
+static bool catBlockingSpot(int mx, int my) {
+  if (!catHere()) return false;
+  if (g_catPhase < 4 || g_catPhase == 7 || g_catPhase == 13) return false;
+  const float dx = g_catX - (float)mx, dy = g_catY - (float)my;
+  return dx * dx + dy * dy < 30.0f * 30.0f;
+}
+// SHE WAS THERE FIRST, and he is polite about it. She gives up the spot only for a sit or a
+// sleep, and - while the room still has her - she takes ANOTHER of his spots rather than leaving.
+// Asleep, she wakes properly first: phase 6 is the yawn and stretch, which already climbs her
+// down and re-decides, so the whole move reuses the flow she already has.
+static bool catYieldSpot(int mx, int my) {
+  if (!catBlockingSpot(mx, my)) return false;
+  const float dsx = g_catSpotX - (float)mx, dsy = g_catSpotY - (float)my;
+  if (dsx * dsx + dsy * dsy < 26.0f * 26.0f) {      // still aiming at the spot he wants
+    g_catAvoidX = (int16_t)mx; g_catAvoidY = (int16_t)my;
+    int16_t xs[SCENE_MAX_CATSPOTS], ys[SCENE_MAX_CATSPOTS];
+    int other = 0;
+    { int cnt = sceneRestSpots(xs, ys, SCENE_MAX_CATSPOTS);
+      for (int i = 0; i < cnt; i++) {
+        const int dx = xs[i] - mx, dy = ys[i] - my;
+        if (dx * dx + dy * dy >= 26 * 26) other++;
+      } }
+    if (!other) { g_catPhase = 7; g_catT = 0; }      // nowhere else to be: she lets herself out
+    else if (g_catPhase == 5 || g_catPhase == 15) { g_catPhase = 6; g_catT = 0; g_catClipT = 0; }
+    else { catPickSpot(); g_catRouteN = 0; g_catStep = 0; g_catChecked = false; g_catRungT = 0;
+           g_urge[U_REST] = 0.9f; g_catPhase = 4; g_catT = 0; g_catClipT = 0; }
+  }
+  return true;                                       // he keeps waiting until she is clear
+}
+
 
 static bool startCat() {
   // NO DAYLIGHT GATE. There used to be a `nightAmount() > 0.55f` clause here, which works out as
@@ -7361,7 +7850,17 @@ static bool startCat() {
       discoDown() || S.sick)
     return false;
   if (g_scCurRole != SCENE_ROLE_MAIN) return 0;   // she visits the main room only
+  // SAY IT ONCE if her art is not on this device. Without this she walks in, sits, naps and
+  // leaves completely invisible, which reads as "the cat never comes" - it cost an evening of
+  // chasing timers on 2026-08-22 before anyone looked in the pak. Once per boot: enough to be
+  // diagnosed, not enough to nag.
+  if (!catArtPresent()) {
+    static bool told = false;
+    if (!told) { told = true; say("the cat has no pictures yet - give him the cat package"); }
+  }
   g_catPhase = 1; g_catT = 0; g_catPetted = false;
+  g_catAvoidX = g_catAvoidY = -1;      // a new visit forgets last visit's argument
+  g_catNapEndsAt = 0; g_catSpotSince = 0; g_catRelocate = false;
   // EITHER DOOR, 50/50 — placer.html: `const fromLeft = rnd()<0.5; c.x = fromLeft ? -16 : 336`.
   // The device always came in from the right and always stopped at 214, so with her visiting
   // every 70-130s she was dragging bunbun to the same spot over and over: he goes to her at
@@ -7505,7 +8004,7 @@ static void updateCat(float dt) {
           sfxPurr();
           g_love = min(100.0f, g_love + 6.0f);
           loveSave();
-          say("a cat came to visit!");
+          say(sceneLine("cat", "kitty came to visit!"));
         }
       }
       if (g_catT > 22.0f) { g_catPhase = catDecide(); g_catT = 0; }   // unnoticed: on she goes
@@ -7706,15 +8205,33 @@ static void updateCat(float dt) {
       if (g_catT > 1.29f) {                   // 9 frames at 7fps; its last three frames ARE
         g_catPhase = 5; g_catT = 0;           // cat-sleep's first three, so the join is seamless
         g_catClipT = 0;
-        g_catWakeAt = millis() + 25000 + (esp_random() % 30000);
+        // 5-7 MINUTES ASLEEP (Jon 8/22: "present a lot of the time but napping"), spread over
+        // 2-minute stops. Note where this clock starts: right here, as she
+        // enters phase 5 - so it is pure sleeping time and EXCLUDES walking in, crossing the
+        // room, clearing the spot, climbing, and the 1.29s fold-down, as well as the yawn and
+        // the climb back down afterwards.
+        //
+        // Set ONCE per nap. Moving spot mid-nap comes back through here, and re-rolling would
+        // hand her a fresh 3-5 minutes at every stop and a nap that never ended.
+        if (!g_catNapEndsAt) g_catNapEndsAt = millis() + 300000 + (esp_random() % 120000);
+        g_catSpotSince = millis();
+        g_catWakeAt = g_catNapEndsAt;
       }
       break;
     case 5:                                   // asleep on the chair
       catSetClip(CC_SLEEP);
+      // TWO MINUTES A SPOT. Not the end of the nap - she wakes, stretches, climbs down and
+      // takes another of his marks, then sleeps out whatever is left of the budget there.
+      if (millis() < g_catNapEndsAt && millis() - g_catSpotSince >= 120000UL) {
+        g_catRelocate = true;
+        g_catPhase = 6; g_catT = 0; g_catClipT = 0;
+        break;
+      }
       if (millis() >= g_catWakeAt) {
+        g_catNapEndsAt = 0;                   // that nap is done
         g_catPhase = 6; g_catT = 0;
         sfxYawn();                            // the yawn is audible, like bunbun's own
-        say("the cat woke up");
+        say(sceneLine("catwake", "kitty woke up"));
       }
       break;
     case 6:                                   // the yawn and stretch
@@ -7765,7 +8282,7 @@ static void updateCat(float dt) {
       catSetClip(CC_WALK); g_catFaceE = !west;     // her art faces west; east mirrors it
       if (west && g_catX < -24.0f) {
         g_catPhase = 0;
-        g_nextCatAt = millis() + 300000 + (esp_random() % 600000);   // 5-15 min (Jon)
+        g_nextCatAt = millis() + 180000 + (esp_random() % 120000);   // 3-5 min (Jon 8/22)
         break;
       }
       if (g_catX > 336) {
@@ -7774,7 +8291,7 @@ static void updateCat(float dt) {
         // "Jon: she needs to show up more" written next to it and "a nap keeps her away longer".
         // This visit always ends in a nap, so it is the longer branch. Was 15-40 min here, which
         // is roughly twenty times the builder's cadence and is why she was never seen.
-        g_nextCatAt = millis() + 300000 + (esp_random() % 600000);   // 5-15 min (Jon)
+        g_nextCatAt = millis() + 180000 + (esp_random() % 120000);   // 3-5 min (Jon 8/22)
       }
       break;
     }
@@ -7794,8 +8311,23 @@ static void updateCat(float dt) {
 //      That is not a quirk to fix; it is what makes them look right.
 // She sits in the room's own coordinate space, drawn with the furniture so she is occluded
 // and lit exactly like it.
+// IS HER ART EVEN HERE? A device brought up through /build alone has never had it: the nine
+// cat clips live in the SHIPPED pak, no .bunbun world package carries them, and installing a
+// world replaces the pak. drawCat() then failed every frame and returned silently, so she walked
+// in, sat, napped and left completely invisible - which reads as "the cat never comes" and sent
+// us hunting timers for an hour (D468, 2026-08-22: 720 pak entries, 0 cat clips, both fallback
+// stills missing too). Say it on the wire instead of failing quietly.
+static bool catArtPresent() {
+  return pakFind("cat-walk/0") || pakFind("items/cat") || pakFind("cat-sit/0");
+}
+static void catSnapshot(int *on, int *x, int *y, int *flip, float *k, float *pad) {
+  *on = g_catPhase ? 1 : 0;
+  *x = (int)g_catX; *y = (int)g_catY;
+  *flip = g_catFaceE ? 1 : 0;
+  *k = CAT_K; *pad = CAT_PAD;
+}
 static void drawCat() {
-  if (!g_catPhase) return;
+  if (!g_catPhase) { g_catArtKey[0] = 0; return; }
   const CatClip *cl = &CAT_CLIP[g_catClip];
   int f = (int)(g_catClipT * cl->fps);
   if (cl->hold) { if (f >= cl->frames) f = cl->frames - 1; }   // play once, then stay there
@@ -7804,9 +8336,11 @@ static void drawCat() {
   snprintf(fn, sizeof(fn), "%s/%d", cl->folder, f);
   // The two stills stay as the fallback, so a device carrying an older pak still shows a cat
   // rather than nothing at all.
-  if (!spriteLoad(fn) &&
-      !spriteLoad(g_catPhase == 5 ? "items/cat-sleep" : "items/cat") &&
-      !spriteLoad("items/cat")) return;
+  const char *alt = (g_catPhase == 5) ? "items/cat-sleep" : "items/cat";
+  if (spriteLoad(fn))            snprintf(g_catArtKey, sizeof(g_catArtKey), "%s", fn);
+  else if (spriteLoad(alt))      snprintf(g_catArtKey, sizeof(g_catArtKey), "%s", alt);
+  else if (spriteLoad("items/cat")) snprintf(g_catArtKey, sizeof(g_catArtKey), "%s", "items/cat");
+  else { g_catArtKey[0] = 0; return; }
   // ANCHOR HER BY THE CANVAS, not by the ink — the same rule the scene props needed.
   // spriteBlitDirect centres the TRIMMED box, and these frames trim to anywhere from 39 to 55
   // rows tall (cat-lie and cat-sleep fold her down), so centring the ink would have lifted her
@@ -8023,18 +8557,42 @@ static uint8_t  g_rows[UI_W * BAND_H];
 static int g_charH = 0;
 // The cat's draw sizes herself against him, and she is declared above this point.
 int catCharH() { return g_charH; }
+// WHOSE BABY IS IN THERE? egg-4-baby-visible and egg-5-just-hatched are base-pack art with the
+// BUNNY baby drawn into them, so every world hatched a bunny however many penguins had been
+// installed (Jon, 2026-08-22: "the baby bunbun still shows up in the egg. i want it to be a tiny
+// idle version of the pet last uploaded"). The first three frames are the shell and stay as they
+// are; the two that show the occupant now show HIS idle instead, drawn small by eggPetScale().
+// Falls back to the original art if the species pack has no idle, so nothing can hatch nothing.
 static void loadCharSprite() {
+  g_eggShowsPet = false;
   if (S.stage == STAGE_EGG) { g_anim = &EGG_ANIM; g_animT = 0; spriteLoad(EGG_F[0]); }
-  else if (S.stage == STAGE_HATCHING) { g_anim = &EGG_ANIM; spriteLoad(EGG_F[currentFrame()]); }
+  else if (S.stage == STAGE_HATCHING) {
+    g_anim = &EGG_ANIM;
+    const int f = currentFrame();
+    if (f >= 3) {
+      char sk[64];
+      if (spriteLoad(charSpriteKey(pa("idle"), sk, sizeof(sk)))) { g_eggShowsPet = true;
+        snprintf(g_artKey, sizeof(g_artKey), "%s", charSpriteKey(pa("idle"), sk, sizeof(sk))); }
+      else { spriteLoad(EGG_F[f]); snprintf(g_artKey, sizeof(g_artKey), "%s", EGG_F[f]); }
+    } else {
+      spriteLoad(EGG_F[f]);
+      snprintf(g_artKey, sizeof(g_artKey), "%s", EGG_F[f]);
+    }
+  }
   // Character-pack insertion point 1 of 2 (the other is petFrameKey, which the games use).
   // Both snprintf()s are covered here, so the "%s/0" fallback resolves against the species too.
   else { char fn[48], sk[64];
          g_canimAnchor = (strncmp(g_anim->folder, "canim/", 6) == 0);
          snprintf(fn, sizeof(fn), "%s/%d", g_anim->folder, currentFrame());
-         if (!spriteLoad(charSpriteKey(fn, sk, sizeof(sk)))) {
+         const char *rk = charSpriteKey(fn, sk, sizeof(sk));
+         if (!spriteLoad(rk)) {
            snprintf(fn, sizeof(fn), "%s/0", g_anim->folder);
-           spriteLoad(charSpriteKey(fn, sk, sizeof(sk)));
-         } }
+           rk = charSpriteKey(fn, sk, sizeof(sk));
+           spriteLoad(rk);
+         }
+         // AFTER the fallback, not before: the whole point is to name the entry that was
+         // really loaded, which on a species pack missing this clip is an idle frame.
+         snprintf(g_artKey, sizeof(g_artKey), "%s", rk); }
   if (g_sprOK) g_charH = g_meta.h;
 }
 
@@ -9356,8 +9914,9 @@ static void drawPausedBanner() {
     if (heldForMusic) {
       snprintf(w, sizeof(w), "stop music to send %d", pendCache);
     } else {
-      snprintf(w, sizeof(w), "%d unsent wish%s", pendCache,
-               pendCache == 1 ? "" : "es");
+      snprintf(w, sizeof(w), wish_uploader_present() ? "%d unsent wish%s"
+                                                     : "%d wish%s kept",
+               pendCache, pendCache == 1 ? "" : "es");
     }
     scene.setTextColor(TFT_WHITE);
     scene.setTextDatum(MC_DATUM);
@@ -10043,11 +10602,37 @@ static void drawSetupPanel() {
       l1 += "  " + nm;
     }
     l1 += ip;
-    tft.drawCentreString(l1, UI_W / 2, SU_WIFI_Y + SU_ROW_H + 4, 1);
+    // ROWS AT 2/11/20, NOT 4/15/26. The WIFI box ends at SU_WIFI_Y + SU_ROW_H = 78 and the
+    // CLOCK box starts at SU_CLK_Y = 106 - 28px for three 8px lines. At +26 the third line
+    // occupied rows 104-111 and the CLOCK fillRoundRect, drawn afterwards, painted over
+    // rows 106 on: six of its eight rows were erased every frame. The one line the council
+    // called "the single change that most reduces your support burden in week one" has been
+    // three-quarters invisible since it was added. 2/11/20 ends the last line at row 105.
+    tft.drawCentreString(l1, UI_W / 2, SU_WIFI_Y + SU_ROW_H + 2, 1);
     char dev[40] = "";
     if (settings_get_device_name(dev, sizeof(dev)) == ESP_OK && dev[0])
       tft.drawCentreString(String("unit: ") + dev, UI_W / 2,
-                           SU_WIFI_Y + SU_ROW_H + 15, 1);
+                           SU_WIFI_Y + SU_ROW_H + 11, 1);
+    // WHERE TO SEND HIS WORLD. The IP was already up there as diagnostics, which is not the
+    // same as an instruction - a parent hunting for "the four letters" has no reason to read a
+    // status line. This is the whole route in one line they can copy off the toy, and it
+    // dissolves the four-letters-you-saw-once problem, the .local-will-not-resolve problem and
+    // the which-bunbun-is-which problem together. Council 2026-08-22, the child & teacher seat:
+    // "the single change that most reduces your support burden in week one".
+    // TWO DOORS, ONE ROW. /control is the other half of the route (Jon 8/22, asking for it
+    // to live where the update text lives): one page sends a world in, the other plays with
+    // what arrived, and a parent who has found one has found the other.
+    //
+    // BOTH ON ONE ROW, not alternating. There is no fourth line between the WIFI box and the
+    // CLOCK box, and this panel is only redrawn on events (net change, a tap, an update
+    // step) - never per frame - so a line that swapped on a timer would simply freeze on
+    // whichever half was showing when it was last drawn. The host is dropped from the second
+    // path because it is the same host, and "http://" is dropped from both because at font 1
+    // the full pair is 40 chars (240px) and would run off both edges - the exact failure the
+    // SSID budget above exists to prevent.
+    if (g_netState == NET_ONLINE && netIp().length())
+      tft.drawCentreString(netIp() + "/build   or  /control", UI_W / 2,
+                           SU_WIFI_Y + SU_ROW_H + 20, 1);
   }
   // CLOCK — the manual door to set-time, at any time. The cold-boot prompt
   // itself is untouched (W-015: internet first, ask only as the fallback).
@@ -10672,7 +11257,9 @@ static void drawWishStatus() {
   if (pend > 0) {
     uint32_t ls = audio_output_last_stream_ms();
     if (ls && (millis() - ls < 45000)) snprintf(w, sizeof(w), "stop music to send %d", pend);
-    else snprintf(w, sizeof(w), "%d unsent wish%s", pend, pend == 1 ? "" : "es");
+    else snprintf(w, sizeof(w), wish_uploader_present() ? "%d unsent wish%s"
+                                                        : "%d wish%s kept",
+                  pend, pend == 1 ? "" : "es");
   }
   tft.fillRect(0, WS_COUNT_Y - 1, UI_W, 10, C_INK);
   if (w[0]) {
@@ -10709,9 +11296,13 @@ static void wishTapStart() {
   lastWishTap = millis();
   if (audioLive()) {
     sfxNo(); say("stop the music first - bunbun can't hear over it");
-  } else if (wish_uploader_pending() >= 5) {
+  } else if (wish_uploader_present() && wish_uploader_pending() >= 5) {
     // Shelf cap (by request): 5 unsent wishes is the limit. The cure is a network, not more
     // shelf — delivered wishes free their slots the moment WiFi appears.
+    // PRESENT() GUARDS THE WHOLE TEST, and must. pending() used to be a hardcoded 0 in the
+    // public build, so making it count real files would have switched this refusal ON for
+    // units where nothing can ever leave the shelf - jamming the button permanently at five
+    // wishes, which is the exact trap the rolling shelf was added to avoid.
     sfxNo(); say("wish shelf is full! find wifi so they can fly");
   } else {
     esp_err_t we = wish_recorder_start(wishDoneCb);
@@ -10834,13 +11425,18 @@ static int sleepSheetTap(int x, int y) {
     // old immediate behaviour word for word.
     if (S.lights && sceneErrandTo("sleep")) {
       g_sleepPending = 1;
-      say("bunbun is off to bed");
+      say(sceneLine("bed", "bunbun is off to bed"));
       sfxOK();
       saveState();
       g_sleepSheet = false;
       return 1;
     }
-    S.lights = !S.lights;
+    // ONE PRESS. This was a blind toggle, so any state where he LOOKS asleep while S.lights
+    // is still 1 cost two presses: the first turned the lights off, the second woke him
+    // ("i have to hit sleep 2 times for him to wake up"). Being down for the night is the
+    // thing the button is about, so it decides.
+    if (g_nightSleep) S.lights = 1;
+    else              S.lights = !S.lights;
     // a manual wake must also CLEAR the persisted night byte (review 8/14): tuck in, change
     // your mind, then take an OTA — W-072's restore would put him straight back to sleep.
     if (S.lights) { g_nightSleep = false; saveSleepState(0); g_sleepPending = 0; }
@@ -11944,6 +12540,13 @@ void setup() {
 #endif
   bcSnapshot();                  // read last boot's marker before anything stamps over it
   roomLoad(phaseRoom());
+  // WEAR THE WORLD BEFORE THE FIRST FRAME. sceneEnsure() is lazy, so on a wiped device seeded
+  // with a world the scene was still unread when freshState() picked a species - and the egg
+  // draws the pet INSIDE it (g_eggShowsPet), so a child hatching a brand-new penguin world met
+  // a base-pack bunny. Forcing the scene in here and adopting once costs one file read on a
+  // path that is about to read it anyway.
+  sceneActive();
+  adoptWorldAnimal();
   buildLightMap();               // BEFORE anything else takes the heap, or the alloc fails
   updateDimPalette();            // so the palette is valid before the first frame is drawn
                                  // (it was all zeros while the set-time screen was up)
@@ -12097,7 +12700,7 @@ void loop() {
           whyFor(WHY_SCHEDULE, "fun");
           sceneDoorTo(SCENE_ROLE_MAIN, "");
         } else if (g_scCurRole == SCENE_ROLE_WORK && S.disc >= ACT_FULL) {
-          say("work is all done!");
+          say(sceneLine("workdone", "work is all done!"));
           g_workUntil = 0; g_workReps = 0; g_workNextAt = 0; g_repeatAct[0] = 0; g_repeatN = 0;
           whyFor(WHY_SCHEDULE, "disc");
           sceneDoorTo(SCENE_ROLE_MAIN, "");
@@ -12202,8 +12805,14 @@ void loop() {
     if (g_wishDone > 0) {
       // Offline saves are safe on the shelf and fly on reconnect — say that,
       // instead of promising "sending" with no radio (council session #6).
-      say(wish_uploader_online() ? "wish saved! sending it now..."
-                                 : "wish saved! it flies when wifi is back");
+      // A PROMISE THAT CANNOT BE KEPT IS THE WORST OF THE THREE (Jon, 8/22: "it says it
+      // flies when wifi is back but it is on the wifi"). In a public build there is no
+      // uploader compiled in at all, so online() is a hardcoded false and this said "it
+      // flies when wifi is back" on WiFi, off WiFi and for ever - a wish that was never
+      // going anywhere, told to a child that it would. Ask present() first.
+      say(!wish_uploader_present() ? "wish saved! it is safe on bunbun's shelf"
+          : wish_uploader_online() ? "wish saved! sending it now..."
+                                   : "wish saved! it flies when wifi is back");
       sfxOK();
     }
     else {
@@ -12314,7 +12923,9 @@ void loop() {
     // me, and false for a child, who never reboots at all. It is also most of why she felt
     // constant today: fifteen flashes is fifteen near-instant arrivals.
     if (!g_nextCatAt && !catHere())
-      g_nextCatAt = millis() + 300000 + (esp_random() % 600000);
+      g_nextCatAt = millis() + 180000 + (esp_random() % 120000);   // 3-5 min (Jon 8/22:
+      // "i want her to come more often"). Note this re-arms on EVERY boot, so a night of
+      // reflashing is a night of never seeing her - true for the bench, not for a child.
     BC(BC_EVENTS); updateEvents(dt);   // the old fleet-beacon suspect lives in here -
                                        // stamped so the next panic names it or clears it
     if (millis() >= g_holdUntil) g_animT += dt;   // held still for a beat after arriving
@@ -13948,14 +14559,14 @@ void loop() {
       if (!petting) {
         petting = true;
         g_menuUntil = 0;                 // the hold was affection, not a menu request
-        say("bunbun loves this");
+        say(sceneLine("love", "bunbun loves this"));
         sfxPurr();                       // W-047: petting murmurs too (once,
                                          // at the start - not per refresh)
         S.fun = min(100.0f, S.fun + 2);
         // Jon: petting is LOVE, not cuddles — the hearts animation at every
         // age (pa() picks each phase's own love clip), for as long as the
         // finger stays. The CUDL button keeps the cuddle clips for itself.
-        startAction(emoteClip("love", "love"), 1.2f);
+        startEmote(emoteClip("love", "love"), 1.2f);
       }
       g_actionEnd = now + 700;           // rolling: the love clip holds while held
       g_love = min(100.0f, g_love + 2.0f * dt);

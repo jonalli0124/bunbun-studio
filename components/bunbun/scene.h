@@ -293,6 +293,35 @@ struct SceneAnim {
 static SceneAnim g_scAnim[SCENE_MAX_ANIMS];
 static int       g_scAnimN = 0;
 
+// ---- WHAT HE SAYS, IN THE CHILD'S OWN WORDS ----
+// The per-animation `txt` covers a move the child DREW. These cover the moments the firmware
+// narrates on its own - eating, bathing, going to bed, the cat arriving - which were 91 hard
+// literals nobody could change. A world may override any of them by key; anything it does not
+// name keeps the stock line, so an old package behaves exactly as it did.
+// Keys are short and stable because they are the contract with the assembler.
+// MANY PER MOMENT, AND PER ROOM (Jon, 2026-08-22: "can we have multiple per and it's random
+// which it chooses? Also can they be room specific?"). A key may appear several times in this
+// table - one entry per variant - and he picks between them each time the moment happens.
+// Room-specific comes free: this table is rebuilt from the scene that is loaded, so the kitchen
+// and the bedroom can say different things about the same event without any extra machinery.
+//
+// Random per CALL is right here, unlike the animation pickers: say() fires once at the moment,
+// and the line is copied into the ticker immediately - there is no frame loop to strobe.
+#define SCENE_MAX_LINES 24
+struct SceneLine { char key[10]; char txt[44]; };
+static SceneLine g_scLine[SCENE_MAX_LINES];
+static int       g_scLineN = 0;
+// The stock line is passed in at every call site, so this file never owns a copy of the wording
+// and a moment nobody overrode reads exactly as it always has.
+static const char *sceneLine(const char *key, const char *stock) {
+  const char *hit[SCENE_MAX_LINES];
+  int n = 0;
+  for (int i = 0; i < g_scLineN; i++)
+    if (!strcmp(g_scLine[i].key, key)) hit[n++] = g_scLine[i].txt;
+  if (!n) return stock;
+  return hit[esp_random() % (uint32_t)n];
+}
+
 // ---- WHERE HE MAY NOT LOITER ----
 // The assembler's keep-out, with the assembler's MEANING (Jon: "i want the logic of the
 // assembler to stand"). A keep-out was arriving as a solid block — a wall — but in the
@@ -396,6 +425,7 @@ static bool sceneLoad() {
   g_scRoom[0] = 0;      // the one field this used to forget, leaving a stale room across retries
   g_scAnimal[0] = 0;
   g_scLooseN = 0; g_scPerchN = 0; g_scBunN = 0; g_scLampN = 0; g_scAnimN = 0; g_scNoGoN = 0;
+  g_scLineN = 0;
   g_scTravel = 0;
 
   FILE *f = fopen(SCENE_ROLE_PATHS[g_scLoadRole], "rb");
@@ -709,6 +739,33 @@ static bool sceneParseJson(const char *json) {
     }
   }
 
+  // the child's own wording for the moments the firmware narrates
+  const cJSON *ln = cJSON_GetObjectItem(root, "lines");
+  if (cJSON_IsObject(ln)) {
+    for (const cJSON *it = ln->child; it && g_scLineN < SCENE_MAX_LINES; it = it->next) {
+      if (!it->string) continue;
+      // a moment may carry ONE line or a list of them; a list means he picks between them
+      if (cJSON_IsString(it) && it->valuestring[0]) {
+        SceneLine L;
+        memset(&L, 0, sizeof(L));
+        strncpy(L.key, it->string, sizeof(L.key) - 1);
+        strncpy(L.txt, it->valuestring, sizeof(L.txt) - 1);
+        g_scLine[g_scLineN++] = L;
+      } else if (cJSON_IsArray(it)) {
+        const cJSON *v = NULL;
+        cJSON_ArrayForEach(v, it) {
+          if (g_scLineN >= SCENE_MAX_LINES) break;
+          if (!cJSON_IsString(v) || !v->valuestring[0]) continue;
+          SceneLine L;
+          memset(&L, 0, sizeof(L));
+          strncpy(L.key, it->string, sizeof(L.key) - 1);
+          strncpy(L.txt, v->valuestring, sizeof(L.txt) - 1);
+          g_scLine[g_scLineN++] = L;
+        }
+      }
+    }
+  }
+
   // where the cat may sleep
   const cJSON *ct = cJSON_GetObjectItem(root, "cat");
   if (cJSON_IsObject(ct)) {
@@ -825,19 +882,82 @@ static bool sceneCanLoiter(int x, int y) {
 }
 
 // The child's animation for a semantic act, and the mark where it happens. moodAnim() asks
+static uint16_t g_scPickEpoch = 0;
+static void scenePickAgain() { g_scPickEpoch++; }
+// THREE PICKERS REACH THE RENDER PATH, NOT ONE. The hold was put on sceneActAnimFree and the
+// other two left re-rolling per call - but sceneActAnim is reached every frame through
+// sceneTravelAnim (the walk clip) and sceneAnywhereActAnim every frame through moodAnim, so with
+// two clips on one act BOTH strobed, and setAnim() resets g_animT on every key change, so they
+// also froze on frame 0. That is the exact failure the hold exists to prevent, on the two
+// busiest clips in the product. Separate slots so travel, mood and the anywhere-feeling cannot
+// evict each other.
+static char     g_scPickAct[3][12];
+static char     g_scPickKeyS[3][20];
+static uint16_t g_scPickFor3[3] = {0xFFFF, 0xFFFF, 0xFFFF};
+static const char *sceneHoldPick(int slot, const char *act, const char *const *cand, int n) {
+  if (n <= 0) return NULL;
+  if (n == 1) return cand[0];
+  if (g_scPickFor3[slot] == g_scPickEpoch && !strcmp(g_scPickAct[slot], act))
+    for (int i = 0; i < n; i++)
+      if (!strcmp(cand[i], g_scPickKeyS[slot])) return cand[i];
+  const char *k = cand[esp_random() % (uint32_t)n];
+  snprintf(g_scPickAct[slot], sizeof(g_scPickAct[slot]), "%s", act);
+  snprintf(g_scPickKeyS[slot], sizeof(g_scPickKeyS[slot]), "%s", k);
+  g_scPickFor3[slot] = g_scPickEpoch;
+  return k;
+}
+
 // for emotions (played in place); the FEED/BATH/SLEEP buttons and the needs system ask for
 // actions (walked to). NULL/-1 falls back to the built-in art, exactly as before.
 static const char *sceneActAnim(const char *act) {
   if (!act || !act[0]) return NULL;
-  // RANDOM among the matches, not first-wins (council 8/17, filing 3): the assembler rolls
-  // dice between same-act animations, so the device rolls the same dice - a declared
-  // divergence closes or the golden rule is a slogan.
+  // FIRST-WINS, because that is what the assembler actually does. The previous comment here
+  // claimed "the assembler rolls dice between same-act animations, so the device rolls the
+  // same dice" and changed this to esp_random() on that basis. The assembler does no such
+  // thing: every act lookup in scene_tool.html is `anims.find(a => a.on && actOfAnim(a)===act)`
+  // - deterministic, first match - and Math.random() is never used to choose an animation.
+  // The dice were introduced to close a divergence that did not exist, and opened a real one.
+  //
+  // It was not harmless. This is reached from moodAnim() on the render path, so with two clips
+  // sharing an act the choice was re-rolled every frame: measured on D468 (2026-08-22), a
+  // kitchen with two idles strobed between them every 0.25s, punching a north-facing standing
+  // pose into the middle of a walk cycle ("hes walking and starts facing north for no reason").
+  // One clip per act never showed it, which is why only the duplicated room was affected.
+  // Random among the matches. Safe here in a way it was not on the ambient path: every caller
+  // hands the key straight to startAction/setAnim and holds it for the whole performance.
   const char *cand[SCENE_MAX_ANIMS];
   int n = 0;
   for (int i = 0; i < g_scAnimN; i++)
     if (!strcmp(g_scAnim[i].act, act)) cand[n++] = g_scAnim[i].key;
-  if (!n) return NULL;
-  return cand[esp_random() % (uint32_t)n];
+  return sceneHoldPick(1, act, cand, n);
+}
+// IS THIS CLIP NAILED TO A SPOT? A child who drags an animation onto a place in the room is
+// saying "he does this HERE" - so it must never be drawn anywhere else.
+// ONE CHOICE PER STRETCH. With the everywhere-union a room legitimately holds two clips for
+// the same act - the room's own and a traveller - and the pet is meant to vary between them.
+// Choosing per CALL is what strobed the kitchen idles four times a second; choosing once and
+// holding it until the next ambient stretch gives the variety without the flicker. main.cpp
+// bumps this when he settles somewhere new and when a room loads.
+static bool sceneAnimPinned(const char *key) {
+  if (!key || !key[0]) return false;
+  for (int m = 0; m < g_scBunN; m++)
+    if (!strcmp(g_scBun[m].anim, key)) return true;
+  return false;
+}
+// The ambient mood picker's version of sceneActAnim: the first match that is NOT pinned.
+// moodAnim() draws its result wherever he happens to be standing, so a pinned pose taken from
+// there appears in the wrong half of the room (Jon, 2026-08-22: "i saw him do a north facing
+// idle in the kitchen not where i placed them"). His kitchen idles were marked at x=287 and
+// x=67 and were being used as the free-standing idle everywhere in between. An anim with
+// neither a mark nor the everywhere tick is still free to stand anywhere - only a MARK pins it.
+static const char *sceneActAnimFree(const char *act) {
+  if (!act || !act[0]) return NULL;
+  const char *cand[SCENE_MAX_ANIMS];
+  int n = 0;
+  for (int i = 0; i < g_scAnimN; i++)
+    if (!strcmp(g_scAnim[i].act, act) && !sceneAnimPinned(g_scAnim[i].key))
+      cand[n++] = g_scAnim[i].key;
+  return sceneHoldPick(0, act, cand, n);
 }
 static int sceneActMark(const char *act) {
   if (!act || !act[0]) return -1;
@@ -869,11 +989,13 @@ static const char *sceneAnywhereAnim(void) {
 // to what it COUNTS AS, so "feeling happy" answers for love and nothing else does.
 static const char *sceneAnywhereActAnim(const char *act) {
   if (!act || !act[0]) return NULL;
-  int cand[SCENE_MAX_ANIMS], n = 0;
+  // first-wins for the same reason sceneActAnim is - the tool's rule is `find`, and a per-frame
+  // re-roll here would strobe an "anywhere" feeling exactly the same way
+  const char *cand[SCENE_MAX_ANIMS];
+  int n = 0;
   for (int i = 0; i < g_scAnimN; i++)
-    if (g_scAnim[i].anywhere && !strcmp(g_scAnim[i].act, act)) cand[n++] = i;
-  if (!n) return NULL;
-  return g_scAnim[cand[esp_random() % (uint32_t)n]].key;
+    if (g_scAnim[i].anywhere && !strcmp(g_scAnim[i].act, act)) cand[n++] = g_scAnim[i].key;
+  return sceneHoldPick(2, act, cand, n);
 }
 
 // Is this point on the floor the child drew? True when the scene gave no polygon, so a scene
@@ -955,6 +1077,36 @@ static void sceneFloorClamp(int *x, int y) {
 // spot. The choice is the SIM's, not the builder's: a child marks every place the cat is allowed
 // to settle and which one she picks today stays a small surprise.
 static int g_scCatLast = -1;
+// WHERE SHE MAY SLEEP IS WHEREVER HE MAY SIT OR SLEEP (Jon, 2026-08-22: "i want her to be able
+// to sleep anywhere he can sleep or sit"). scene.cat.sleep[] still wins when a world declares it,
+// but the assembler has never exported that block - every room of Penguin Life ships no cat object
+// at all - so without this she fell back to a constant measured off the COMPILED-IN farmhouse and
+// ignored the couch, the rug and the beanbag the child actually placed.
+//
+// Only this room's marks, which is automatic: g_scBun holds the loaded scene, and she is dismissed
+// at the door before it changes (catDismissIfAway).
+static int sceneRestSpots(int16_t *xs, int16_t *ys, int maxN) {
+  int n = 0;
+  for (int m = 0; m < g_scBunN && n < maxN; m++)
+    for (int i = 0; i < g_scAnimN; i++) {
+      if (strcmp(g_scAnim[i].key, g_scBun[m].anim)) continue;
+      if (!strcmp(g_scAnim[i].act, "sit") || !strcmp(g_scAnim[i].act, "sleep")) {
+        xs[n] = g_scBun[m].x; ys[n] = g_scBun[m].y; n++;
+      }
+      break;                       // that mark's animation is known; next mark
+    }
+  return n;
+}
+// Is there anywhere in this room she could sleep? Asked by catDecide() before REST is even on
+// the table. It used to ask only about scene.cat.sleep[] and perches - neither of which the
+// assembler exports - so in a child-built world REST scored -1 and she could NEVER choose to
+// rest: she came in, was made a fuss of, and left again (Jon, 2026-08-22: "she just came in and
+// nuzzled the penguin and then left"). Teaching catPickSpot about his marks was not enough on
+// its own; the decision has to know they exist.
+static bool sceneHasRestSpot() {
+  int16_t xs[4], ys[4];
+  return sceneRestSpots(xs, ys, 4) > 0;
+}
 static bool sceneCatSpot(float *x, float *y) {
   sceneEnsure();
   if (!g_scOK || g_scCatN == 0) return false;

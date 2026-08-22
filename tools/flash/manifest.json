@@ -1,0 +1,19 @@
+{
+  "name": "bunbun",
+  "version": "0.1.291",
+  "home_assistant_domain": null,
+  "new_install_prompt_erase": true,
+  "builds": [
+    {
+      "chipFamily": "ESP32-S3",
+      "parts": [
+        { "path": "images/bootloader.bin",        "offset": 0 },
+        { "path": "images/partition-table.bin",   "offset": 32768 },
+        { "path": "images/ota_data_initial.bin",  "offset": 102400 },
+        { "path": "images/app.bin",               "offset": 131072 },
+        { "path": "images/storage.bin",           "offset": 8519680 },
+        { "path": "images/starter.pak",           "offset": 12713984 }
+      ]
+    }
+  ]
+}

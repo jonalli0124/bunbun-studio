@@ -383,6 +383,16 @@
     </div>
 
     <div class="panel">
+      <h2 style="margin:0 0 9px;font-size:16px;letter-spacing:.02em;color:#4b3f63">What he says
+        <span style="font-weight:400;font-size:12.5px;color:#8a8296">&mdash; his words for the things that happen in this room</span></h2>
+      <div class="hint" style="margin:0 0 8px">Write more than one and he picks between them.
+        Leave a moment blank and he uses his own words, shown in grey. These belong to
+        <b id="linesRoom">this room</b> &mdash; another room can say something different.</div>
+      <div id="linesList"></div>
+      <div class="hint" id="linesCount" style="margin-top:7px"></div>
+    </div>
+
+    <div class="panel">
       <h2 style="margin:0 0 9px;font-size:16px;letter-spacing:.02em;color:#4b3f63">What the device gets <span style="font-weight:400;font-size:12.5px;color:#8a8296">&mdash; the exact scene your bunbun receives</span></h2>
       <label id="outToggle">what the device will be told</label>
       <pre id="out" style="max-height:none;overflow:auto"></pre>
@@ -505,6 +515,52 @@ const SKEY=(()=>{ try{
   const tag=new URLSearchParams(location.search).get('sandbox');
   return 'bunbun-scene-tool-autosave'+(tag?('--'+tag.replace(/[^a-z0-9_-]/gi,'')):'');
 }catch(e){ return 'bunbun-scene-tool-autosave' } })();
+// ...AND IT MUST NOT SPEND THE REAL QUOTA EITHER. A sandbox key kept a test off the child's
+// work, which was the point - but it still wrote ~1MB per session into the SAME localStorage,
+// and those keys outlive the tab. Measured 2026-08-22: 21 leftover sandbox keys held 7.79 MB of
+// a 10.41 MB quota, the live autosave could not write at all, and every refresh restored a world
+// from whenever the quota filled. sessionStorage dies with the tab, so a test cannot litter.
+const SANDBOXED=/[?&]sandbox=/.test(location.search);
+const STORE=(()=>{ try{ return SANDBOXED ? sessionStorage : localStorage }
+                   catch(e){ return localStorage } })();
+// THE WORLD OUTGREW localStorage. A five-room world with its art inlined is ~1.5 MB per save and
+// grows with every room; measured 2026-08-22 it went 1.90 MB -> 3.52 MB in a day, against a hard
+// ~10 MB cap shared with everything else this origin stores. When it fills, setItem throws and a
+// refresh silently returns whoever the world was hours ago - which is how an afternoon gets lost.
+// navigator.storage.estimate() reports ~10.7 GB for IndexedDB on the same browser.
+//
+// So the autosave lives in IndexedDB and the small preferences stay in localStorage, where their
+// size never mattered. A sandbox still uses sessionStorage and never touches either.
+const BIG=(()=>{
+  let dbp=null;
+  function db(){
+    if(!dbp) dbp=new Promise((res,rej)=>{
+      const r=indexedDB.open('bunbun-scene',1);
+      r.onupgradeneeded=()=>{ try{ r.result.createObjectStore('kv') }catch(e){} };
+      r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error);
+    });
+    return dbp;
+  }
+  function tx(mode,fn){
+    return db().then(d=>new Promise((res,rej)=>{
+      const t=d.transaction('kv',mode), q=fn(t.objectStore('kv'));
+      q.onsuccess=()=>res(q.result); q.onerror=()=>rej(q.error);
+    }));
+  }
+  return { get:k=>tx('readonly',st=>st.get(k)),
+           set:(k,v)=>tx('readwrite',st=>st.put(v,k)),
+           del:k=>tx('readwrite',st=>st.delete(k)) };
+})();
+async function bigGet(k){
+  if(SANDBOXED) return STORE.getItem(k);
+  try{ const v=await BIG.get(k); if(v!=null) return v; }catch(e){}
+  try{ return STORE.getItem(k); }catch(e){ return null; }   // ...or migrate an older save
+}
+async function bigSet(k,v){
+  if(SANDBOXED){ STORE.setItem(k,v); return; }
+  await BIG.set(k,v);
+  try{ if(localStorage.getItem(k)!=null) localStorage.removeItem(k); }catch(e){}
+}
 let booting=true, saveTimer=0, _lastTod=-1;
 let passiveScale=1;
 // The character's size while doing something nobody authored - travelling between things.
@@ -527,7 +583,7 @@ const imgs={}, load=(src,k)=>new Promise(r=>{const i=new Image();
   i.onload=()=>{imgs[k]=i;r()}; i.onerror=()=>r(); i.src=src});
 
 // The scene: a room, things in it (each declaring what it affords), and where he may walk.
-let scene={room:'', objects:[], zones:[], character:{x:160,y:200,scalePercent:145}};
+let scene={room:'', objects:[], zones:[], lines:{}, character:{x:160,y:200,scalePercent:145}};
 // The animations brought in, each with one rule. The library is what you made; `on` is what
 // this room uses.
 let anims=[], asel=-1, tick=0, playing=true, lastT=0;
@@ -1071,16 +1127,22 @@ async function comeHome(){ if(roleKey()) await crossTo('', ''); }
 // for the sim only: they are never added to anims[], so they cannot be edited, moved or
 // deleted from the wrong room.
 function everywhereExtras(){
+  // UNION, NOT GAP-FILL (Jon, 2026-08-22: "i thought the answer was a union? ... i want both to
+  // work as intended"). This used to skip any act the room already had, so a home cuddle ticked
+  // "every room" was never exported into a room that owned a love of its own - the room's clip
+  // did not win a race, the traveller was simply not there. Now both are present and the pet
+  // picks between them, which is what a child means by ticking the box.
   const out=[], seen=new Set();
-  const have=new Set(anims.filter(a=>a.on).map(a=>actOfAnim(a)));
   for(const k of Object.keys(worldSlots||{})){
     try{
       const q=JSON.parse(worldSlots[k]);
       for(const a of (q.anims||[])){
         if(a.on===false || !a.everywhere || !a.clip || !SD.clips[a.clip]) continue;
-        const act=a.actAs||actOfAnim(a);
-        if(have.has(act) || seen.has(act)) continue;
-        seen.add(act);
+        // deduped by CLIP, so a move is not handed to a room twice; two DIFFERENT clips that
+        // count as the same act are the whole point and both travel
+        const id=(a.name||a.clip||'');
+        if(!id || seen.has(id)) continue;
+        seen.add(id);
         out.push(Object.assign({}, a, {rule:{anywhere:true}, fromEverywhere:true,
           character:a.character||{breathe:2,period:8,hold:1,pivot:'feet'},
           order:a.order||[], stage:a.stage||{scale:gMasterScale||100}, place:a.place||{dx:0,dy:0}}));
@@ -1118,7 +1180,9 @@ const keyOf=c=>c.a.name+'@'+(c.spot?Math.round(c.spot.x)+','+Math.round(c.spot.y
 // All four ported from main.cpp think(). Do not tune these - tune PACE.
 const WALK_PXS=42;              // main.cpp:2549  g_fx += dx/d * 42.0f * dt
 const ARRIVE_PX=4;              // main.cpp:2533  if (d < 4)
-const WAIT_MIN=18, WAIT_MAX=42; // main.cpp:2538  18-42s between journeys
+const WAIT_MIN=5, WAIT_MAX=20;  // main.cpp:4171  5-20s between journeys (Jon 8/22: the 18-42s
+// rest was tuned when a room was one room and standing still WAS the content. With five rooms,
+// a rota and a meter he has somewhere to be, and an 18s floor read as him ignoring it.
 // Not from the firmware - the firmware has four directions and never faces this problem. This
 // is the floor under the facing rule, in GAME seconds, so TEMPO does not shorten it.
 // A short DEBOUNCE against mid-leg jitter, not a commitment: a full second meant that on a leg
@@ -2063,9 +2127,37 @@ addEventListener('keydown',e=>{
     $('zFloor').classList.remove('pri'); $('zKeep').classList.remove('pri'); draw() }
   else if(e.key==='Enter'&&zdraft) closeZone();
   else if((e.key==='Delete'||e.key==='Backspace')&&osel>=0&&!scene.objects[osel].locked){
-    scene.objects.splice(osel,1); osel=-1; syncObj(); draw() }
+    forgetObject(scene.objects[osel].oid);
+    scene.objects.splice(osel,1); osel=-1; syncObj(); drawAnims(); draw() }
 });
 
+// DELETING A THING MUST NOT SILENTLY DELETE WHAT HAPPENS ON IT (Jon, 2026-08-21: "when
+// you delete an object that an animation is tied to, it deletes it in the scene viewer").
+// The animation was never deleted - its rule still named an oid that had gone, so
+// placesFor() found no spots, the ghost vanished and the sim skipped it. Identical to
+// being deleted, from the only seat that matters.
+//
+// So the tie is cleaned up out loud: the oid is dropped from every rule that names it, and
+// a move left with NOWHERE says so by name instead of disappearing. It keeps its rule
+// rather than being silently converted to "anywhere" - the child chose that it needs a
+// place, and inventing a different rule for them is the other way to lose their work.
+function forgetObject(oid){
+  if(oid==null) return;
+  const stranded=[];
+  for(const a of anims){
+    const r=a.rule; if(!r) continue;
+    let pins=r.onItems || (r.onItem!=null ? [r.onItem] : null);
+    if(!pins || !pins.includes(oid)) continue;
+    pins=pins.filter(x=>x!==oid);
+    if(pins.length){ a.rule={onItems:pins}; }
+    else { a.rule={onItems:[]}; stranded.push(a.name); }
+  }
+  if(stranded.length)
+    say(`${stranded.map(x=>'"'+x+'"').join(' and ')} ${stranded.length===1?'has':'have'} `+
+        `nowhere to happen now — the thing ${stranded.length===1?'it was':'they were'} `+
+        `on is gone. Tick another object in the list below, or set ${stranded.length===1?'it':'them'} `+
+        `to happen anywhere.`, true);
+}
 function syncObj(){
   const o=scene.objects[osel];
   $('objEdit').style.display=o?'':'none';
@@ -2110,7 +2202,9 @@ $('addBtn').onclick=async()=>{ const n=$('addSel').value; if(!SD.props[n]) retur
     scale:+(28/Math.max(d.w,d.h)).toFixed(2), opacity:100, flip:false,
     lamp:SD.props[n].kind==='light'||undefined, can:null});
   osel=scene.objects.length-1; syncObj(); draw() };
-$('objDel').onclick=()=>{ if(osel<0)return; scene.objects.splice(osel,1); osel=-1; syncObj(); draw() };
+$('objDel').onclick=()=>{ if(osel<0)return;
+  forgetObject(scene.objects[osel].oid);
+  scene.objects.splice(osel,1); osel=-1; syncObj(); drawAnims(); draw() };
 $('osz').oninput=e=>{ const o=scene.objects[osel]; if(o){o.scale=+e.target.value/100;
   $('oszl').textContent=e.target.value; draw()} };
 $('orot').oninput=e=>{ const o=scene.objects[osel]; if(o){o.rot=+e.target.value;
@@ -2171,6 +2265,97 @@ $('zShowAll').onclick=()=>{
   draw() };
 $('zClose').onclick=closeZone;
 $('zDel').onclick=()=>{ if(zsel>=0){ scene.zones.splice(zsel,1); zsel=-1; syncRule(); draw() } };
+
+// ---- what he says, the sixteen moments ----
+// These keys are read by sceneLine() in components/bunbun/scene.h; the stock strings are the
+// firmware's own fallbacks, copied here so a blank box can SHOW what he would say instead of
+// implying silence. Key and text are capped at that struct's char[10]/char[44] less the NUL,
+// and the firmware holds 24 lines per room in total, counting every variant.
+const MOMENT_KEY_MAX=9, MOMENT_TXT_MAX=43, MOMENT_TOTAL_MAX=24;
+const MOMENTS=[
+  ['eat',      'after a meal',            'bunbun ate a meal'],
+  ['full',     'when he is full',         'bunbun is full'],
+  ['bath',     'after a bath',            'bunbun took a bath'],
+  ['mess',     'when he makes a mess',    'bunbun made a mess'],
+  ['love',     'when he is loved',        'bunbun loves this'],
+  ['cuddle',   'a cuddle',                'cuddles!'],
+  ['bed',      'off to bed',              'bunbun is off to bed'],
+  ['tuckin',   'tucking himself in',      'bunbun tucked himself in for the night'],
+  ['wake',     'waking up',               'bunbun woke up'],
+  ['refresh',  'waking up refreshed',     'bunbun woke up refreshed!'],
+  ['morning',  'a whole night slept',     'good morning! bunbun slept the whole night'],
+  ['home',     'coming home',             'bunbun came home! he missed you so much'],
+  ['workdone', 'work finished',           'work is all done!'],
+  ['workhome', 'heading home from work',  'work is done for today - heading home'],
+  ['cat',      'the cat arrives',         'a cat came to visit!'],
+  ['catwake',  'the cat wakes up',        'the cat woke up']
+];
+function linesOf(){ if(!scene.lines) scene.lines={}; return scene.lines; }
+function linesTotal(){ const L=linesOf(); let n=0;
+  for(const k of Object.keys(L)) n+=(L[k]||[]).filter(t=>t&&t.trim()).length; return n; }
+function esc(t){ return String(t==null?'':t).replace(/&/g,'&amp;').replace(/"/g,'&quot;')
+                       .replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function drawLines(){
+  const L=linesOf();
+  const rn=$('linesRoom'); if(rn) rn.textContent=(scene.role?('the '+scene.role):'this room');
+  const parts=[];
+  for(const m of MOMENTS){
+    const key=m[0], label=m[1], stock=m[2];
+    const vars=(L[key]&&L[key].length?L[key]:['']).slice(0,6);
+    const rows=[];
+    for(let vi=0; vi<vars.length; vi++){
+      rows.push(
+        '<div style="display:flex;gap:4px;align-items:center;margin-top:'+(vi?3:0)+'px">'+
+        '<input data-ln="'+key+'" data-vi="'+vi+'" value="'+esc(vars[vi])+'" '+
+          'placeholder="'+esc(stock)+'" maxlength="'+MOMENT_TXT_MAX+'" '+
+          'style="flex:1;min-width:80px;padding:3px 6px;font:inherit;font-size:11.5px;'+
+          'border:1px solid var(--line);border-radius:5px;background:var(--bg);color:var(--ink)">'+
+        '<button data-lnadd="'+key+'" title="another way of saying it" '+
+          'style="flex:0 0 auto;padding:2px 7px;font-size:12px">+</button>'+
+        (vars.length>1
+          ? '<button data-lndel="'+key+'" data-vi="'+vi+'" title="remove this one" '+
+            'style="flex:0 0 auto;padding:2px 7px;font-size:12px">&minus;</button>'
+          : '')+
+        '</div>');
+    }
+    parts.push('<div style="margin-bottom:8px"><div class="hint" style="margin-bottom:2px">'+
+               esc(label)+'</div>'+rows.join('')+'</div>');
+  }
+  if(setIf('linesList', parts.join(''))){
+    $('linesList').querySelectorAll('[data-ln]').forEach(function(inp){
+      // COMMIT AS THEY TYPE, exactly like the animation's own "he says" box. On 'change'
+      // alone, a redraw of this list throws away a child's half-typed sentence with no undo.
+      inp.oninput=inp.onchange=function(){
+        const k=inp.dataset.ln, vi=+inp.dataset.vi;
+        const a=(L[k]||[]).slice(); while(a.length<=vi) a.push('');
+        a[vi]=inp.value.slice(0,MOMENT_TXT_MAX);
+        if(a.every(function(t){return !t||!t.trim()})) delete L[k]; else L[k]=a;
+        drawLinesCount(); autosave(); };
+    });
+    $('linesList').querySelectorAll('[data-lnadd]').forEach(function(b){
+      b.onclick=function(){
+        const k=b.dataset.lnadd, a=(L[k]||['']).slice();
+        if(a.length>=6){ say('six ways of saying one thing is plenty'); return; }
+        if(linesTotal()>=MOMENT_TOTAL_MAX){
+          say('the device holds '+MOMENT_TOTAL_MAX+' lines a room - remove one to add another',true);
+          return; }
+        a.push(''); L[k]=a; drawLines(); autosave(); };
+    });
+    $('linesList').querySelectorAll('[data-lndel]').forEach(function(b){
+      b.onclick=function(){
+        const k=b.dataset.lndel, vi=+b.dataset.vi, a=(L[k]||[]).slice();
+        a.splice(vi,1);
+        if(a.every(function(t){return !t||!t.trim()})) delete L[k]; else L[k]=a;
+        drawLines(); autosave(); };
+    });
+  }
+  drawLinesCount();
+}
+function drawLinesCount(){
+  const n=linesTotal(), el=$('linesCount'); if(!el) return;
+  el.textContent = n ? (n+' of '+MOMENT_TOTAL_MAX+' lines used in this room')
+                     : 'he is using his own words for everything here';
+}
 
 function draw(){
   const Z=GAME.z;   // also read by drawChar/drawSim via ZOOM below
@@ -2416,7 +2601,7 @@ function draw(){
       scene.zones.splice(+b.dataset.zdel,1); zsel=-1; syncRule(); draw() });
     $('zList').querySelectorAll('[data-z]').forEach(b=>b.onclick=()=>{
       zsel=+b.dataset.z; osel=-1; syncObj(); draw() }); } }
-  drawAnims(); drawObjs(); $('out').textContent=JSON.stringify(forDevice(),null,1);
+  drawAnims(); drawObjs(); drawLines(); $('out').textContent=JSON.stringify(forDevice(),null,1);
   autosave();
 }
 
@@ -2461,8 +2646,13 @@ function setIf(id, html){
     if(el && (el.tagName==='INPUT'||el.tagName==='TEXTAREA') &&
        document.getElementById(id) && document.getElementById(id).contains(el)){
       _pendingRedraw[id]=html;
+      // The listener is {once:true}, so the guard MUST be released when it fires or the
+      // second focus on this same input registers nothing and the pending redraw is never
+      // replayed - the list keeps its stale HTML and clicking another animation looks dead
+      // (Jon, 2026-08-22: "i sometimes cant select another animation").
       if(!el._redrawGuard){ el._redrawGuard=1;
-        el.addEventListener('blur', ()=>{ const h=_pendingRedraw[id];
+        el.addEventListener('blur', ()=>{ el._redrawGuard=0;
+          const h=_pendingRedraw[id];
           delete _pendingRedraw[id]; if(h!=null) setIf(id,h); }, {once:true}); }
       return false;
     } }
@@ -2684,6 +2874,7 @@ function drawAnims(){
         <option value="wake" ${a.actAs==='wake'?'selected':''}>waking up (when he restarts)</option>
         <option value="walk_e" ${a.actAs==='walk_e'?'selected':''}>how he walks (this way &rarr;)</option>
         <option value="walk_w" ${a.actAs==='walk_w'?'selected':''}>how he walks (&larr; that way)</option>
+        <option value="work" ${a.actAs==='work'?'selected':''}>working</option>
         <option value="dance" ${a.actAs==='dance'?'selected':''}>dancing</option>
         <option value="love" ${a.actAs==='love'?'selected':''}>feeling loved (the cuddle button)</option>
         <option value="play" ${a.actAs==='play'?'selected':''}>playing</option>
@@ -3218,7 +3409,8 @@ $('freshScene').onclick=()=>{
   }
   clearTimeout(freshArm); freshArm=null;
   booting=true;                      // the autosave timer must not resurrect it on the way out
-  try{ localStorage.removeItem(SKEY) }catch(e){}
+  try{ STORE.removeItem(SKEY) }catch(e){}
+  try{ BIG.del(SKEY) }catch(e){}
   location.reload();
 };
 $('impAnim').onclick=()=>$('fAnim').click();
@@ -3239,7 +3431,12 @@ const BASE_MOVES=[
   {c:'Adult_Idle',   t:'just standing there',  i:'\u{1F9CD}', k:'do'},
   // The 'a' on a feeling is what makes it HIS: the device plays the world's own drawing
   // for a feeling it has, in every room, instead of the stock kit art (emoteClip, main.cpp).
-  {c:'Adult_Love',   t:'feeling happy',        i:'\u{1F970}', k:'feel', a:'love'},
+  // ONE WORD FOR ONE THING, and this was the last place it was broken (Jon: "love vs happy").
+  // The tooltip and the counts-as list were fixed earlier; this picker still said "feeling
+  // happy" for the very same act the dropdown beside it calls "feeling loved", so the tool
+  // contradicted itself on one screen. Adult_Happy is a SEPARATE clip in the packs and keeps
+  // the word "happy" for itself.
+  {c:'Adult_Love',   t:'feeling loved',        i:'\u{1F970}', k:'feel', a:'love'},
   {c:'Adult_Bored',  t:'being bored',          i:'\u{1F611}', k:'feel', a:'bored'},
   {c:'Adult_Tired',  t:'being sleepy',         i:'\u{1F971}', k:'feel', a:'tired'},
   {c:'Adult_Hungry', t:'being hungry',         i:'\u{1F62B}', k:'feel', a:'hungry'},
@@ -3325,7 +3522,7 @@ function drawShelf(){
     host.style.cssText='display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:6px';
     const anchor=$('impAnim');
     anchor.parentElement.insertAdjacentElement('afterend', host); }
-  let shelf=[]; try{ shelf=JSON.parse(localStorage.getItem(SHELF_KEY)||'[]') }catch(e){}
+  let shelf=[]; try{ shelf=JSON.parse(STORE.getItem(SHELF_KEY)||'[]') }catch(e){}
   const html = shelf.length
     ? '<span class="hint" style="flex:0 0 auto">fresh from Animation Creation:</span>'+
       shelf.slice(0,10).map((e,i)=>
@@ -4207,6 +4404,29 @@ function inscribedBounds(pts){
 }
 // the DEVICE scene.json - scene.h's own shape, resolved here exactly as scene_push resolves
 // it, but from this page's OWN numbers (its art is 1:1 pngs, so no k/pad archaeology)
+// WHERE THIS MOVE IS ALLOWED TO HAPPEN, in words.
+//
+// placesFor() resolves every rule into bare x/y marks and the rule itself is then thrown
+// away, so a device scene can say "there is a mark at 242,195" but never "this is the sitting
+// animation tied to the beanbag chair". That is exactly the question someone asks when a
+// world has three moves called "sitting dow2" (Jon 2026-08-22: "in case someone wasnt very
+// clear with their naming convention or if it is a copy").
+//
+// Sent as a short human string rather than ids, because the reader is a person and the ids
+// mean nothing off this page.
+function whereWords(a){
+  const r=a&&a.rule; if(!r) return '';
+  if(r.anywhere) return 'anywhere he stands';
+  const pins=r.onItems||((r.onItem!=null)?[r.onItem]:null);
+  if(pins){
+    ensureOids();
+    const nm=scene.objects.filter(q=>pins.includes(q.oid)).map(q=>nice(q.object));
+    return nm.length ? ('at the '+nm.slice(0,3).join(' or the ')) : 'at an item that is gone';
+  }
+  if(r.inArea!=null){ const z=areaOf(r.inArea); return z ? ('in '+areaLabel(z)) : 'in an area that is gone'; }
+  if(r.needs) return 'at anything for '+nice(r.needs);
+  return '';
+}
 function deviceScene(animPlan){
   const out={name:((($('sceneName')&&$('sceneName').value)||scene.room||'scene').slice(0,20))};
   if(scene.room) out.room='rooms/room-'+scene.room;
@@ -4281,6 +4501,25 @@ function deviceScene(animPlan){
    }}
   out.env=env;
   if(travelScale>0) out.ts=+travelScale.toFixed(3);   // the master dial, for the device's walker
+  // HIS OWN WORDS. The firmware has read scene.lines since the day it was written -
+  // sceneLine() is called at 18 moments - but nothing ever WROTE the block, so every device
+  // in the world reported "lines: 0" and quietly fell back to the stock strings. A feature
+  // that shipped on one side of the wire only. A moment carries a string, or an array when
+  // the child wrote more than one and he should pick between them.
+  {const L=scene.lines||{}, outL={};
+   let n=0;
+   for(const m of MOMENTS){
+     const key=m[0];
+     const vars=(L[key]||[]).map(function(t){return String(t||'').trim().slice(0,MOMENT_TXT_MAX)})
+                            .filter(Boolean);
+     if(!vars.length) continue;
+     if(n+vars.length>MOMENT_TOTAL_MAX){
+       say('the device holds '+MOMENT_TOTAL_MAX+' lines a room - "'+key+'" stayed home',true);
+       continue; }
+     n+=vars.length;
+     outL[key.slice(0,MOMENT_KEY_MAX)] = vars.length===1 ? vars[0] : vars;
+   }
+   if(n) out.lines=outL;}
   return out;
 }
 function pakNameFor(objectName){
@@ -4308,8 +4547,10 @@ async function buildPortPayload(setB, takenSlugs, extras){
     // ...plus any move flagged "every room" elsewhere in the world, for the feelings this
     // room has nothing of its own for. The child keeps ONE copy; the rooms are filled in here.
     const mine=anims.filter(a=>a.on);
-    const haveAct=new Set(mine.map(a=>actOfAnim(a)));
-    const on=mine.concat((extras||[]).filter(x=>!haveAct.has(actOfAnim(x))));
+    // the same union the preview shows - filtered by CLIP so a room never gets the same move
+    // twice, but never by ACT, which is what used to drop the traveller on the floor
+    const mineNames=new Set(mine.map(x=>(x.name||x.clip||'')));
+    const on=mine.concat((extras||[]).filter(x=>!mineNames.has(x.name||x.clip||'')));
     // NOTHING IS TRIMMED SILENTLY (council 8/17: "a child would just see the thing
     // missing"). Every cap says what did not fit, by name, before the port continues.
     // 14 authored + the two walks the export adds = the device's 16
@@ -4355,6 +4596,15 @@ async function buildPortPayload(setB, takenSlugs, extras){
       plan.anims.push({k:key, f:'canim/'+slug, n:n, act:act.slice(0,7),
         ...(a.dur>0?{dur:+(+a.dur).toFixed(1)}:{}),
         ...(a.says?{txt:a.says.slice(0,42)}:{}),
+        // FOR THE HUMAN, NOT THE FIRMWARE. The slug is the child's own name shortened to fit
+        // the pak's 13-character namespace, so "sitting dow2" and "sitting down" are two
+        // different moves whose names no longer distinguish them. nm is what they actually
+        // called it, src is the art it was built on, and whr is the rule placesFor() is about
+        // to dissolve into bare coordinates. cJSON ignores keys scene.h does not name, so the
+        // device parses this scene exactly as before.
+        ...(a.name?{nm:String(a.name).slice(0,28)}:{}),
+        ...(a.clip?{src:String(a.clip).slice(0,30)}:{}),
+        ...(whereWords(a)?{whr:whereWords(a).slice(0,40)}:{}),
         ...(a.depth==='behind'?{dp:1}:{}),
         fps:+Math.min(24,Math.max(0.5,(a.fps||7)/Math.max(1,a.character.hold||1))).toFixed(2), m:0,
         ...(isAnywhere(a)?{aw:1}:{}),
@@ -4694,16 +4944,35 @@ async function exportDevicePackage(){
     // clouds but i dont see them").
     const wx={raining, clouding, cloudN, cloudStyle, starsOn, starN,
               todMin, todOn, lampMode, lightScale};
+    // THE NAME IS WORLD-LEVEL TOO, and it had exactly the bug the sky had. Each slot carries
+    // the name it was last saved under, restore() replays it into the input, and buildPortPayload
+    // reads that input - so a world renamed "Penguin Life" shipped four rooms still called
+    // "Cat Life". Pin the live name over every room the same way the weather is pinned.
+    const wxName=($('sceneName')&&$('sceneName').value)||'';
     const pinWx=()=>{ ({raining, clouding, cloudN, cloudStyle, starsOn, starN,
-                       todMin, todOn, lampMode, lightScale}=wx); };
-    // gathered before the loop so every room sees the same list, and deduped by act so two
-    // rooms both flagging a love do not both travel
-    const everywhere=[]; { const byAct=new Set();
+                       todMin, todOn, lampMode, lightScale}=wx);
+                      if($('sceneName')) $('sceneName').value=wxName; };
+    // Gathered before the loop so every room sees the same list, deduped by CLIP.
+    //
+    // It used to dedupe by ACT, which quietly defeated the whole union: only the FIRST
+    // everywhere-clip for an act was collected world-wide, and when that clip's OWN room came to
+    // be packed it was already in `mine` and got filtered straight back out - so the room that
+    // supplied the traveller received nothing, and no second clip for that act ever travelled at
+    // all. Jon, having refreshed, re-exported and re-installed: "i refreshed exported and
+    // imported and no luck. its on the outside right now". Two rooms both flagging a love is not
+    // a conflict to resolve here; it is two moves, and the device varies between them.
+    // Identity is the MOVE'S NAME, not a.clip. Deduping by clip looked right and was wrong:
+    // `clip` is the SOURCE animation, and two different authored moves are routinely built on
+    // one - Jon's outside "feeling happy" and his home "penguin Adult Love" are both drawn from
+    // penguin:Adult_Love, with different layers, duration and intent. Keying on clip made the
+    // traveller look like a duplicate of the room's own move and it was dropped on arrival.
+    const everywhere=[]; { const seenName=new Set();
       for(const rk of roles){
         try{ const q=JSON.parse(keepW[rk]);
           for(const a of (q.anims||[])) if(a.on!==false && a.everywhere){
-            const k=(a.actAs||actOfAnim(a)); if(byAct.has(k)) continue;
-            byAct.add(k); everywhere.push(a);
+            const id=(a.name||a.clip||'');
+            if(!id || seenName.has(id)) continue;
+            seenName.add(id); everywhere.push(a);
           }
         }catch(e){}
       } }
@@ -5195,7 +5464,13 @@ function histPush(j){
   if(applying) return;
   if(histAt>=0 && hist[histAt]===j) return;
   hist=hist.slice(0, histAt+1); hist.push(j);
-  if(hist.length>60) hist.shift();
+  // BY WEIGHT, NOT BY COUNT. 60 snapshots was written when a scene was one room and a snapshot
+  // was a few KB. A five-room world with inlined art is ~1.5 MB per snapshot, so the cap meant
+  // up to 93 MB of strings held live - which is what made the editor stop responding to a click
+  // on another animation. Keep a budget instead: a small world still gets deep undo, a big one
+  // stays usable. Always keep at least 3 states, however heavy.
+  let hb=0; for(const q of hist) hb+=q.length;
+  while(hist.length>3 && (hb>8e6 || hist.length>60)){ hb-=hist[0].length; hist.shift(); }
   histAt=hist.length-1;
   histButtons();
 }
@@ -5208,7 +5483,7 @@ async function applyHist(j){
   applying=true; booting=true;
   try{ await restore(j) }catch(e){ console.warn('undo failed', e) }
   booting=false; applying=false;
-  try{ localStorage.setItem(SKEY, j) }catch(e){}
+  bigSet(SKEY, j).catch(()=>{ try{ STORE.setItem(SKEY, j) }catch(e){} });
   syncRule(); syncObj(); draw(); histButtons();
 }
 async function undoStep(){ if(histAt>0){ histAt--; await applyHist(hist[histAt]) } }
@@ -5230,15 +5505,19 @@ function autosave(){ if(booting||saveTimer) return;
     // ran out of room the autosave simply stopped and the child's work looked thrown away -
     // which is exactly how it feels when a refresh brings back an older world. Say it once,
     // and say what to do about it.
-    try{ localStorage.setItem(SKEY,j); quotaWarned=false; }
-    catch(e){
-      if(!quotaWarned){
-        quotaWarned=true;
-        say('this browser is out of room, so your work is NOT being saved automatically — '+
-            'press \u{1F4BE} Save scene now to put it in a file', true);
+    // TO INDEXEDDB, not localStorage: a growing world outran the ~10 MB cap (see BIG above).
+    // The warning below still matters - IndexedDB can be evicted or denied too - and it now
+    // repeats, because latching it to once meant one toast, easily missed, then silence for
+    // the rest of the session while nothing saved.
+    bigSet(SKEY,j).then(()=>{ quotaWarned=0; }).catch(e=>{
+      const now=Date.now();
+      if(!quotaWarned || now-quotaWarned>30000){
+        quotaWarned=now;
+  say('this browser is out of room, so your work is NOT being saved automatically — '+
+  'press \u{1F4BE} Save scene now to put it in a file', true);
       }
-    } }, 1000) }
-let quotaWarned=false;
+    }); }, 1000) }
+let quotaWarned=0;
 
 async function restore(raw){
   const p=JSON.parse(raw);
@@ -5415,7 +5694,7 @@ async function restore(raw){
   // READ FIRST. draw() autosaves, and boot's own draw would otherwise wipe the save before
   // this line ever looked at it - the exact bug the editor hit.
   let raw=null, failed=false;
-  try{ raw=localStorage.getItem(SKEY) }catch(e){}
+  try{ raw=await bigGet(SKEY) }catch(e){}
   await load(SD.rooms[scene.room],'room|'+scene.room);
   if(raw){
     try{
@@ -5784,7 +6063,7 @@ async function restore(raw){
     clearInterval(timer); point(null); at=-1;
     $c('coachCard').style.display='none';
     $c('coachOpen').style.display='block';
-    try{ localStorage.setItem(KEY,'1') }catch(e){}
+    try{ STORE.setItem(KEY,'1') }catch(e){}
     if(done) say('that is the whole thing \u2014 press \u{1F393} Show me how any time');
   }
   // next moves exactly one step from the card ON SCREEN, and cancels any advance the
@@ -5816,7 +6095,7 @@ async function restore(raw){
   {const tb=document.getElementById('tourBtn');
    if(tb) tb.onclick=()=>{ chapterMenu(); window.scrollTo({top:0,behavior:'smooth'}); };}
   // first visit only: a room nobody has touched yet
-  let seen=false; try{ seen=!!localStorage.getItem(KEY) }catch(e){}
+  let seen=false; try{ seen=!!STORE.getItem(KEY) }catch(e){}
   const untouched=!(scene.objects||[]).length && !anims.length;
   if(!seen && untouched) setTimeout(()=>show(0), 900); else $c('coachOpen').style.display='block';
 })();
@@ -5863,7 +6142,7 @@ async function restore(raw){
   const cellX=c=>OX+c*(W+GAP);
   const cellY=r=>OY+r*(H+NAME+GAP)+NAME;      // the name sits in the space above
   const KEY='bunbun-homemap'+((SKEY.match(/--(.+)$/)||[])[0]||'');
-  let on=false; try{ on=localStorage.getItem(KEY)==='1' }catch(e){}
+  let on=false; try{ on=STORE.getItem(KEY)==='1' }catch(e){}
   function roomOf(role){                       // which picture that room wears
     try{
       if(role===roleKey()) return scene.room;
@@ -6029,7 +6308,7 @@ async function restore(raw){
   function show(v){
     on=v; box.style.display=v?'block':'none';
     btn.style.background=v?'#8a6ee6':'#fff'; btn.style.color=v?'#fff':'';
-    try{ localStorage.setItem(KEY, v?'1':'0') }catch(e){}
+    try{ STORE.setItem(KEY, v?'1':'0') }catch(e){}
     if(v) paint();
   }
   // ride the room view's own top-right corner

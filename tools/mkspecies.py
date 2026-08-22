@@ -41,6 +41,12 @@ SCALE = 0.5    # default; overridden by argv[2]
 # ANIMS folder -> (frame count, source recipe). A recipe is either
 #   ("anim", "Clip_Name")            numbered frames 00.png.., padded/truncated to count
 #   ("rot",  "Clip_Name", "south")   one rotation view, repeated count times
+#
+# A clip name may also be a TUPLE of alternatives, best first: the first one the pack
+# actually has wins. Packs are not uniform - the cat has an Adult_Play nobody else has, the
+# croc has no Adult_Happy - and before this, one name meant one substitution for everybody,
+# so the richest pack was levelled down to the poorest. Now a pack contributes whatever it
+# has and only falls back when it must.
 SPEC_ADULT = {
     "idle-anim":        (5, ("rot",  "Adult_Idle", "south")),
     "adult-idle-n":     (1, ("rot",  "Adult_Idle", "north")),
@@ -58,7 +64,17 @@ SPEC_ADULT = {
     "sick-anim":        (5, ("anim", "Adult_Sick")),
     "angry-anim":       (5, ("anim", "Adult_Angry")),
     "love-anim":        (5, ("anim", "Adult_Love")),
-    "play/anim":        (9, ("anim", "Adult_Love")),            # no play clip yet: love loops
+    # PLAY IS NOT LOVE. This said "no play clip yet: love loops", and it was accurate when it
+    # was written - but it meant pressing PLAY and pressing CUDDLE produced the identical
+    # animation on every animal, which reads as a broken button rather than as a substitution.
+    # The cat has had a real Adult_Play since 2026-08-18 and it never reached a device.
+    "play/anim":        (9, ("anim", ("Adult_Play", "Adult_Happy", "Adult_Love"))),
+    # ADULT_HAPPY WAS PAID FOR AND MAPPED TO NOTHING. Seven frames, in five of the six packs,
+    # generated on 2026-08-18 and never once installed on a device because no recipe named it.
+    # The Scene Assembler has always offered it as "dancing"; the stock kit had no dance clip
+    # at all, so emoteClip("dance", ...) fell through to jump - which is itself the idle pose
+    # with an arc transform. So dancing, jumping and standing still were one image.
+    "dance/anim":       (7, ("anim", ("Adult_Happy", "Adult_Love"))),
     "adult-cuddle":     (9, ("anim", "Adult_Love")),
 }
 SPEC_BABY = {
@@ -116,20 +132,30 @@ def main():
     # below as the record of how the baby set was built, but nothing generates it any
     # more - regenerating a pack used to quietly put all 25 baby clips back.
     for folder, (count, recipe) in SPEC_ADULT.items():
-        clip = src / recipe[1]
-        if not clip.is_dir():
-            missing.append(f"{folder} <- {recipe[1]} (clip not in the pack)")
+        # best-first: the first alternative this pack actually carries
+        names = recipe[1] if isinstance(recipe[1], tuple) else (recipe[1],)
+        clip, chosen = None, None
+        for nm in names:
+            if (src / nm).is_dir():
+                clip, chosen = src / nm, nm
+                break
+        if clip is None:
+            missing.append(f"{folder} <- {'/'.join(names)} (clip not in the pack)")
             continue
+        # SAY WHEN A SUBSTITUTION HAPPENS. A silent fallback is how "play" was the love clip
+        # on every animal for four days without anyone being told.
+        if chosen != names[0]:
+            print(f"    {folder}: no {names[0]}, using {chosen}")
         if recipe[0] == "rot":
             f = clip / f"{recipe[2]}.png"
             if not f.exists():
-                missing.append(f"{folder} <- {recipe[1]}/{recipe[2]} (rotation missing)")
+                missing.append(f"{folder} <- {chosen}/{recipe[2]} (rotation missing)")
                 continue
             frames = [f] * count
         else:
             nums = sorted(clip.glob("[0-9][0-9].png"))
             if not nums:
-                missing.append(f"{folder} <- {recipe[1]} (no numbered frames)")
+                missing.append(f"{folder} <- {chosen} (no numbered frames)")
                 continue
             frames = [nums[i % len(nums)] if i >= len(nums) else nums[i] for i in range(count)]
         dest = out / folder

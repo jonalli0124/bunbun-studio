@@ -59,6 +59,20 @@ _sh.copyfile(os.path.join(HERE, "device_import.html"),
              os.path.join(BUILD, "builder.html"))
 print("    builder.html  %.2f MB   (device page - run: py tools/deploy_builder.py --push)"
       % (os.path.getsize(os.path.join(BUILD, "builder.html")) / 1e6))
+# ...AND INTO THE FIRMWARE IMAGE. data/ is what CMake bakes into storage.bin
+# (spiffs_create_partition_image, CMakeLists.txt), so a page that only ever arrives over
+# POST /api/fs/upload exists on exactly the hosts somebody remembered to push to - which is
+# how a freshly flashed board came to serve the 486-byte "No builder here yet" stub. Copying
+# it here means a serial flash carries the real importer, and deploy_builder.py stays the way
+# to update a device you do not want to re-flash.
+_dw = os.path.join(HERE, os.pardir, "data", "www")
+os.makedirs(_dw, exist_ok=True)
+_sh.copyfile(os.path.join(HERE, "device_import.html"), os.path.join(_dw, "builder.html"))
+print("    data/www/builder.html            (goes into storage.bin on a serial flash)")
+# the bench page ships the same way; it is authored directly in data/www and only listed
+# here so the build says out loud what a serial flash will carry.
+if os.path.exists(os.path.join(_dw, "control.html")):
+    print("    data/www/control.html            (the /control bench page)")
 # the attach editor takes raw JSON, so wrap it into the global the page reads
 raw = io.open(os.path.join(BUILD, "attach_data.json"), encoding="utf-8").read()
 io.open(os.path.join(BUILD, "_attach_data.js"), "w", encoding="utf-8").write(
@@ -68,6 +82,14 @@ inline("scene_shell.html", "/*SCENE_DATA*/", "scene_data.js", "playhouse.html")
 inline("scene_tool.html", "/*ATTACH_DATA*/", "_attach_data.js", "scene_tool.html")
 inline("anchor_editor.html", "/*ANCHOR_DATA*/", "anchor_data.js",
        "anchor_editor.html")
+
+# THE FRONT DOOR. It carries no baked data, so it is a straight copy rather than an inline() -
+# but it still belongs in tools/build/ next to the pages it links, because relative hrefs are
+# the whole point: studio.html sitting beside scene_tool.html means the links work from a file://
+# open, from `py tools/build.py --serve`, and from a published copy, with nothing configured.
+_sh.copyfile(os.path.join(SRC, "studio.html"), os.path.join(BUILD, "studio.html"))
+print("    studio.html   %.2f MB   (the front door - open this one)"
+      % (os.path.getsize(os.path.join(BUILD, "studio.html")) / 1e6))
 
 print("\nBuilt into tools/build/ - open either .html directly, or publish it.")
 
@@ -125,6 +147,7 @@ if "--serve" in sys.argv:
     socketserver.TCPServer.allow_reuse_address = True
     with socketserver.TCPServer(("", port), handler) as httpd:
         print(f"\nserving {BUILD}")
+        print(f"  http://localhost:{port}/studio.html   <- start here")
         print(f"  http://localhost:{port}/attach_editor.html")
         print(f"  http://localhost:{port}/playhouse.html")
         print("ctrl-c to stop")

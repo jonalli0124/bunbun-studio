@@ -57,3 +57,102 @@ does nothing until `build.py` runs. If a sprite looks wrong, rebuild before debu
 published viewer. Both pages route saves through `claude.use("downloads")` and fall back to a
 link when running locally. If you add a new save button, route it the same way or it will
 silently do nothing for anyone opening the link.
+
+---
+
+# Bringing a bunbun up to date
+
+Written 2026-08-21, after doing it to D468 live — it was 55 versions behind, on
+`0.1.236`, with no `/build` page at all. Asked twice in one evening, so it belongs here.
+
+## 0. Read the pet FIRST
+
+    http://bunbun-XXXX.local/api/system/info
+
+Write down `pet_age_min`, `pet_phase`, `pet_stage`, `species_id`. **Those four must match
+afterwards.** That is the whole contract; everything below is safe only because of it.
+`XXXX` is the last four of the MAC. If mDNS will not resolve, find the IP on the router —
+`arp -a` and probing `/api/system/info` across the subnet finds it in seconds.
+
+## 1. It will NOT fix itself
+
+**Nothing updates itself any more.** Devices used to pull `firmware/approved.json` overnight and
+install anything newer; that machinery is gone from the shipping image (`BUNBUN_PUBLIC_BUILD`,
+now the repo default). Verify it on any binary you are about to flash — config can drift, a
+scan cannot:
+
+    py -c "import io;b=io.open('build-freenove/airplay2-receiver.bin','rb').read();print(b.count(b'approved.json'))"
+
+Zero is what you want. Every update below is deliberate and by hand, which is the point: no
+device changes behaviour overnight while a child is asleep in the room with it.
+
+## 2. Firmware
+
+    POST build-freenove/airplay2-receiver.bin -> http://<ip>/api/ota/update
+
+It reboots itself and answers `"Firmware update complete, rebooting now!"` before it
+goes. Re-read the pet. **Check the silicon first if you have any doubt**: `free_heap`
+above ~6 MB means PSRAM, i.e. an S3 board. A plain ESP32 CYD has no PSRAM and this image
+would brick it.
+
+## 3. The build page
+
+    py tools/deploy_builder.py --push <ip>
+
+Old units serve an old `/build`, and it matters: D468 had a **486-byte stub** where the
+25 KB importer should be, and 6D1C was serving a copy that rejected every modern package
+with *"the package file looks cut short"*. The script re-fetches and compares, so you
+know it landed.
+
+## 4. The world
+
+Export a `.bunbun` from the Assembler and give it to `http://<ip>/build`. That carries
+the scene **and** the animal's kit, so it also cures stale or mis-scaled species art.
+
+Note this restarts the device on purpose — `/api/ota/assets` writes the pak and calls
+`esp_restart()`. A `reset_reason 3` (software) right after an install is the design, not a
+crash.
+
+## Backup before you write
+
+    py tools/package_from_device.py bunbun-XXXX.local backup.bunbun
+
+Rebuilds a `.bunbun` from the five scenes in SPIFFS plus the art they name. Worth doing
+before step 4 on any unit that matters. That write erases as much of the art partition as the
+upload is long, in one blocking call, and the renderer stand-down (`fw_assets_writing()`) is
+**never raised on this path in any build** - `s_art_writing` is set only by the fleet art
+fetcher, so a `/build` install has always drawn from flash that is being erased underneath it.
+
+## The visiting cat
+
+If she never appears, it is almost certainly not her timer — **her art is missing.** The nine
+clips live in the shipped pak; no world package carries them, and installing a world REPLACES the
+pak. So a device brought up the way this page describes has no cat art at all, and `drawCat()`
+fails and returns silently: she walks in, sits, naps and leaves completely invisible.
+
+Check:
+
+    curl -s http://<ip>/api/ota/assets --output pak.bin
+    py -c "import io;print(io.open('pak.bin','rb').read().count(b'cat-walk'))"
+
+Zero means she is missing. Fix it by dropping `tools/build/visitors/cat.bunbun` on
+`http://<ip>/build` — it adds her art and changes nothing else: not the world, not the
+animal, not the pet. Build it with `py tools/make_visitors_package.py`.
+
+## World package vs species package — they do different jobs
+
+This cost an evening, so it is worth being explicit:
+
+| | carries the animal's frames | sets the pet's species |
+|---|---|---|
+| **world** `.bunbun` from the Assembler | yes | **no** (until 0.1.291) |
+| **species** `.bunbun` from `tools/build/species/` | yes, that animal only | yes |
+
+Before 0.1.291 a pet could stand in a penguin world, with 90 penguin frames in the pak,
+and still draw as the **base bunny** for anything the world had no clip of — because
+`pa()` only prefixes with the species when `species_idx != 0`. It showed up as a
+one-second bunny every fifteen seconds: the spontaneous joy hop, which no world authors.
+
+From 0.1.291 the pet **adopts** the animal his world declares, provided the pak really
+carries it. If you are on older firmware, install the matching species package.
+
