@@ -3319,14 +3319,39 @@ static void think(float dt) {
     const int ci = (S.species_idx < CHARACTERS_N) ? S.species_idx : 0;
     const char *mine = CHARACTERS[ci].id ? CHARACTERS[ci].id : "";
     if (strcmp(g_scAnimal, mine) != 0) {
-      static uint32_t saidMix = 0;
-      if (!saidMix || millis() - saidMix > 60000) {
-        saidMix = millis();
-        char line[96];
-        snprintf(line, sizeof(line),
-                 "this world was made for the %s - give bunbun the %s so he fits in it",
-                 g_scAnimal, g_scAnimal);
+      // ...AND IF THE ART IS ALREADY HERE, HE JUST BECOMES IT. A WORLD package carries the
+      // animal's frames but never touched S.species_idx - only a SPECIES package did that -
+      // so a pet could stand in a penguin world, with 90 penguin frames sitting in the pak,
+      // and still reach for the BASE pack every time the world had no clip of its own.
+      // Jon hit this three times in fifteen minutes: "he just became a bunny for a second",
+      // then again, then "hes a bunny in dance mode". Every one was pa("jump") resolving to
+      // the bunny because species_idx was still 0.
+      //
+      // The warning below was right about the diagnosis and useless as a remedy. If the pak
+      // really carries that animal - checked, not assumed - adopting it is what the child
+      // meant by sending the world. If the frames are NOT there the warning still stands,
+      // because then there genuinely is nothing to wear.
+      int want = -1;
+      for (int i = 1; i < CHARACTERS_N; i++)
+        if (!strcasecmp(CHARACTERS[i].id, g_scAnimal)) { want = i; break; }
+      char probe[40];
+      snprintf(probe, sizeof(probe), "%s/idle-anim/0", g_scAnimal);
+      if (want > 0 && pakFind(probe)) {
+        S.species_idx = (uint8_t)want;
+        saveState();
+        char line[64];
+        snprintf(line, sizeof(line), "%s is a %s now", petName(), g_scAnimal);
         say(line);
+      } else {
+        static uint32_t saidMix = 0;
+        if (!saidMix || millis() - saidMix > 60000) {
+          saidMix = millis();
+          char line[96];
+          snprintf(line, sizeof(line),
+                   "this world was made for the %s - give bunbun the %s so he fits in it",
+                   g_scAnimal, g_scAnimal);
+          say(line);
+        }
       }
     }
   }

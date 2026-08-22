@@ -121,3 +121,74 @@ Note the lamppost bakes in on the right edge; a keep-out or prop-home can respec
 ```
 soft pixel art children's game outdoor background, flat front view of a wide open empty paved platform beside a railway line, warm golden sunset sky with soft orange and pink clouds, a distant cozy little train silhouette far away on the rails at the back, a string of small warm glowing round lights hanging along the top of the back wall, a big clear open area of smooth pale gray pavement in the middle, a plain smooth flat pavement strip along the bottom with no benches and no signs, calm cozy golden-hour lighting, no people, no luggage, no benches, no clutter, no objects at all
 ```
+
+---
+
+# Fourth-run session 2026-08-21 — the BLOCKY HANDHELD set (5 rooms, 6 rolls, $0.06)
+
+Owner: *"we need pokemon themed rooms just like the gameboy game"* — then, crucially,
+*"the style not the specific gameboy look"*. The first attempt forced the DMG four-green
+palette through `color_image_base64` and produced a wireframe: every colour word in the
+prompt collapsed to one green. **Discarded.** What he meant was the LOOK of those games,
+in colour.
+
+## The style clause (prepend to any recorded room prompt; change nothing else)
+
+```
+retro handheld RPG pixel art room background in the flat blocky style of early portable console games, large chunky square tiles, hard flat blocks of colour with no gradients and no soft shading, thick dark outlines around every shape, a small tight palette,
+```
+
+...with `outline "single color black outline"`, `shading "flat shading"`,
+`detail "low detail"`, seed 7. For an outdoor room say `outdoor background` in place of
+`room background`.
+
+## Removing the doorway — WITHOUT naming it
+
+The style clause summons doorways (those games are full of them). **Do not write "no
+door"** — this file's own first-run lesson is that naming a thing summons it, and the
+bathroom baked in toilets through four attempts even with "no fixtures". State the wall
+positively instead:
+
+```
+an unbroken flat side wall on the left and an unbroken flat side wall on the right,
+```
+
+Changing the SEED to lose the door also works but costs the composition: seed 11 dropped
+the doorway and lost the tile band with it. Seed 7 plus the wall clause keeps both.
+
+## The five — all [PASS], all verified with `make_room.py check`
+
+| room | source prompt | detector result |
+|---|---|---|
+| kitchen | `kitchen-bare`, verbatim + style + walls | window x121..197 (77px), perch 159,136 |
+| bathroom | `washroom`, verbatim + style + walls | window x122..198 (77px), perch 160,124 |
+| work → **forest** | `clearing`, verbatim + style | outdoor, sky full width |
+| outside | `beach`, verbatim + style | outdoor, sky full width |
+| main | **FRESH WRITE** — farmhouse predates this log | window x111..203 (93px), perch 157,109 |
+
+The main room is the only one not descended from a recorded prompt:
+
+```
+retro handheld RPG pixel art room background in the flat blocky style of early portable console games, large chunky square tiles, hard flat blocks of colour with no gradients and no soft shading, thick dark outlines around every shape, a small tight palette, a freshly built family living room before any furniture has been moved in, completely empty, warm sage-green walls with a wooden picture rail running along them, one bright framed window on the back wall showing blue sky and clouds, warm reddish-brown wooden plank floor along the bottom, an unbroken flat side wall on the left and an unbroken flat side wall on the right, nothing moved in yet, no sofa, no table, no rug, no furniture, no objects
+```
+
+**Work became a forest** on the owner's call — *"change the work to a forest since they are
+monsters"*. The role is still `work` in firmware and still pays the discipline meter; only
+the picture and the acts inside it changed.
+
+## Why the detector check matters MORE for this style
+
+The firmware finds the window by hunting for the widest run of sky-blue columns. Blocky
+windows with hard outlines could easily scan as two narrow windows or none — and the bird,
+the rain and the night tint all hang off that result. All five were checked before
+install; none needed a re-roll. **Never install a room in a new style without running
+`make_room.py check` first.**
+
+## A rendering style has to match the CREATURE
+
+Learned the same evening: a smooth airbrushed sprite in a hard-outlined chunky-tile room
+looks pasted on. The fork is real — **chunky outlined creature + blocky rooms**, or
+**smooth shaded creature + soft rooms** — and mixing them shows. The existing flat Bruna
+cast suits the blocky rooms; the shaded direction (see `tools/GENERATION.md`) wants the
+older soft room set.
+

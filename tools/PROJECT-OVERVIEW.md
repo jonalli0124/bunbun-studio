@@ -1,9 +1,18 @@
-> **CURRENT STATE (2026-08-19)**: worlds are live on hardware end to end. The flow is
+> **CURRENT STATE (2026-08-21)**: worlds are live on hardware end to end. The flow is
 > GitHub Pages tools -> one timestamped `.bunbun` package -> the device's own `/build`
-> page (Send-to-bunbun retired; https cannot reach an http device). One animal at a time
-> via species packages on the site's animal shelf; animations carry their animal and its
-> travel kit. Adult-only is pinned in firmware. The complete feature picture lives in
-> `docs/BUNBUN-THE-GAME.md`; the shipped world rules in `tools/WORLDS-SPEC.md`'s banner.
+> page. **A world package now carries its animal's kit AND the pet adopts that animal**
+> (0.1.291), so the separate species package is only needed on older firmware. Room
+> visits were rewritten this day: the room pays a meter tick a second, owns him until it
+> is full, rotates through its own moves, and suppresses the mood it is curing — see
+> `docs/BUNBUN-THE-GAME.md` §4. The complete feature picture lives in that file; the
+> shipped world rules in `tools/WORLDS-SPEC.md`'s banner; the art-generation doctrine,
+> including the 0.5 pak contract and why `pro` beats `v3`, in `tools/GENERATION.md`.
+>
+> **Two things a new session must know before touching anything:**
+> 1. *The tool is the spec* — but the assembler is currently NOT in parity with the
+>    firmware's room-visit rules. That is the first job.
+> 2. *Read the device, do not reason about it* — decode the pak, put state on the wire.
+>    Three day-long bugs each fell in one pass once instrumented.
 
 # Bunbun: from PixelLab to a living world on the wall
 

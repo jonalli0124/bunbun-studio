@@ -135,3 +135,101 @@ durations and ticker lines make it a shift. The device plays it like anything el
   every frame for tail intrusions. Applies to dog, cat, and any future tailed species
   (fox, etc.); penguin and frog are exempt. The cure order: re-roll the same verbatim
   prompt (never naming the tail) -> inpaint the tail out -> reference-frame regeneration.
+
+## Lessons from the shaded-character run (2026-08-21, ~$2, a dozen rolls)
+
+The evening that produced Imp, and every mistake in it was mine. Read this before
+generating a character or you will repeat them.
+
+### 1. `mode="pro"` is the default for a character base, not `v3`
+
+Every pack in this repo was made with **v3**, and that was right for the FLAT Bruna cast —
+flat is what v3 does well. For a shaded, outlined creature v3 produces soft blobby output
+that **no amount of prompt wording fixes**; three rolls were spent chasing a "rendering
+problem" that was really a generator choice. `pro` got there first try.
+
+- v3: 3 generations, ~$0.02, humanoid only
+- pro: 25 generations, ~$0.17, and it accepts `body_type="quadruped"`
+- **v3 cannot do quadrupeds at all.** pro/standard take bear/cat/dog/horse/lion templates.
+- The rig changes the ANIMATION SET on offer: humanoid gives backflips and roundhouse
+  kicks; quadruped gives idle / sitting / standing / eating / drinking / walk / run —
+  nearly the bunbun clip list already.
+- pro **ignores** outline/shading/detail params. The whole style must ride in the text.
+
+### 2. `clean_sprite.py` is part of the style, not a polish step
+
+Raw PixelLab output carries 25–50 near-duplicate shades along every edge — its own
+docstring calls it quantisation noise — and **that noise is what reads as "AI generated"**.
+Every shipped pack went through `--dist 70 --keep-outline` before anyone saw it. Measured:
+31 → 6 colours, 49 → 8, 60 → 9. Judging raw output produced wrong conclusions twice in one
+evening. **Never review an uncleaned sheet.**
+
+### 3. The house style is four numbers, not adjectives
+
+Measured off a reference sprite, and worth asserting in `check_pack.py` one day:
+
+| | value |
+|---|---|
+| distinct colours | ~13 |
+| edge pixels that are very dark | **100%** — there IS a hard outline |
+| that outline's hue | a deep shade of the **body** colour, never pure black |
+| lightness steps in the body hue | 5–6, banded, not a gradient |
+| ink aspect | as wide as tall for a squat creature |
+
+Pure black in the palette is what made one roll look muddy beside another. And **material
+separation** — skin / shell / leaves each with their own 2–3 shade ramp — is what makes a
+creature read as designed rather than generated.
+
+### 4. Cute vs mischievous is six features, not a vibe
+
+Eye **shape** (round vs narrow wedge), eye **size**, mouth **width**, **stance** (tucked vs
+planted and weighted), **silhouette** (clean circle vs broken by points), and **brow
+angle**. Words like *friendly, small, round, held at the sides* are cuteness instructions —
+three accidental baby animals were generated before that was spotted.
+
+The brow is the one nobody thinks to mention and it carries the whole reading:
+**"half-lidded" produces stoned, not sly.** Sly is a wedge angled down toward the centre of
+the face with a slanted ridge above it.
+
+### 5. Rotation drift is a real defect with a threshold
+
+`clean_sprite.py` reports the bbox spread across the eight rotations and warns past 4px.
+Measured that evening: 26px on one roll, 17px on another, 5–8px on the pro rolls. A
+drifting creature visibly swells and shrinks as he turns on the device. Re-roll it — it is
+independent of whether the art is good.
+
+### 6. Make the creature fill the canvas
+
+`mkspecies` halves everything (see the contract below), so a creature drawn at 47px in a
+96px frame lands at ~23px on the device and its 1px details vanish. Say **"the creature
+fills the frame from top edge to bottom edge"**. The one roll that got that clause came
+back at 70px where its siblings were ~50.
+
+## THE PAK CONTRACT — the species kit is baked at 0.5, always
+
+The firmware sizes any frame the pack supplied with `travelFactor() = scene.ts / 0.5`.
+**The pak carries no record of what scale it was baked at**, so a kit baked at anything
+else is drawn wrong for the rest of its life.
+
+The Scene Assembler used to bake the kit at the WORLD's size, so at master 70 the kit
+shipped at 70% and the device multiplied it by 1.4 on top — the size applied twice.
+Symptoms, all one bug: *"he keeps going bigger than the default on passive animations"*,
+*"he just got bigger on his heart is full"*, *"dance mode and he is really big the whole
+time"*. **No master setting can fix it, because the error is a ratio and not an offset.**
+
+`tools/mkspecies.py` defaults to `SCALE = 0.5` for the same reason (it defaulted to 0.35,
+which contradicted the firmware).
+
+**Open gap:** nothing records the bake scale in the pak and nothing checks it at install.
+Recording it as a field and having `/build` refuse or warn on a mismatch retires this whole
+class of bug — the cheapest remaining shippability win on the list.
+
+## Slugs are one namespace for the WHOLE world
+
+`canim/<slug>/` is the animation's name cut to **13 characters**, and the pak is shared
+across every room. The dedupe set used to be created per room, so two animations in
+DIFFERENT rooms whose names agreed that far both wrote to one folder, the second one's
+frames were dropped by the already-seen guard, and one room silently performed the other's
+drawing. "penguin Adult Love" and "penguin Adult Eat (2)" both cut to `penguin-adult`,
+which is how a kitchen ate a love animation, hearts and all.
+
