@@ -12496,6 +12496,7 @@ void setup() {
   scene.setSwapBytes(true);          // the packed art is little-endian RGB565
   tickSpr.setColorDepth(16);
   tickSpr.createSprite(UI_W, TICKER_H);
+  improvPump();   // the cable is live long before the pet is
   if (!pakBegin()) {
     // W-044: a pak that won't mount is now a REPAIRABLE state, not a dead
     // end. An interrupted art update leaves exactly this (the magic sector
@@ -12512,6 +12513,7 @@ void setup() {
   }
   // Needs the index, so it runs here rather than inside pakBegin(); the walkable model reads
   // it from the first frame drawn onward.
+  improvPump();
   charMeasureBodies();
   // The stand-in outside only exists if the art for it was packed (Jon: default to the
   // meadow). Checked here rather than in scene.h because the index is what answers it.
@@ -12577,7 +12579,9 @@ void setup() {
   // path that is about to read it anyway.
   sceneActive();
   adoptWorldAnimal();
+  improvPump();                  // scene + room are the slowest stretch; stay reachable across it
   buildLightMap();               // BEFORE anything else takes the heap, or the alloc fails
+  improvPump();
   updateDimPalette();            // so the palette is valid before the first frame is drawn
                                  // (it was all zeros while the set-time screen was up)
   musicBegin(732961);            // music.mp3, flashed after the pak

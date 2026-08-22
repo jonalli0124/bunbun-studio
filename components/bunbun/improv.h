@@ -209,3 +209,20 @@ static void improvTick() {
     Serial.println("improv: could not join - wrong password, or out of range");
   }
 }
+
+// SERVICE THE CABLE WHILE setup() IS STILL WORKING.
+//
+// ESP Web Tools gives the handshake 10s after a fresh install but only 1500ms on any other
+// path (measured in install-dialog.js: `isNewInstall ? 10000 : 1500`). loop() does not begin
+// until setup() has loaded an 858-entry pak, measured every character, read the scene, drawn
+// the room and built the light map - about 3.4s on a warm device and longer on a cold one, so
+// the short window was missed every time and the wifi step silently never appeared.
+//
+// Nothing here needs the game: answering "who are you" and "what is your state" only needs the
+// serial port, which is up right after Serial.begin(). So setup() pumps this at each slow
+// stage and the device is reachable within milliseconds of boot instead of seconds.
+static void improvPump() {
+  uint32_t guard = 0;
+  while (Serial.available() && guard++ < 512) improvFeed((uint8_t)Serial.read());
+  improvTick();
+}
