@@ -60,6 +60,12 @@ ol li::before{content:counter(s);font-family:"JetBrains Mono",monospace;font-wei
 ol li div{display:flex;flex-direction:column;gap:5px}
 ol li small{color:var(--ink-2);font-size:.92rem;line-height:1.5}
 
+.pw{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;align-items:baseline;
+  margin-top:10px;padding:12px 14px;background:var(--accent-soft);border:1px solid var(--rule);
+  border-radius:7px;width:fit-content}
+.pw span{font-family:"JetBrains Mono",monospace;font-size:.63rem;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--ink-3)}
+.pw b{font-family:"JetBrains Mono",monospace;font-size:1rem;color:var(--ink);letter-spacing:.01em}
 .pick{border:1px solid var(--rule);background:var(--accent-soft);border-radius:10px;
   padding:20px 22px;display:flex;flex-direction:column;gap:11px;margin:0 0 34px}
 .pick .lbl{font-family:"JetBrains Mono",monospace;font-size:.68rem;font-weight:700;
@@ -139,9 +145,12 @@ a{color:var(--accent)}
       <li><div><strong>Wait about a minute and a half</strong>
         <small>A progress bar runs while six pieces are written. Do not unplug it.</small></div></li>
       <li><div><strong>Connect it to your wifi</strong>
-        <small>When it restarts it makes its own little network called <code>bunbun-XXXX</code>.
-        Join that from your phone or laptop and it will ask for your home wifi. That is the last
-        step — after this the toy runs on its own.</small></div></li>
+        <small>When it restarts it makes its own little network called <code>bunbun-XXXX</code>
+        (the letters change from toy to toy). Join it from your phone or laptop — the password
+        is below — and a page opens asking for your home wifi. That is the last step; after
+        this the toy runs on its own and the cable can go away.</small>
+        <div class="pw"><span>network</span><b>bunbun-XXXX</b><span>password</span><b>bunbunbun</b></div>
+        </div></li>
     </ol>
   </section>
 
