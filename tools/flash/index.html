@@ -249,8 +249,12 @@ function parse(buf){
 }
 function strs(d){                               // RPC result payload -> array of strings
   const out=[]; let p=2;
+  // d comes out of parse(), which slices the accumulator — and that is a plain Array of
+  // numbers, not a typed array, so .slice() gives an Array back. TextDecoder only accepts an
+  // ArrayBuffer or a TypedArray and throws on a plain Array, which is where
+  // "parameter 1 is not of type 'ArrayBuffer'" came from. Wrap it.
   while(p<d.length){ const n=d[p++]; if(p+n>d.length) break;
-    out.push(new TextDecoder().decode(d.slice(p,p+n))); p+=n; }
+    out.push(new TextDecoder().decode(new Uint8Array(d.slice(p,p+n)))); p+=n; }
   return out;
 }
 
