@@ -116,15 +116,11 @@ a{color:var(--accent)}
   </div>
 
   <div class="cta" id="wifi-card">
-    <h2 style="margin:0 0 6px">Already flashed? Put it on your wifi</h2>
-    <p style="font-size:.95rem;color:var(--ink-2);margin-bottom:14px">Use this straight after the
-    install finishes — it saves joining the toy's own network. Leave the cable in.</p>
+    <h2 style="margin:0 0 6px">Rather use the cable?</h2>
+    <p style="font-size:.95rem;color:var(--ink-2);margin-bottom:14px">Optional. If the cable is
+    still plugged in and you are on Chrome or Edge, you can hand over the wifi from here instead
+    of using your phone. Same result either way.</p>
     <div id="wifi-form" style="display:flex;flex-direction:column;gap:10px;max-width:22rem;margin:0 auto">
-      <button id="wifi-scan" style="font:500 15px 'Public Sans',sans-serif;background:var(--surface);
-              color:var(--accent);border:1px solid var(--accent);border-radius:7px;padding:11px 16px;
-              cursor:pointer">Find networks</button>
-      <select id="wifi-list" style="display:none;font:15px 'Public Sans',sans-serif;padding:11px 13px;
-              border:1px solid var(--rule);border-radius:7px;background:var(--surface);color:var(--ink)"></select>
       <input id="wifi-ssid" placeholder="Network name" autocomplete="off"
              style="font:15px 'Public Sans',sans-serif;padding:11px 13px;border:1px solid var(--rule);
                     border-radius:7px;background:var(--surface);color:var(--ink)">
@@ -300,66 +296,6 @@ function pump(port){
   };
   return {w,r,readFor,clear:()=>{acc=[];},raw:()=>acc};
 }
-
-// SCAN HAPPENS ON THE TOY, not here — a web page cannot see wifi networks. The device runs the
-// scan on its own task (it blocks for seconds and drops the station while it runs) and streams
-// one result per network, ending with an empty one. So this waits for that terminator rather
-// than for a fixed time.
-document.getElementById('wifi-scan').addEventListener('click', async ()=>{
-  if(!('serial' in navigator)){ msg('This needs Chrome or Edge on a computer.','err'); return; }
-  let port;
-  try{ port = await openToy(); }catch(e){ msg('No device chosen.','err'); return; }
-  const io = pump(port);
-  try{
-    // WAIT FOR IT TO COME BACK FIRST. Opening the port resets this board, so for the next two
-    // seconds there is nothing listening. The old code fired the scan request 200ms after
-    // opening, straight into a booting chip; the request was simply lost, and the page then sat
-    // out its whole 15s window waiting for an answer to a question nobody heard. That is the
-    // "It found nothing" — the scan never ran at all.
-    msg('The toy restarts when we plug in — waiting for it…');
-    let ready=[];
-    for(let attempt=0; attempt<8 && !ready.length; attempt++){
-      await io.w.write(frame(T_RPC,[C_STATE,0]));
-      ready=await io.readFor(1200);
-    }
-    if(!ready.length){ msg('The toy never answered. Unplug it, plug it back in, try again.','err'); return; }
-    io.clear();
-
-    msg('Asking the toy to look around… this takes a few seconds.');
-    await io.w.write(frame(T_RPC,[5,0]));
-    // Rebuild the list from the whole buffer each pass rather than appending. readFor() returns
-    // everything accumulated so far, so appending counted every network again on every poll.
-    // The device hands these out one per tick and ends with an empty one, so keep looking until
-    // that terminator shows up.
-    let nets=[], done=false;
-    const stop=Date.now()+20000;
-    while(Date.now()<stop && !done){
-      await new Promise(r=>setTimeout(r,250));
-      nets=[]; done=false;
-      for(const g of parse(io.raw())){
-        if(g.type!==T_RESULT || g.data[0]!==5) continue;
-        const parts=strs(g.data);
-        if(!parts.length){ done=true; break; }
-        nets.push({ssid:parts[0], rssi:parseInt(parts[1]||'0',10), locked:parts[2]==='YES'});
-      }
-    }
-    const sel=document.getElementById('wifi-list');
-    if(!nets.length){ msg('It found nothing. Type the name in instead.','err'); return; }
-    nets.sort((a,b)=>b.rssi-a.rssi);
-    sel.innerHTML='';
-    for(const n of nets){
-      const o=document.createElement('option');
-      o.value=n.ssid;
-      o.textContent=n.ssid+(n.locked?'  🔒':'')+'   '+n.rssi+' dBm';
-      sel.appendChild(o);
-    }
-    sel.style.display='';
-    document.getElementById('wifi-ssid').value=nets[0].ssid;
-    sel.onchange=()=>{ document.getElementById('wifi-ssid').value=sel.value; };
-    msg('Found '+nets.length+' network'+(nets.length>1?'s':'')+'. Pick yours and add the password.','ok');
-  }catch(e){ msg('Scan failed: '+e.message,'err'); }
-  finally{ try{ io.r.releaseLock(); io.w.releaseLock(); await port.close(); }catch(e){} }
-});
 
 document.getElementById('wifi-go').addEventListener('click', async ()=>{
   const ssid=document.getElementById('wifi-ssid').value.trim();

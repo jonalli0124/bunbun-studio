@@ -58,6 +58,15 @@ static uint32_t g_impDeadline = 0;
 static bool     g_impIdentify = false;     // set for the UI to flash something; read by main
 static uint32_t g_impIdentifyUntil = 0;
 
+// HOLD THE LOG WHILE A CONVERSATION IS HAPPENING. The pet prints several lines a second to this
+// same USB CDC port, and the buffer is finite — a burst of replies went out and only some
+// arrived, with valid checksums on the survivors, so they were not corrupted but DROPPED,
+// squeezed out by the trace. Any valid Improv packet opens a quiet window; the periodic traces
+// check it and stay silent. Nothing else is suppressed, and nothing arms this unless somebody
+// is actually talking to the device, so a toy sitting on a shelf logs exactly as it always did.
+static uint32_t g_impQuietUntil = 0;
+static inline bool improvQuiet() { return (int32_t)(millis() - g_impQuietUntil) < 0; }
+
 // ONE WRITE, NEVER A BYTE AT A TIME. The pet prints to this same port continuously, and a log
 // line landing between two bytes of a packet corrupts it: the first version of this wrote the
 // header, type, length and each data byte separately, and the very first live test came back
@@ -118,86 +127,20 @@ static void improvSendUrl() {
   improvResult(IMPROV_C_WIFI_SETTINGS, strs, 1);
 }
 
-// ---- network list ----
+// ---- network list: deliberately NOT scanned ----
 //
-// The browser cannot scan wifi; only the toy can. wifi_scan() blocks for seconds AND
-// disconnects the station first, so it must never run on the game loop — it goes on its own
-// task, exactly as ntpTask does for SNTP, and the answer is posted back through these.
+// GET_WIFI_NETWORKS answers with its terminator and nothing else, and the client then lets the
+// person type the name — which is what they were going to do anyway.
 //
-// Capped at 16 and deduplicated by name: a house with three mesh points is three BSSIDs with
-// one SSID, and a list of duplicates is worse than a short list. Static rather than heap
-// because internal RAM is the scarce thing on this board.
-#define IMP_NET_MAX 16
-struct ImpNet { char ssid[33]; int8_t rssi; bool locked; };
-static ImpNet   g_impNets[IMP_NET_MAX];
-static uint8_t  g_impNetN = 0;
-static volatile bool g_impScanBusy = false;   // a scan task is running
-static volatile bool g_impScanDone = false;   // results are ready to send
-static bool     g_impScanWanted = false;      // the client asked and is still waiting
-
-// HOLD THE LOG WHILE A CONVERSATION IS HAPPENING. The pet prints several lines a second to this
-// same USB CDC port, and the buffer is finite: a burst of eight network packets went out and
-// only three arrived, with zero bad checksums - not corrupted, DROPPED, squeezed out by the
-// trace. Any valid Improv packet opens a quiet window; the periodic traces check it and stay
-// silent. Nothing else is suppressed, so real events still print.
-static uint32_t g_impQuietUntil = 0;
-static inline bool improvQuiet() { return (int32_t)(millis() - g_impQuietUntil) < 0; }
-
-extern "C" esp_err_t wifi_scan(void **ap_list, uint16_t *ap_count);
-
-static void improvScanTask(void *) {
-  wifi_ap_record_t *aps = nullptr;
-  uint16_t n = 0;
-  g_impNetN = 0;
-  if (wifi_scan((void **)&aps, &n) == ESP_OK && aps) {
-    for (uint16_t i = 0; i < n && g_impNetN < IMP_NET_MAX; i++) {
-      const char *s = (const char *)aps[i].ssid;
-      if (!s[0]) continue;                                   // hidden: nothing to show
-      bool dup = false;
-      for (uint8_t k = 0; k < g_impNetN; k++)
-        if (!strcmp(g_impNets[k].ssid, s)) { dup = true; break; }
-      if (dup) continue;
-      strlcpy(g_impNets[g_impNetN].ssid, s, sizeof(g_impNets[0].ssid));
-      g_impNets[g_impNetN].rssi = aps[i].rssi;
-      g_impNets[g_impNetN].locked = (aps[i].authmode != WIFI_AUTH_OPEN);
-      g_impNetN++;
-    }
-  }
-  if (aps) free(aps);                                        // wifi_scan mallocs; we free
-  g_impScanDone = true;
-  g_impScanBusy = false;
-  vTaskDelete(nullptr);
-}
-
-// ONE PACKET PER TICK, NOT A BURST.
+// There WAS a real scan here: a task, a deduplicated 16-entry table, and a sender that handed
+// the list out one entry per loop tick. It worked. It was also the source of nearly every bug
+// in this feature — the debug log flooding the CDC buffer and silently dropping 5 of 8 packets,
+// the burst overrunning it even when quiet, the terminator going missing, a decode blowing up
+// on a plain Array. And wifi_scan() DISCONNECTS THE STATION to run, which is a strange thing to
+// do to a device that is already online, on behalf of saving one short piece of typing.
 //
-// First attempt sent all of them back to back with a delay() between. The device reported
-// "sent 8 network(s)" and the host received three - zero bad checksums, so they were not
-// corrupted, they were DROPPED: the USB CDC buffer is finite and a burst overruns it. Blocking
-// with delay() only made the pet stutter without fixing it.
-//
-// So the list is handed out one entry per loop tick (~60ms apart), which the buffer keeps up
-// with easily and which costs the game nothing. -1 means idle; g_impNetN means "send the
-// terminator next", which is the packet the client is actually waiting for.
-static int g_impNetSend = -1;
-
-static void improvNetPump() {
-  if (g_impNetSend < 0) return;
-  if (g_impNetSend < (int)g_impNetN) {
-    char rssi[8];
-    snprintf(rssi, sizeof(rssi), "%d", (int)g_impNets[g_impNetSend].rssi);
-    const char *strs[3] = {g_impNets[g_impNetSend].ssid, rssi,
-                           g_impNets[g_impNetSend].locked ? "YES" : "NO"};
-    improvResult(IMPROV_C_GET_NETWORKS, strs, 3);
-    g_impNetSend++;
-    return;
-  }
-  improvResult(IMPROV_C_GET_NETWORKS, nullptr, 0);      // terminator
-  Serial.printf("improv: sent %d network(s)\n", (int)g_impNetN);
-  g_impNetSend = -1;
-}
-
-static void improvSendNetworks() { g_impNetSend = 0; }   // starts the paced hand-out
+// Removed 2026-08-22 for that trade. The protocol is unchanged and the client copes: this is
+// the same answer the spec expects when a device has nothing to report.
 
 static void improvHandleRpc(const uint8_t *d, uint8_t len) {
   if (len < 2) { improvError(IMPROV_E_INVALID_RPC); return; }
@@ -215,16 +158,9 @@ static void improvHandleRpc(const uint8_t *d, uint8_t len) {
       g_impIdentify = true;
       g_impIdentifyUntil = millis() + 4000;
       return;
-    case IMPROV_C_GET_NETWORKS: {
-      if (g_impScanDone) { improvSendNetworks(); return; }   // already have a list: answer now
-      g_impScanWanted = true;                                // otherwise scan and answer later
-      if (!g_impScanBusy) {
-        g_impScanBusy = true;
-        xTaskCreatePinnedToCore(improvScanTask, "improv-scan", 4096, nullptr, 1, nullptr, 1);
-        Serial.println("improv: scanning for networks");
-      }
+    case IMPROV_C_GET_NETWORKS:
+      improvResult(IMPROV_C_GET_NETWORKS, nullptr, 0);   // terminator only; see the note above
       return;
-    }
     case IMPROV_C_WIFI_SETTINGS: {
       const uint8_t plen = d[1];
       if (plen + 2 > len) { improvError(IMPROV_E_INVALID_RPC); return; }
@@ -279,8 +215,6 @@ static bool improvFeed(uint8_t c) {
 
 // Called once a loop. Only does anything while a join is in flight.
 static void improvTick() {
-  if (g_impScanWanted && g_impScanDone) { g_impScanWanted = false; improvSendNetworks(); }
-  improvNetPump();
   if (!g_impPending) return;
   if (wifi_is_connected()) {
     g_impPending = false;
