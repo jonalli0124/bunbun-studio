@@ -13546,6 +13546,7 @@ void loop() {
       }
         // anim=<key> f=<frame>/<count> t=<animT> hold=<ms left> — the frozen-animation bug has
         // now been chased three times by inferring these from side effects. Print them.
+        if (!improvQuiet())
         Serial.printf("pos=(%d,%d) tgt=(%d,%d) visit=%d work=%d settle=%ld wander=%.1f "
                       "anim=%s f=%d/%d t=%.2f fps=%.1f hold=%ld act=%d actEnd=%ld pause=%d "
                       "hapt=%d purr=%ld freq=%lu\n",
@@ -13560,6 +13561,7 @@ void loop() {
       Serial.printf("power: %.3fV %d%% chrg=%d ref=%.3f d=%+.4f bl=%u cpu=%uMHz proj=%.1fh\n",
                     g_vbat, batteryPercent(), (int)g_charging, g_vbatRef, g_vbat - g_vbatRef,
                     g_blNow, (unsigned)getCpuFrequencyMhz(), projectedHours());
+    if (!improvQuiet())
     Serial.printf("touchZ=%u raw=(%u,%u) clockSet=%d | time=%02d:%02d day=%.2f lamp=%.2f "
                     "lightMap=%s sky=%d,%d..%d,%d\n",
                     z, rx, ry, (int)g_clockSet, cm / 60, cm % 60,
@@ -14797,6 +14799,7 @@ void loop() {
   static uint32_t diagT = 0, loops = 0;
   loops++;
   if (now - diagT >= 2000) {
+    if (!improvQuiet())
     Serial.printf("loop=%luHz  touch=%d  clockSet=%d stage=%d music=%d bt=%d fx=%d love=%.0f heap=%u psram=%u\n",
                   loops / 2, (int)down, (int)g_clockSet, (int)S.stage, (int)g_musicOn,
                   (int)g_btActive, (int)g_fxLevel, g_love,
