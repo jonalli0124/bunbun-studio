@@ -13129,6 +13129,36 @@ void loop() {
         prefs.begin("bunbun", true);
         int off = prefs.getInt("tzOffMin", TZ_UNSET);
         prefs.end();
+        // THE ANSWER WAS ALREADY IN THE ROOM.
+        //
+        // Somebody sets the clock during setup — the page they use to hand over the wifi is
+        // served by the toy itself and posts the browser's local time. But at that moment the
+        // toy is its own access point with no internet, so there is no UTC to subtract and
+        // tzStore() refuses ("no fresh sync this boot"). The time got set; the TIMEZONE never
+        // did. Then the unit reboots onto real wifi, SNTP answers correctly, and the answer is
+        // thrown away because the offset is still unknown — "it's on wifi but the clock is
+        // wrong", forever, until someone goes to its address and sets it a second time.
+        //
+        // A genuine sync HAS landed by the time we are here, and the pet is still carrying the
+        // local time a human gave it. The offset is just the difference. Learn it now.
+        // Derived from g_ntpMin, NOT by calling tzStore() — that re-reads the clock through
+        // wall_clock_utc(), and by the time we get here ntpTask has already called
+        // wall_clock_stop(). Asking the stopped clock produced an offset that was wrong by
+        // hours: the time was set correctly during setup, then the first sync yanked it to
+        // 09:07 ("it worked and then reset itself"). g_ntpMin is the UTC this very handler was
+        // handed and is about to trust for everything else; use the same number.
+        if (off == TZ_UNSET && g_clockSet && !g_clockProvisional) {
+          int o = ((clockNowMin() - g_ntpMin) % 1440 + 1440) % 1440;
+          o = ((o + 7) / 15) * 15 % 1440;            // real zones sit on quarter hours
+          if (o > 840) o -= 1440;                    // canonical -11:45..+14:00
+          if (o >= -720 && o <= 840) {
+            prefs.begin("bunbun", false);
+            prefs.putInt("tzOffMin", o);
+            prefs.end();
+            off = o;
+            Serial.printf("clock: timezone worked out from your setup time (utc%+d min)\n", o);
+          }
+        }
         if (off != TZ_UNSET) {
           int local = ((g_ntpMin + off) % 1440 + 1440) % 1440;
           int before = clockNowMin();
@@ -13258,6 +13288,37 @@ void loop() {
       uint32_t guard = 0;
       while (Serial.available() && guard++ < 512) improvFeed((uint8_t)Serial.read());
       c = 0;      // matches none of the debug letters below
+    }
+    // 'T<minutes>\n' — THE SETUP PAGE HANDS OVER THE TIME ON THE CABLE IT ALREADY HAS.
+    //
+    // The toy gets correct UTC from SNTP the moment it is online and then discards it, because
+    // an offset it was never taught is the difference between "the right time" and "London
+    // time in a Texas kitchen". Teaching it needed somebody to open the device's own address
+    // and set the clock — the exact errand this whole flow exists to remove.
+    //
+    // The flasher page cannot do it over HTTP: it is served over https and the toy is plain
+    // http on the LAN, so the browser blocks the call as mixed content. But it is holding a
+    // USB cable open to send the wifi credentials, and the computer on the other end knows
+    // perfectly well what time it is. So it says so, here, in eight bytes.
+    //
+    // No internet is needed at this point and none is assumed: this only sets the LOCAL time.
+    // The timezone is worked out later, the first time a genuine sync lands (see the
+    // "answer was already in the room" block in the NTP handler).
+    else if (c == 'T') {
+      char num[8] = {0};
+      int n = 0;
+      const uint32_t until = millis() + 250;
+      while (n < 7 && (int32_t)(millis() - until) < 0) {
+        if (!Serial.available()) continue;
+        const int d = Serial.read();
+        if (d < '0' || d > '9') break;          // newline, or anything else, ends it
+        num[n++] = (char)d;
+      }
+      if (n) {
+        bunbun_set_clock(atoi(num));
+        Serial.printf("clock: set to %s from the setup page\n", num);
+      }
+      c = 0;
     }
     // The 'a' (force portal), 'j' (transmit test) and 'k' (scan) diagnostics are gone here.
     // They were written to diagnose a board whose WiFi transmitter turned out to be dead, and

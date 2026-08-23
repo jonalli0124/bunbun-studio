@@ -380,6 +380,21 @@ document.getElementById('wifi-go').addEventListener('click', async ()=>{
     }
     if(!got.length){ msg('The toy never answered. Unplug it, plug it back in, and try again.','err'); return; }
     io2.clear();
+    // TELL IT THE TIME FIRST, before it has any way to get online.
+    //
+    // The toy fetches correct UTC the moment it joins and then throws it away, because an
+    // offset nobody taught it is the difference between the right time and London time in a
+    // Texas kitchen. It works the offset out itself the first time a real sync lands — but only
+    // if a human-set local time is already sitting there to subtract from. SNTP answers within
+    // about seven seconds of joining, so this goes first and there is no race.
+    //
+    // It has to travel on the cable: this page is https and the toy is plain http on the LAN,
+    // so the browser blocks the equivalent HTTP call as mixed content.
+    try{
+      const now=new Date();
+      await io2.w.write(new TextEncoder().encode('T'+(now.getHours()*60+now.getMinutes())+'\n'));
+      await new Promise(r=>setTimeout(r,300));
+    }catch(e){}
     msg('Sending your wifi…');
     const enc=new TextEncoder(), sB=enc.encode(ssid), pB=enc.encode(pass);
     await io2.w.write(frame(T_RPC,[C_WIFI, sB.length+pB.length+2, sB.length,...sB, pB.length,...pB]));
