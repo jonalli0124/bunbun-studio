@@ -455,7 +455,19 @@ esp_err_t wish_recorder_start(void (*done_cb)(bool ok)) {
       closedir(d);
     }
     if (cnt >= WISH_MAX_CLIPS) {
+#if CONFIG_BUNBUN_PUBLIC_BUILD && !CONFIG_BUNBUN_WISH_UPLOADER
+      // ...BUT WHEN NOTHING CAN EVER LEAVE THE SHELF, REFUSING IS THE WORSE HALF OF THE
+      // TRADE. With the uploader compiled in, a queued wish is waiting to fly and dropping
+      // it really would lose it - so that build keeps the refusal. The refusal
+      // above protects wishes that are QUEUED TO FLY. Nothing flies here: there is no
+      // uploader in the image and /spiffs/wishes is not reachable over HTTP, so the sixth
+      // wish would jam the shelf permanently and every wish after it, for the life of the
+      // toy, would be refused. Rolling the shelf keeps the six most recent instead - the
+      // child can always make a new wish, which is the whole point of the button.
+      prune_clips();
+#else
       return ESP_ERR_NO_MEM;
+#endif
     }
   }
   s_recording = true;

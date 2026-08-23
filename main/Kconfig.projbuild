@@ -121,9 +121,19 @@ menu "Airplay ESP Configuration"
 
     config DEFAULT_AP_PASSWORD
         string "Access Point Password"
-        default ""
+        default "bunbunbun"
         help
-            Password used for the Access Point. Leave empty and set AUTH MODE to WIFI_AUTH_OPEN for no password.
+            Password for the setup Access Point. WPA2-PSK requires at least 8 characters -
+            anything shorter is rejected by esp_wifi_set_config and the AP never comes up, and
+            an EMPTY string opens the AP to anyone in radio range.
+
+            That matters more here than on a normal speaker: while the setup AP is up, the whole
+            HTTP API is reachable at 192.168.4.1 with no gate at all - including firmware upload.
+            A classroom access point going down is exactly what puts a device into this state.
+            Council 2026-08-22, security seat.
+
+            Jon asked for "bunbun"; it is six characters, so the AP would simply fail to start.
+            "bunbunbun" is the same word at a legal length.
 
     config DEFAULT_AP_CHANNEL
         int "Access Point WiFi Channel"
@@ -523,13 +533,48 @@ menu "Airplay ESP Configuration"
 
     config BUNBUN_PUBLIC_BUILD
         bool "Public build (no fleet OTA, no wish upload, no fleet repo strings)"
-        default n
+        default y
         help
             Strips the private-fleet machinery for a publicly distributable
             image: the auto-updater that reads the fleet manifest, the wish
             uploader and beacon (and their GitHub repo/token plumbing), and
             every fleet URL string in the binary. Manual updates via USB and
-            the web interface's /api/ota/update stay. Assets/scene upload
-            (the kid loop) stays. Default n = the private fleet build.
+            the web interface's /api/ota/update stay - flashing a device on
+            your own wifi or hotspot is unaffected, and is how the bench
+            works. Assets/scene upload (the kid loop) stays.
+
+            DEFAULT y SINCE 2026-08-22 (Jon: "im fine with OTA while on your
+            local network or hotspot. i was meaning moreso killing our OTA
+            pushes we were doing"). It defaulted to n while every shipping
+            image set y in sdkconfig, so the repo built the opposite of what
+            was intended: a fresh clone, a clean machine or CI would quietly
+            produce a binary that polls the fleet manifest overnight. The
+            check that cannot be fooled by config drift is to scan the built
+            .bin for "approved.json" and assert it is absent.
+
+    config BUNBUN_WISH_UPLOADER
+        bool "Wish uploader, even in a public build"
+        default n
+        help
+            Compiles the wish uploader back in WITHOUT bringing back anything
+            else the public build strips.
+
+            One switch used to gate four unrelated things: the nightly fleet
+            firmware updater, the wish uploader, the unauthenticated
+            POST /api/wish/record network microphone, and whether the wish
+            shelf rolls or jams. So "I want my wishes to send" could only be
+            answered by turning all four back on - which would have handed a
+            device back the overnight internet updater Jon had just asked to
+            remove, and reopened ~15 seconds of a child's bedroom audio to
+            anyone on the family wifi. Those are not the same decision and
+            must not share a switch.
+
+            With this y and BUNBUN_PUBLIC_BUILD also y you get: wishes fly to
+            the private repo, the shelf empties as they go, and there is still
+            no fleet manifest polling and no network mic. The token stays
+            runtime configuration in NVS (POST /api/wish/uploader) and is
+            never compiled into the image.
+
+            Keep this n for anything that leaves the house.
 
 endmenu

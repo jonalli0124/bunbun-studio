@@ -58,6 +58,7 @@ static esp_err_t serve_spiffs_file(httpd_req_t *req, const char *path,
     return ESP_FAIL;
   }
   httpd_resp_set_type(req, content_type);
+  httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
   char buf[SPIFFS_CHUNK_SIZE];
   size_t n;
   while ((n = fread(buf, 1, sizeof(buf), f)) > 0) {
@@ -88,6 +89,7 @@ static esp_err_t root_handler(httpd_req_t *req) {
       " style='display:block;text-align:center;text-decoration:none'>"
       "Open the music library</a></div>";
   httpd_resp_set_type(req, "text/html");
+  httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
   FILE *f = fopen("/spiffs/www/index.html", "r");
   if (!f) {
     httpd_resp_send(req, kMusicCard, HTTPD_RESP_USE_STRLEN);
@@ -109,6 +111,20 @@ static esp_err_t root_handler(httpd_req_t *req) {
   size_t got = fread(page, 1, (size_t)flen, f);
   fclose(f);
   page[got] = 0;
+  // ...BUT ONLY IF THE PAGE HAS NOT ALREADY GOT ONE. index.html grew a hub on 2026-08-22 whose
+  // first row is Send a World / Music / Control & Watch, so on any unit with that file the
+  // injected card is a second, uglier Music button stuck above the title (Jon: "can we remove
+  // the music banner at the top").
+  //
+  // Deleting the injection outright would undo the reason it exists: an app OTA cannot replace
+  // a SPIFFS file, so a unit in the field that never gets a page push still has the old
+  // index.html and would be left with no route to /music at all. So it becomes a FALLBACK -
+  // present exactly when the page does not link there itself.
+  if (strstr(page, "/music")) {
+    httpd_resp_send(req, page, (ssize_t)got);
+    free(page);
+    return ESP_OK;
+  }
   char *body = strstr(page, "<body");
   char *cut = body ? strchr(body, '>') : NULL;
   if (cut) {
@@ -140,19 +156,40 @@ static esp_err_t speedtest_page_handler(httpd_req_t *req) {
 
 // The scene builder, served BY the device on purpose.
 //
-// A builder page hosted anywhere else cannot talk to a bunbun at all: this
-// server sends no CORS headers and answers OPTIONS with 405, and an https
-// page (a published artifact, say) can never reach an http LAN device no
-// matter what headers we send. Same origin is the only route that works —
-// and it avoids opening a wildcard CORS hole on an unauthenticated device
-// sitting on a family's wifi. The child needs the device's IP and nothing
+// A builder page hosted anywhere else cannot CHANGE a bunbun. Both halves of
+// that matter, and this comment used to get the reason wrong:
+//
+//   - No CORS headers and no OPTIONS handler (both true again since 08-22, and
+//     verified: zero Access-Control-Allow-* outside comments). That stops a
+//     foreign page READING a reply.
+//   - It does NOT stop it sending. A no-cors POST is delivered anyway, and to
+//     flash firmware or wipe the art an attacker never needed to read the
+//     answer. What actually stops that is origin_ok() on every destructive
+//     handler: no Origin (curl, a script) or an Origin matching Host is
+//     allowed; anything else gets 403 from deny_foreign().
+//
+// The old wording credited the protection to the missing CORS headers alone,
+// which is why nobody re-examined the design for weeks. A comment asserting a
+// security property the code lacks is worse than no comment.
+//
+// An https page (a published artifact, say) also can never reach an http LAN
+// device whatever headers we send. The child needs the device's IP and nothing
 // else: no PC, no toolchain.
 //
 // The page itself arrives over POST /api/fs/upload and lives on SPIFFS,
 // which a firmware OTA does not touch (OTA writes ota_0/ota_1 only), so an
 // uploaded builder survives every update. A serial flash does rewrite
 // SPIFFS from data/ — see the note above fs_upload_handler.
+// Declared up here because handlers far above the definition need them - wifi_config,
+// fs_delete and debug_restorebk all sit earlier in this file.
+static bool origin_ok(httpd_req_t *req);
+static esp_err_t deny_foreign(httpd_req_t *req);
+
 #define BUILDER_PAGE_PATH "/spiffs/www/builder.html"
+// The bench page: press a thing and watch him do it, with his own art drawn from his own
+// pak. Same-origin like /build, so origin_ok() lets its calls through and a copy opened
+// from a laptop cannot drive somebody else's bunbun.
+#define CONTROL_PAGE_PATH "/spiffs/www/control.html"
 
 static esp_err_t builder_page_handler(httpd_req_t *req) {
   // Nothing else on this server sends freshness headers, which leaves the
@@ -187,6 +224,27 @@ static esp_err_t builder_page_handler(httpd_req_t *req) {
   }
   fclose(probe);
   return serve_spiffs_file(req, BUILDER_PAGE_PATH, "text/html");
+}
+
+static esp_err_t control_page_handler(httpd_req_t *req) {
+  httpd_resp_set_hdr(req, "Cache-Control", "no-store, no-cache, must-revalidate");
+  FILE *probe = fopen(CONTROL_PAGE_PATH, "r");
+  if (!probe) {
+    static const char kNo[] =
+        "<!doctype html><meta charset=utf-8><title>No control page</title>"
+        "<body style='font:16px/1.5 system-ui;margin:2em;max-width:34em'>"
+        "<h1>No control page here yet</h1><p>It ships in SPIFFS. Re-flash, or upload it:</p>"
+        "<pre style='background:#eee;padding:.6em;overflow-x:auto'>"
+        "curl --data-binary @control.html \
+"
+        "  \"http://DEVICE-IP/api/fs/upload?path=" CONTROL_PAGE_PATH "\""
+        "</pre>";
+    httpd_resp_set_type(req, "text/html");
+    httpd_resp_send(req, kNo, HTTPD_RESP_USE_STRLEN);
+    return ESP_OK;
+  }
+  fclose(probe);
+  return serve_spiffs_file(req, CONTROL_PAGE_PATH, "text/html");
 }
 
 // Tiny endpoint used by JS for RTT timing. Returns minimal body.
@@ -333,6 +391,7 @@ static esp_err_t wifi_scan_handler(httpd_req_t *req) {
 }
 
 static esp_err_t wifi_config_handler(httpd_req_t *req) {
+  if (!origin_ok(req)) return deny_foreign(req);
   char content[512];
   int ret = httpd_req_recv(req, content, sizeof(content) - 1);
   if (ret <= 0) {
@@ -384,6 +443,7 @@ static esp_err_t wifi_config_handler(httpd_req_t *req) {
 }
 
 static esp_err_t device_name_handler(httpd_req_t *req) {
+  if (!origin_ok(req)) return deny_foreign(req);
   char content[256];
   int ret = httpd_req_recv(req, content, sizeof(content) - 1);
   if (ret <= 0) {
@@ -498,24 +558,12 @@ static esp_err_t led_brightness_post_handler(httpd_req_t *req) {
 // The webpage-port endpoints answer cross-origin: the Scene Assembler runs on another
 // origin (localhost tools) and drives the port with fetch(). Anything not listed here
 // keeps the same-origin default.
-static void cors_allow(httpd_req_t *req) {
-  httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
-}
-static esp_err_t cors_preflight_handler(httpd_req_t *req) {
-  cors_allow(req);
-  httpd_resp_set_hdr(req, "Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  httpd_resp_set_hdr(req, "Access-Control-Allow-Headers", "Content-Type");
-  httpd_resp_set_hdr(req, "Access-Control-Max-Age", "600");
-  httpd_resp_sendstr(req, "");
-  return ESP_OK;
-}
 
 // GET the assets partition back as the pak it holds - the other half of the webpage port.
 // The browser fetches the unit's CURRENT pak, splices the child's new frames into it, and
 // POSTs the merged pak to the same URI; the device never needs a PC in the loop. Length
 // comes from the index itself (max offset+size), so only real bytes travel.
 static esp_err_t ota_assets_get_handler(httpd_req_t *req) {
-  cors_allow(req);
   const esp_partition_t *part = esp_partition_find_first(
       ESP_PARTITION_TYPE_DATA, (esp_partition_subtype_t)0x40, "assets");
   if (!part) {
@@ -563,8 +611,79 @@ static esp_err_t ota_assets_get_handler(httpd_req_t *req) {
   return ESP_OK;
 }
 
+// WHO IS ASKING? Removing the wildcard CORS headers stopped other origins READING our replies,
+// but it never stopped them WRITING: a cross-origin `fetch(url, {mode:'no-cors'})` is still sent,
+// the page just cannot see the response - and to flash firmware, wipe the art partition, replace
+// /spiffs/www/builder.html or reboot the device, the attacker does not need to see anything.
+//
+// A browser always sets Origin on these requests, and it cannot be forged by page script. So:
+//   no Origin          -> curl, a script, the device's own fetch: allowed
+//   Origin == our Host -> the builder page served from this device: allowed
+//   anything else      -> a page on some other site, talking to a bunbun on a family's wifi
+//
+// Kept deliberately permissive for tooling (curl and scene_push send no Origin) while closing
+// the road a web page can walk down. Jon, 2026-08-22: local-network flashing stays.
+static bool origin_ok(httpd_req_t *req) {
+  char origin[128] = {0};
+  // FAIL CLOSED ON ANYTHING THAT IS NOT A CLEAN READ. This returned true for every non-ESP_OK
+  // result, and httpd_req_get_hdr_value_str answers ESP_ERR_HTTPD_RESULT_TRUNC when the header
+  // is longer than the buffer - so a hostile page only had to send an Origin over 127 characters
+  // to be treated as "not a browser" and walk straight through. ESP_ERR_NOT_FOUND is the one
+  // case that genuinely means no Origin (curl, a script, the device's own fetch).
+  const esp_err_t oerr =
+      httpd_req_get_hdr_value_str(req, "Origin", origin, sizeof(origin));
+  if (oerr == ESP_ERR_NOT_FOUND) return true;
+  if (oerr != ESP_OK) return false;    // truncated or malformed: refuse, do not guess
+  // "null" is NOT a safe origin. Any page gets an opaque origin for free by running its script
+  // inside an <iframe sandbox="allow-scripts"> it controls; the iframe then sends Origin: null
+  // and a no-cors POST is still delivered. Treat it as foreign.
+  if (!origin[0]) return false;
+  if (!strcmp(origin, "null")) return false;
+  char host[96] = {0};
+  if (httpd_req_get_hdr_value_str(req, "Host", host, sizeof(host)) != ESP_OK) return false;
+  const char *o = strstr(origin, "://");
+  o = o ? o + 3 : origin;              // compare host:port, not the scheme
+  if (strcmp(o, host) != 0) return false;
+  // ...AND THE HOST MUST BE ONE OF OURS. Comparing Origin to Host compares two values the
+  // attacker supplies TOGETHER: under DNS rebinding, evil.example resolved to this device sends
+  // Origin: http://evil.example and Host: evil.example, they match, and a self-comparison
+  // proves nothing. Only a name this device actually answers to is acceptable - a literal IPv4
+  // address, or its own mDNS/device name.
+  {
+    const char *h = host;
+    int dots = 0, digits = 0, other = 0;
+    for (const char *c = h; *c && *c != ':'; c++) {
+      if (*c == '.') dots++;
+      else if (*c >= '0' && *c <= '9') digits++;
+      else other++;
+    }
+    if (dots == 3 && digits > 0 && other == 0) return true;   // dotted-quad: our own IP
+    char dev[40] = {0};
+    if (settings_get_device_name(dev, sizeof(dev)) == ESP_OK && dev[0] &&
+        strncasecmp(h, dev, strlen(dev)) == 0)
+      return true;                                            // bunbun-XXXX[.local][:port]
+    if (!strncasecmp(h, "localhost", 9)) return true;
+    return false;
+  }
+}
+static esp_err_t deny_foreign(httpd_req_t *req) {
+  httpd_resp_set_status(req, "403 Forbidden");
+  httpd_resp_set_type(req, "application/json");
+  httpd_resp_sendstr(req, "{\"ok\":false,\"note\":\"only this bunbun's own page may change it\"}");
+  return ESP_OK;
+}
+// A FAILED UPLOAD MUST NOT LEAVE A PAK THAT LOOKS FINE. Once the erase has run, the magic and
+// the index are already on flash while the bodies are still 0xFF - so a dropped connection left
+// a pak claiming N entries whose pixels were all erased, and the device drew garbage forever
+// with no way back but a serial cable. Zeroing the magic turns that into an honest "no art
+// here", which pakBegin() already handles: loud, and recoverable by installing anything.
+static void assets_abandon(const esp_partition_t *part) {
+  const uint8_t dead[4] = {0, 0, 0, 0};
+  esp_partition_write(part, 0, dead, sizeof(dead));
+  rtsp_server_start();     // ...and give the speaker back; the failure paths never did
+}
 static esp_err_t ota_assets_handler(httpd_req_t *req) {
-  cors_allow(req);
+  if (!origin_ok(req)) return deny_foreign(req);
   if (req->content_len == 0) {
     httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "No pak uploaded");
     return ESP_FAIL;
@@ -595,9 +714,52 @@ static esp_err_t ota_assets_handler(httpd_req_t *req) {
            (int)req->content_len);
   rtsp_server_stop();
 
+  // LOOK BEFORE YOU ERASE (rehearsal S4). This used to wipe the whole art partition
+  // before checking a single byte, so a truncated or non-BUNP POST destroyed every
+  // asset with nothing to fall back on. Read the head first, prove it is a pak, and
+  // only then erase. head_len bytes are carried into the write loop below.
+  char head[512];
+  int head_len = 0;
+  while (head_len < (int)sizeof(head) && head_len < (int)req->content_len) {
+    int r = httpd_req_recv(req, head + head_len, sizeof(head) - head_len);
+    if (r <= 0) {
+      rtsp_server_start();
+      httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "receive failed");
+      return ESP_FAIL;
+    }
+    head_len += r;
+  }
+  if (head_len < 8 || head[0] != 'B' || head[1] != 'U' || head[2] != 'N' ||
+      head[3] != 'P') {
+    ESP_LOGE(TAG, "assets upload is not a BUNP pak - refusing, nothing erased");
+    rtsp_server_start();
+    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                        "that file is not bunbun art - nothing was changed");
+    return ESP_FAIL;
+  }
+  {
+    uint16_t count = (uint8_t)head[6] | ((uint8_t)head[7] << 8);
+    size_t need = 8 + (size_t)count * 56;
+    if (count == 0 || need > req->content_len) {
+      ESP_LOGE(TAG, "assets upload claims %u entries but is only %d bytes - refusing",
+               (unsigned)count, (int)req->content_len);
+      rtsp_server_start();
+      httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                          "that art file is incomplete - nothing was changed");
+      return ESP_FAIL;
+    }
+  }
+
   size_t erase_len = (req->content_len + 4095) & ~(size_t)4095;
   if (esp_partition_erase_range(part, 0, erase_len) != ESP_OK) {
+    rtsp_server_start();
     httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "erase failed");
+    return ESP_FAIL;
+  }
+  // the head we already hold goes down first
+  if (esp_partition_write(part, 0, head, head_len) != ESP_OK) {
+    assets_abandon(part);
+    httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "write failed");
     return ESP_FAIL;
   }
 
@@ -606,10 +768,11 @@ static esp_err_t ota_assets_handler(httpd_req_t *req) {
   // month). Internal alloc because esp_partition_write sources from it.
   char *buf = heap_caps_malloc(4096, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
   if (!buf) {
+    assets_abandon(part);
     httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "no memory");
     return ESP_FAIL;
   }
-  size_t off = 0;
+  size_t off = (size_t)head_len;      // the head is already read AND already written
   while (off < req->content_len) {
     size_t want = req->content_len - off;
     if (want > 4096) {
@@ -618,11 +781,12 @@ static esp_err_t ota_assets_handler(httpd_req_t *req) {
     int n = httpd_req_recv(req, buf, want);
     if (n <= 0) {
       free(buf);
+      assets_abandon(part);
       httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
                           "receive failed");
       return ESP_FAIL;
     }
-    if (off == 0 && (n < 4 || memcmp(buf, "BUNP", 4) != 0)) {
+    if (0 && (n < 4 || memcmp(buf, "BUNP", 4) != 0)) {   // checked before the erase now
       // Partition is already part-erased at this point, but pakBegin()
       // treats a missing magic as "no assets" — loud and harmless, and
       // fw_assets_report_missing() will re-pull the fleet pak.
@@ -632,6 +796,7 @@ static esp_err_t ota_assets_handler(httpd_req_t *req) {
     }
     if (esp_partition_write(part, off, buf, (size_t)n) != ESP_OK) {
       free(buf);
+      assets_abandon(part);
       httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
                           "write failed");
       return ESP_FAIL;
@@ -692,6 +857,125 @@ static esp_err_t debug_cat_handler(httpd_req_t *req) {
   return ESP_OK;
 }
 
+extern void bunbun_debug_act(const char *a);
+extern bool bunbun_debug_say(const char *k);
+// GET /api/debug/say?k=<moment> - replay one of this room's authored lines on the toy.
+// Keyed, never free text: see the note above bunbun_debug_say() in main.cpp.
+static esp_err_t debug_say_handler(httpd_req_t *req) {
+  char q[64] = {0}, k[12] = {0};
+  if (httpd_req_get_url_query_str(req, q, sizeof(q)) == ESP_OK)
+    httpd_query_key_value(q, "k", k, sizeof(k));
+  bool said = bunbun_debug_say(k);
+  httpd_resp_set_type(req, "application/json");
+  httpd_resp_sendstr(req, said ? "{\"ok\":true}\n"
+                               : "{\"ok\":false,\"note\":\"nothing written for that moment\"}\n");
+  return ESP_OK;
+}
+extern void bunbun_cat_name(char *out, int n);
+extern void bunbun_set_cat_name(const char *n);
+// GET  /api/pet/catname          -> {"name":"Mittens"}   ("" when she has none)
+// POST /api/pet/catname?n=<name> -> sets it; an empty n forgets it.
+// Guarded, because it changes what the toy says: same rule as every other write.
+static esp_err_t cat_name_handler(httpd_req_t *req) {
+  if (req->method == HTTP_POST) {
+    if (!origin_ok(req)) return deny_foreign(req);
+    char q[96] = {0}, n[24] = {0};
+    if (httpd_req_get_url_query_str(req, q, sizeof(q)) == ESP_OK)
+      httpd_query_key_value(q, "n", n, sizeof(n));
+    // httpd_query_key_value DOES NOT DECODE. It hands back the raw query text, so a name with
+    // a space in it was stored literally as "Meow%20Meow" and the toy then said that, on the
+    // glass, to a child (caught within a minute of shipping it, 2026-08-22). Percent-decode in
+    // place; '+' is a space too, because a form-encoded value can arrive either way.
+    {
+      char *r = n, *w = n;
+      while (*r) {
+        if (*r == '%' && isxdigit((unsigned char)r[1]) && isxdigit((unsigned char)r[2])) {
+          char h[3] = {r[1], r[2], 0};
+          *w++ = (char)strtol(h, NULL, 16);
+          r += 3;
+        } else if (*r == '+') { *w++ = ' '; r++; }
+        else { *w++ = *r++; }
+      }
+      *w = 0;
+    }
+    bunbun_set_cat_name(n);
+  }
+  char cur[16] = {0};
+  bunbun_cat_name(cur, sizeof(cur));
+  char out[64];
+  snprintf(out, sizeof(out), "{\"ok\":true,\"name\":\"%s\"}\n", cur);
+  httpd_resp_set_type(req, "application/json");
+  httpd_resp_sendstr(req, out);
+  return ESP_OK;
+}
+static esp_err_t debug_act_handler(httpd_req_t *req) {
+  char q[48] = {0}, a[8] = {0};
+  if (httpd_req_get_url_query_str(req, q, sizeof(q)) == ESP_OK)
+    httpd_query_key_value(q, "a", a, sizeof(a));
+  bunbun_debug_act(a);
+  httpd_resp_set_type(req, "application/json");
+  httpd_resp_sendstr(req, "{\"ok\":true}\n");
+  return ESP_OK;
+}
+
+// GET /api/debug/brain - the pet's live decision state, for debugging worlds over
+// HTTP instead of squinting at screenshots.
+extern void bunbun_brain_snapshot(char *buf, int len);
+extern void bunbun_why(char *buf, int len);
+static esp_err_t debug_brain_handler(httpd_req_t *req) {
+  // 320 was exactly enough until the brain grew four more fields, and snprintf simply
+  // truncated the JSON mid-string - every reader then failed to parse a reply that
+  // looked fine in a terminal. Size it for the fields, with room to grow again.
+  // ...AND IT GREW AGAIN ("room", 8/22). The last overflow truncated valid JSON mid-string
+  // and every reader failed to parse a reply that looked fine in a terminal; a snapshot is a
+  // debugging tool, so it must never be the thing that needs debugging. Sized well clear.
+  char out[720], why[128], merged[980];
+  bunbun_brain_snapshot(out, sizeof(out));
+  bunbun_why(why, sizeof(why));
+  /* the last decision's own words, straight from the record it wrote at the time */
+  size_t n = strlen(out);
+  if (n > 1 && out[n - 1] == '}') {
+    out[n - 1] = 0;
+    snprintf(merged, sizeof(merged), "%s,\"why\":\"%s\"}", out, why);
+  } else {
+    snprintf(merged, sizeof(merged), "%s", out);
+  }
+  httpd_resp_set_type(req, "application/json");
+  httpd_resp_sendstr(req, merged);
+  return ESP_OK;
+}
+
+// POST /api/debug/restorebk - copy the slow backup save over the live pet: the undo
+// for an accidental "start over?".
+// GET /api/debug/clock?min=N - teach the wall clock (and the timezone) remotely.
+extern void bunbun_set_clock(int localMin);
+static esp_err_t debug_clock_handler(httpd_req_t *req) {
+  char q[48] = {0}, v[8] = {0};
+  int m = -1;
+  if (httpd_req_get_url_query_str(req, q, sizeof(q)) == ESP_OK &&
+      httpd_query_key_value(q, "min", v, sizeof(v)) == ESP_OK)
+    m = atoi(v);
+  httpd_resp_set_type(req, "application/json");
+  if (m < 0) { httpd_resp_sendstr(req, "{\"ok\":false}\n"); return ESP_OK; }
+  bunbun_set_clock(m);
+  httpd_resp_sendstr(req, "{\"ok\":true}\n");
+  return ESP_OK;
+}
+
+extern bool bunbun_restore_backup(void);
+static esp_err_t debug_restorebk_handler(httpd_req_t *req) {
+  if (!origin_ok(req)) return deny_foreign(req);
+  bool ok = bunbun_restore_backup();
+  httpd_resp_set_type(req, "application/json");
+  httpd_resp_sendstr(req, ok ? "{\"ok\":true,\"note\":\"the backup pet is live again\"}\n"
+                             : "{\"ok\":false,\"note\":\"no readable backup\"}\n");
+  return ESP_OK;
+}
+
+/* The care buttons a hand can reach but HTTP could not (rehearsal 0.3): with the pet
+ * sick or asleep every remote act was swallowed, and there was no route to MEDS, to
+ * the treats basket, or to the lights. /api/debug/act now takes: meds, wake, treats,
+ * lights, plus the existing errands. */
 extern void bunbun_send_away(void);
 static esp_err_t debug_away_handler(httpd_req_t *req) {
   bunbun_send_away();
@@ -730,7 +1014,7 @@ static esp_err_t debug_age_handler(httpd_req_t *req) {
 
 // which creature this pet is - the art changes, nothing about the pet does
 static esp_err_t pet_species_handler(httpd_req_t *req) {
-  cors_allow(req);
+  if (!origin_ok(req)) return deny_foreign(req);
   extern const char *bunbun_species_id(void);
   extern int bunbun_set_species(const char *id);
   if (req->method == HTTP_POST) {
@@ -753,6 +1037,7 @@ static esp_err_t pet_species_handler(httpd_req_t *req) {
 }
 
 static esp_err_t ota_update_handler(httpd_req_t *req) {
+  if (!origin_ok(req)) return deny_foreign(req);
   if (req->content_len == 0) {
     httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "No firmware uploaded");
     return ESP_FAIL;
@@ -779,7 +1064,6 @@ static esp_err_t ota_update_handler(httpd_req_t *req) {
 }
 
 static esp_err_t system_info_handler(httpd_req_t *req) {
-  cors_allow(req);
   cJSON *json = cJSON_CreateObject();
   cJSON *info = cJSON_CreateObject();
 
@@ -968,7 +1252,7 @@ static esp_err_t system_info_handler(httpd_req_t *req) {
 }
 
 static esp_err_t system_restart_handler(httpd_req_t *req) {
-  cors_allow(req);
+  if (!origin_ok(req)) return deny_foreign(req);
   cJSON *json = cJSON_CreateObject();
   cJSON_AddBoolToObject(json, "success", true);
 
@@ -993,6 +1277,12 @@ static esp_err_t system_restart_handler(httpd_req_t *req) {
 static const char *ALLOWED_PREFIXES[] = {"/spiffs/"};
 
 static bool is_path_allowed(const char *path) {
+#if CONFIG_BUNBUN_PUBLIC_BUILD
+  // The wish clips are a child's voice. Nothing in the builder loop reads them, so on a public
+  // unit they are simply not reachable over HTTP - not listable, not downloadable, not
+  // deletable. They still record, still play back on the device, still show on the wish shelf.
+  if (strstr(path, "/wishes")) return false;
+#endif
   for (int i = 0; i < sizeof(ALLOWED_PREFIXES) / sizeof(ALLOWED_PREFIXES[0]);
        i++) {
     if (strncmp(path, ALLOWED_PREFIXES[i], strlen(ALLOWED_PREFIXES[i])) == 0) {
@@ -1210,6 +1500,7 @@ static esp_err_t music_upload_handler(httpd_req_t *req) {
 }
 
 static esp_err_t music_delete_handler(httpd_req_t *req) {
+  if (!origin_ok(req)) return deny_foreign(req);
   httpd_resp_set_type(req, "application/json");
   char q[160] = {0}, name[96] = {0};
   httpd_req_get_url_query_str(req, q, sizeof(q));
@@ -1236,6 +1527,7 @@ extern bool usb_msc_mode_available(void);
 static void msc_restart_cb(void *arg) { esp_restart(); }
 
 static esp_err_t usbmode_handler(httpd_req_t *req) {
+  if (!origin_ok(req)) return deny_foreign(req);
   if (!usb_msc_mode_available()) {
     // The scaffolding shipped ahead of the USB stack (three-flavor TinyUSB
     // collision, W-020 session 2). A button that reboots the pet and
@@ -1339,22 +1631,22 @@ static esp_err_t wish_record_handler(httpd_req_t *req) {
 // {"token":""} clears it. GET reports {"configured":bool} and NEVER the token.
 static esp_err_t wish_uploader_handler(httpd_req_t *req) {
   if (req->method == HTTP_GET) {
-    // ?set=<token> provisions from a plain browser URL — the only tool
-    // guaranteed to exist next to a bunbun on a hotspot in a moving car.
-    // Local HTTP on the device's own subnet; the convenience is worth it.
-    char query[256] = {0};
-    char tokv[200] = {0};
-    if (httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK &&
-        httpd_query_key_value(query, "set", tokv, sizeof(tokv)) == ESP_OK &&
-        tokv[0]) {
-      esp_err_t err = wish_uploader_set_token(tokv);
-      httpd_resp_set_type(req, "application/json");
-      httpd_resp_send(req,
-                      err == ESP_OK ? "{\"ok\":true,\"configured\":true}"
-                                    : "{\"ok\":false}",
-                      HTTPD_RESP_USE_STRLEN);
-      return ESP_OK;
-    }
+    // THE ?set= PROVISIONING ROUTE IS GONE, and must stay gone.
+    //
+    // It set the upload credential from a bare URL, on a GET, with no guard. A cross-origin
+    // GET is not blocked by CORS and carries NO Origin header at all - an <img src=...> or a
+    // redirect is enough - so origin_ok()'s "no Origin means a script or curl, allow it" rule
+    // could never catch this one. Any page anyone in the house opened could POINT THIS TOY'S
+    // WISHES AT SOMEBODY ELSE'S REPO. Reading the token was never needed; replacing it is
+    // worse, because the child keeps wishing and the audio keeps arriving somewhere.
+    //
+    // It also put a long-lived credential in a URL, where it lands in history and any proxy
+    // log on the path.
+    //
+    // Setting the token is a POST with a JSON body, below, behind deny_foreign(): a
+    // cross-origin form POST cannot set application/json without a preflight this server
+    // never answers. The convenience it bought (a browser next to a bunbun in a moving car)
+    // is not worth a silent redirect of a child's voice; a one-line curl replaces it.
     // Count clips still on the shelf so "is my wish sent?" is one URL.
     int pending = 0;
     DIR *d = opendir("/spiffs/wishes");
@@ -1376,6 +1668,8 @@ static esp_err_t wish_uploader_handler(httpd_req_t *req) {
     httpd_resp_send(req, out, HTTPD_RESP_USE_STRLEN);
     return ESP_OK;
   }
+  // The write half of an endpoint that hands this device its upload credential.
+  if (!origin_ok(req)) return deny_foreign(req);
   char body[256];
   int n = httpd_req_recv(req, body, sizeof(body) - 1);
   if (n <= 0) {
@@ -1402,7 +1696,6 @@ static esp_err_t wish_uploader_handler(httpd_req_t *req) {
 // wish collector (pulls /spiffs/wishes/*.wav for transcription), but generic:
 // GET /api/fs/download?path=/spiffs/...
 static esp_err_t fs_download_handler(httpd_req_t *req) {
-  cors_allow(req);
   char query[160] = {0};
   char path[128] = {0};
   if (httpd_req_get_url_query_str(req, query, sizeof(query)) != ESP_OK ||
@@ -1450,7 +1743,7 @@ static esp_err_t fs_download_handler(httpd_req_t *req) {
 #define FS_UPLOAD_SLACK ((size_t)32 * 1024)
 
 static esp_err_t fs_upload_handler(httpd_req_t *req) {
-  cors_allow(req);
+  if (!origin_ok(req)) return deny_foreign(req);
   // Get target path from query string
   char query[128] = {0};
   char path[64] = {0};
@@ -1505,6 +1798,19 @@ static esp_err_t fs_upload_handler(httpd_req_t *req) {
                           "Not enough space left on the device");
       return ESP_FAIL;
     }
+  }
+
+  /* A SCENE THE DEVICE CANNOT LOAD IS REFUSED HERE (rehearsal 1.4/N14). An oversize
+   * or malformed room used to upload with {"success":true} and then quietly become the
+   * compiled-in factory room after the reboot - a complete, plausible, DIFFERENT room,
+   * with nothing said anywhere. SCENE_MAX_BYTES is 8192; the loader refuses anything
+   * larger, so accepting it here is a promise the device cannot keep. */
+  if (strstr(path, "/spiffs/scene") == path && req->content_len > 8192) {
+    ESP_LOGE(TAG, "scene %s is %d bytes; the device reads 8192 - refusing",
+             path, (int)req->content_len);
+    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                        "that room is too big for bunbun - take a few things out of it");
+    return ESP_FAIL;
   }
 
   FILE *f = fopen(path, "wb");
@@ -1577,6 +1883,7 @@ static esp_err_t fs_upload_handler(httpd_req_t *req) {
 }
 
 static esp_err_t fs_delete_handler(httpd_req_t *req) {
+  if (!origin_ok(req)) return deny_foreign(req);
   char query[128] = {0};
   char path[64] = {0};
 
@@ -1810,7 +2117,10 @@ esp_err_t web_server_start(uint16_t port) {
 
   httpd_uri_t builder_page_uri = {
       .uri = "/build", .method = HTTP_GET, .handler = builder_page_handler};
+  static const httpd_uri_t control_uri = {
+      .uri = "/control", .method = HTTP_GET, .handler = control_page_handler};
   httpd_register_uri_handler(s_server, &builder_page_uri);
+  httpd_register_uri_handler(s_server, &control_uri);
 
   httpd_uri_t speedtest_ping_uri = {.uri = "/api/speedtest/ping",
                                     .method = HTTP_GET,
@@ -1868,14 +2178,18 @@ esp_err_t web_server_start(uint16_t port) {
                                     .method = HTTP_GET,
                                     .handler = ota_assets_get_handler};
   httpd_register_uri_handler(s_server, &ota_assets_get_uri);
-  static const char *k_cors_uris[] = {"/api/ota/assets", "/api/fs/upload",
-                                      "/api/system/restart"};
-  for (size_t ci = 0; ci < sizeof(k_cors_uris) / sizeof(k_cors_uris[0]); ci++) {
-    httpd_uri_t pre = {.uri = k_cors_uris[ci],
-                       .method = HTTP_OPTIONS,
-                       .handler = cors_preflight_handler};
-    httpd_register_uri_handler(s_server, &pre);
-  }
+  // NO OPTIONS PREFLIGHT, and no wildcard CORS anywhere on this server. Restored 2026-08-22:
+  // the comment above builder_page_handler has always claimed "this server sends no CORS headers
+  // and answers OPTIONS with 405 ... it avoids opening a wildcard CORS hole on an unauthenticated
+  // device sitting on a family's wifi" - and every clause of it was false. cors_allow() set
+  // Access-Control-Allow-Origin: * on eight handlers, three of which ERASE THE ART PARTITION,
+  // RESTART THE DEVICE and WRITE TO /spiffs (including /spiffs/www/builder.html, which survives
+  // every firmware update). Any web page in any tab could reach them.
+  //
+  // Verified before removing: nothing depends on it. Every fetch in device_import.html is a
+  // RELATIVE path - it is served from the device at /build and only ever talks to its own
+  // origin - and no other browser tool fetches a device by absolute URL. Scripts use curl,
+  // where CORS does not apply.
 
   httpd_uri_t species_get_uri = {.uri = "/api/pet/species",
                                  .method = HTTP_GET,
@@ -1901,6 +2215,34 @@ esp_err_t web_server_start(uint16_t port) {
                                 .handler = debug_away_handler};
   httpd_register_uri_handler(s_server, &debug_away_uri);
 
+  httpd_uri_t debug_clock_uri = {.uri = "/api/debug/clock",
+                                 .method = HTTP_GET,
+                                 .handler = debug_clock_handler};
+  httpd_register_uri_handler(s_server, &debug_clock_uri);
+  httpd_uri_t debug_restorebk_uri = {.uri = "/api/debug/restorebk",
+                                     .method = HTTP_POST,
+                                     .handler = debug_restorebk_handler};
+  httpd_register_uri_handler(s_server, &debug_restorebk_uri);
+  httpd_uri_t debug_brain_uri = {.uri = "/api/debug/brain",
+                                 .method = HTTP_GET,
+                                 .handler = debug_brain_handler};
+  httpd_register_uri_handler(s_server, &debug_brain_uri);
+  httpd_uri_t debug_act_uri = {.uri = "/api/debug/act",
+                               .method = HTTP_GET,
+                               .handler = debug_act_handler};
+  httpd_register_uri_handler(s_server, &debug_act_uri);
+  httpd_uri_t cat_name_get = {.uri = "/api/pet/catname",
+                             .method = HTTP_GET,
+                             .handler = cat_name_handler};
+  httpd_register_uri_handler(s_server, &cat_name_get);
+  httpd_uri_t cat_name_post = {.uri = "/api/pet/catname",
+                               .method = HTTP_POST,
+                               .handler = cat_name_handler};
+  httpd_register_uri_handler(s_server, &cat_name_post);
+  httpd_uri_t debug_say_uri = {.uri = "/api/debug/say",
+                               .method = HTTP_GET,
+                               .handler = debug_say_handler};
+  httpd_register_uri_handler(s_server, &debug_say_uri);
   httpd_uri_t debug_cat_uri = {.uri = "/api/debug/cat",
                                .method = HTTP_GET,
                                .handler = debug_cat_handler};
@@ -1936,10 +2278,24 @@ esp_err_t web_server_start(uint16_t port) {
                              .method = HTTP_GET,
                              .handler = wish_uploader_handler};
   httpd_register_uri_handler(s_server, &wish_up_get);
+#if !CONFIG_BUNBUN_PUBLIC_BUILD
+  // NOT ON A UNIT THAT LEAVES THE HOUSE. This POST needs no auth, no Origin and no gate, and it
+  // starts wish_recorder_start() - ~15 seconds of live room audio from the ES8311 mic, written
+  // to /spiffs/wishes/*.wav, which /api/fs/list enumerates and /api/fs/download returns. Three
+  // unauthenticated calls in a loop is continuous surveillance of a child's bedroom by anyone on
+  // the family's wifi. Nothing collects or deletes the clips in the public build.
+  //
+  // The ruling was recorded and then read as if it had been done: the comment above the age
+  // handler says the debug routes go "behind the same gate as /api/wish/record before any
+  // non-family unit ships (Hush's ruling, 8/12)". There was never a gate on /api/wish/record.
+  //
+  // HOLD-TO-WISH ON THE DEVICE'S OWN SCREEN IS UNTOUCHED - it calls wish_recorder_start()
+  // directly and never goes near HTTP. A child loses nothing; the network loses the mic.
   httpd_uri_t wish_record_post = {.uri = "/api/wish/record",
                                   .method = HTTP_POST,
                                   .handler = wish_record_handler};
   httpd_register_uri_handler(s_server, &wish_record_post);
+#endif
   httpd_uri_t wish_up_post = {.uri = "/api/wish/uploader",
                               .method = HTTP_POST,
                               .handler = wish_uploader_handler};

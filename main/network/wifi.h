@@ -76,3 +76,15 @@ void wifi_set_hostname(const char *device_name);
 /* W-054: hop to the next remembered network (escape hatch for networks
  * with client isolation). Returns 0 and copies the new SSID out. */
 int wifi_switch_next_known(char *out_ssid, size_t out_len);
+
+/* Apply credentials and join NOW, without a restart.
+ *
+ * /api/wifi/config saves and then reboots, which is fine over HTTP because the
+ * browser is talking to the device's own web server and can just reconnect.
+ * Improv cannot: the credentials arrive over the USB cable and the reply has to
+ * go back down that same cable, so a reboot mid-handshake looks like a failure
+ * to whoever is watching the flasher page.
+ *
+ * Same three calls wifi_switch_next_known() has always used. Returns ESP_OK if
+ * the join was STARTED - the caller polls wifi_is_connected() for the outcome. */
+esp_err_t wifi_apply_credentials_now(const char *ssid, const char *password);

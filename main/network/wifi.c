@@ -161,6 +161,25 @@ int wifi_switch_next_known(char *out_ssid, size_t out_len) {
   return 0;
 }
 
+esp_err_t wifi_apply_credentials_now(const char *ssid, const char *password) {
+  if (!ssid || !ssid[0]) {
+    return ESP_ERR_INVALID_ARG;
+  }
+  const char *pw = password ? password : "";
+  settings_set_wifi_credentials(ssid, pw);
+  known_store(ssid, pw);           /* so the escape hatch can come back here */
+  ESP_LOGI(TAG, "Improv: joining '%s' without a restart", ssid);
+  wifi_config_t wc = {0};
+  strlcpy((char *)wc.sta.ssid, ssid, sizeof(wc.sta.ssid));
+  strlcpy((char *)wc.sta.password, pw, sizeof(wc.sta.password));
+  esp_wifi_disconnect();
+  esp_err_t err = esp_wifi_set_config(WIFI_IF_STA, &wc);
+  if (err != ESP_OK) {
+    return err;
+  }
+  return esp_wifi_connect();
+}
+
 static int known_lookup(const char *ssid, char *pass, size_t pc) {
   nvs_handle_t h;
   if (nvs_open(KNOWN_NVS_NS, NVS_READONLY, &h) != ESP_OK) {
@@ -674,7 +693,19 @@ void wifi_init_apsta(const char *ap_ssid, const char *ap_password) {
   s_ap_config.ap.channel = 1;
   s_ap_config.ap.max_connection = 4;
 
+  // A SHORT PASSWORD MUST NEVER BECOME AN OPEN AP. WPA2-PSK needs 8+ characters; below that
+  // esp_wifi_set_config refuses and the AP does not come up. Say so loudly rather than let a
+  // well-meant edit ("make it bunbun") silently reopen the API at 192.168.4.1 to anyone in
+  // radio range - which is what an empty password does today.
+  if (strlen(default_password) > 0 && strlen(default_password) < 8) {
+    ESP_LOGE(TAG,
+             "AP password is %d chars; WPA2 needs 8. The setup AP will NOT start. "
+             "Fix CONFIG_DEFAULT_AP_PASSWORD.",
+             (int)strlen(default_password));
+  }
   if (strlen(default_password) == 0) {
+    ESP_LOGW(TAG, "AP password is empty - the setup AP is OPEN and the whole API is reachable "
+                  "on it. Set CONFIG_DEFAULT_AP_PASSWORD.");
     s_ap_config.ap.authmode = WIFI_AUTH_OPEN;
   } else {
     strncpy((char *)s_ap_config.ap.password, default_password,

@@ -29,6 +29,15 @@ int wish_uploader_take_event(void);
 /** Human-readable last action / wait reason, for the status API. */
 const char *wish_uploader_status(void);
 
+/** False when this image has no uploader at all (the public build).
+ *
+ * The screen used to ask wish_uploader_online() and, on a false, promise the wish would
+ * "fly when wifi is back". In a public build there is no uploader to fly it: online() is a
+ * hardcoded false, so the promise was made on WiFi, off WiFi, and for ever. Callers that
+ * word a message for a child must ask THIS first - it separates "no radio right now" from
+ * "this bunbun keeps its wishes at home". */
+bool wish_uploader_present(void);
+
 /** True if WiFi is up — lets the save-verdict tell the truth offline. */
 bool wish_uploader_online(void);
 
