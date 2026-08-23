@@ -13,6 +13,11 @@ void wish_uploader_init(void);
 /** Store/replace the GitHub token in NVS (NULL or "" clears it). */
 esp_err_t wish_uploader_set_token(const char *token);
 
+/* Where wishes go, e.g. "https://api.github.com/repos/owner/repo". Runtime config for the same
+ * reason the token is: an image with a destination compiled into it can only ever belong to one
+ * person. Empty clears it, and a unit with no destination keeps its wishes to itself. */
+esp_err_t wish_uploader_set_base(const char *base);
+
 /** True if a token is configured. Never exposes the token itself. */
 bool wish_uploader_configured(void);
 

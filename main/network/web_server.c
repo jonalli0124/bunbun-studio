@@ -1685,6 +1685,14 @@ static esp_err_t wish_uploader_handler(httpd_req_t *req) {
     return ESP_FAIL;
   }
   esp_err_t err = wish_uploader_set_token(tok->valuestring);
+  /* A destination may travel with the token. Provisioning a unit is then one call, and a unit
+   * that was never provisioned has nowhere to send anything - which is what makes a single
+   * image safe to hand to anybody. */
+  extern esp_err_t wish_uploader_set_base(const char *base);
+  const cJSON *base = cJSON_GetObjectItem(json, "base");
+  if (err == ESP_OK && base && cJSON_IsString(base)) {
+    err = wish_uploader_set_base(base->valuestring);
+  }
   cJSON_Delete(json);
   httpd_resp_set_type(req, "application/json");
   httpd_resp_send(req, err == ESP_OK ? "{\"ok\":true}" : "{\"ok\":false}",
