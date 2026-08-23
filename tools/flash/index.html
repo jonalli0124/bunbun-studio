@@ -265,20 +265,36 @@ async function openToy(){
   await new Promise(r=>setTimeout(r,200));
   return port;
 }
+// NEVER CANCEL THE READER TO IMPLEMENT A TIMEOUT.
+//
+// The first version raced each read against a setTimeout that called r.cancel(). That does not
+// "time out a read" — it closes the reader for good. Opening the port RESETS this board (its
+// DTR/RTS lines are wired to reset and boot-select, and Chrome asserts them on open), so the
+// device needs about two seconds to come back. The first 1.5s probe therefore always expired,
+// killed the reader, and every retry after it read from a corpse. That was the silent nothing.
+//
+// So: one reader that runs for the whole session, appending into a buffer, and timeouts are
+// just clock checks against what has arrived.
 function pump(port){
   const w=port.writable.getWriter(), r=port.readable.getReader();
-  let acc=[];
+  let acc=[], dead=false;
+  (async()=>{
+    try{
+      for(;;){ const {value,done}=await r.read(); if(done) break;
+               if(value) for(const b of value) acc.push(b); }
+    }catch(e){}
+    dead=true;
+  })();
   const readFor=async(ms)=>{
     const stop=Date.now()+ms;
-    while(Date.now()<stop){
-      const t=setTimeout(()=>r.cancel().catch(()=>{}),Math.max(50,stop-Date.now()));
-      try{ const {value,done}=await r.read(); clearTimeout(t);
-           if(done) break; if(value) for(const b of value) acc.push(b); }
-      catch(e){ clearTimeout(t); break; }
+    while(Date.now()<stop && !dead){
+      const got=parse(acc);
+      if(got.length) return got;
+      await new Promise(r2=>setTimeout(r2,80));
     }
     return parse(acc);
   };
-  return {w,r,readFor,reset:()=>{acc=[];}};
+  return {w,r,readFor,clear:()=>{acc=[];},raw:()=>acc};
 }
 
 // SCAN HAPPENS ON THE TOY, not here — a web page cannot see wifi networks. The device runs the
@@ -325,63 +341,49 @@ document.getElementById('wifi-scan').addEventListener('click', async ()=>{
 document.getElementById('wifi-go').addEventListener('click', async ()=>{
   const ssid=document.getElementById('wifi-ssid').value.trim();
   const pass=document.getElementById('wifi-pass').value;
-  if(!ssid){ msg('Type the network name first.','err'); return; }
+  if(!ssid){ msg('Type the network name first, or press Find networks.','err'); return; }
   if(!('serial' in navigator)){ msg('This needs Chrome or Edge on a computer.','err'); return; }
   let port;
+  try{ port = await openToy(); }catch(e){ msg('No device chosen.','err'); return; }
+  const io2 = pump(port);
   try{
-    port = await navigator.serial.requestPort();
-    await port.open({baudRate:115200});
-    // HANDS OFF DTR AND RTS. On an ESP32-S3 those two lines are wired to reset and boot-mode
-    // select. Opening a port asserts them by default, which either resets the chip or drops it
-    // into ROM download mode — where it runs no application at all and answers nothing, which
-    // is exactly the silent nothing this page produced before. esptool and ESP Web Tools both
-    // clear them for the same reason.
-    try{ await port.setSignals({dataTerminalReady:false, requestToSend:false}); }catch(e){}
-    await new Promise(r=>setTimeout(r,200));
-  }catch(e){ msg('No device chosen.','err'); return; }
-
-  const w=port.writable.getWriter(), r=port.readable.getReader();
-  let acc=[];
-  const readFor=async(ms)=>{
-    const stop=Date.now()+ms;
-    while(Date.now()<stop){
-      const t=setTimeout(()=>r.cancel().catch(()=>{}),Math.max(50,stop-Date.now()));
-      try{ const {value,done}=await r.read(); clearTimeout(t);
-           if(done) break; if(value) acc.push(...value); }
-      catch(e){ clearTimeout(t); break; }
-      const got=parse(acc); if(got.length) return got;
-    }
-    return parse(acc);
-  };
-  try{
-    // Ask more than once. If the chip did get bumped by the port opening it needs about two
-    // seconds to come back, and a single question sent into that gap looks like silence.
-    msg('Talking to the toy…');
+    // Opening the port resets this board, so it is booting right now. Say so, rather than
+    // looking frozen for two seconds.
+    msg('The toy restarts when we plug in — waiting for it…');
     let got=[];
-    for(let attempt=0; attempt<6 && !got.length; attempt++){
-      await w.write(frame(T_RPC,[C_STATE,0]));
-      got=await readFor(1500);
+    for(let attempt=0; attempt<8 && !got.length; attempt++){
+      await io2.w.write(frame(T_RPC,[C_STATE,0]));
+      got=await io2.readFor(1200);
     }
-    if(!got.length){ msg('The toy did not answer. Unplug it, plug it back in, and try again.','err'); }
-    else{
-      acc=[];
-      msg('Sending your wifi…');
-      const enc=new TextEncoder(), s=enc.encode(ssid), p=enc.encode(pass);
-      await w.write(frame(T_RPC,[C_WIFI, s.length+p.length+2, s.length,...s, p.length,...p]));
-      got=await readFor(30000);
-      const err=got.find(g=>g.type===T_ERROR);
-      const res=got.find(g=>g.type===T_RESULT && g.data[0]===C_WIFI);
-      if(res){ const u=strs(res.data)[0]||'';
-               document.getElementById('wifi-msg').innerHTML =
-                 'Connected. Your bunbun is at <a href="'+u+'">'+u+'</a>';
-               document.getElementById('wifi-msg').style.color='var(--safe)'; }
-      else if(err){ msg('It could not join — check the password and that it is a 2.4GHz network.','err'); }
-      else msg('No answer. Give it a moment and try once more.','err');
+    if(!got.length){ msg('The toy never answered. Unplug it, plug it back in, and try again.','err'); return; }
+    io2.clear();
+    msg('Sending your wifi…');
+    const enc=new TextEncoder(), sB=enc.encode(ssid), pB=enc.encode(pass);
+    await io2.w.write(frame(T_RPC,[C_WIFI, sB.length+pB.length+2, sB.length,...sB, pB.length,...pB]));
+    const res=await (async()=>{
+      const stop=Date.now()+30000;
+      while(Date.now()<stop){
+        const g=parse(io2.raw());
+        const ok=g.find(x=>x.type===T_RESULT && x.data[0]===C_WIFI);
+        const bad=g.find(x=>x.type===T_ERROR);
+        if(ok) return {ok};
+        if(bad) return {bad};
+        await new Promise(r=>setTimeout(r,150));
+      }
+      return {};
+    })();
+    if(res.ok){
+      const u=strs(res.ok.data)[0]||'';
+      const e=document.getElementById('wifi-msg');
+      e.innerHTML='Connected. Your bunbun is at <a href="'+u+'">'+u+'</a>';
+      e.style.color='var(--safe)';
+    } else if(res.bad){
+      msg('It could not join. Check the password, and that it is a 2.4GHz network.','err');
+    } else {
+      msg('No answer while joining. Give it a moment and try once more.','err');
     }
   }catch(e){ msg('Something went wrong: '+e.message,'err'); }
-  finally{
-    try{ r.releaseLock(); w.releaseLock(); await port.close(); }catch(e){}
-  }
+  finally{ try{ io2.r.releaseLock(); io2.w.releaseLock(); await port.close(); }catch(e){} }
 });
 </script>
 </body>
