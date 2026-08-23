@@ -5613,7 +5613,40 @@ static void runMenu(int i) {
 // external RTC part, which this board no longer has.
 //
 // Stamped at the top of each stage of a frame. The LAST value standing is where it died.
-RTC_NOINIT_ATTR struct { uint32_t magic, where, seq; } g_bc;
+/* THE PANIC HUNT (W-096, still open since 8/16).
+ *
+ * Both D468 and 6D1C come back with reset_reason 4 and crumb 0 - a panic OUTSIDE the update
+ * and selfcheck paths - and their breadcrumbs land on BC_CHARSPRITE (loading his own sprite)
+ * and BC_PUSH (the blit to the glass). Both are large, contiguous allocations. Both units also
+ * sit at 26-27KB largest free internal block against a 31,744 baseline, which is the same
+ * -5,120 regression that quarantined this line and was never explained.
+ *
+ * That is a correlation and nothing more. The measurement that would settle it: what was the
+ * largest contiguous block AT those two breadcrumbs, in the moments before the crash? If it
+ * trends down toward the size being asked for, this is the g_spr internal-RAM famine again and
+ * the fix is known (move the buffer to PSRAM). If it sits flat, the theory dies cheaply and we
+ * stop looking here.
+ *
+ * The low-water marks live in the RTC-backed breadcrumb so they SURVIVE the panic. A number
+ * that dies with the crash cannot describe it. */
+RTC_NOINIT_ATTR struct {
+  uint32_t magic, where, seq;
+  uint32_t lowSprite;   /* smallest largest-block seen at BC_CHARSPRITE */
+  uint32_t lowPush;     /* ...and at BC_PUSH */
+  uint32_t lowAny;      /* ...anywhere in the frame, as a control */
+} g_bc;
+static uint32_t g_bcPrevLowSprite = 0, g_bcPrevLowPush = 0, g_bcPrevLowAny = 0;
+
+/* Sampled, not measured every frame: heap_caps_get_largest_free_block() walks the free list,
+ * and a probe that changes the timing of the thing it is watching is worth nothing. Every 8th
+ * visit is plenty to see a trend across the minutes before a crash. */
+static inline void bcLow(uint32_t *slot, uint8_t phase) {
+  static uint8_t n = 0;
+  if ((++n & 7) != phase) return;
+  const uint32_t b = (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL);
+  if (b && b < *slot) *slot = b;
+  if (b && b < g_bc.lowAny) g_bc.lowAny = b;
+}
 static uint32_t g_bcPrevWhere = 0, g_bcPrevSeq = 0;
 static bool     g_bcPrevValid = false;
 #define BC_MAGIC 0xB0FFB0FFu
@@ -5641,8 +5674,26 @@ static void bcSnapshot() {
   g_bcPrevValid = (g_bc.magic == BC_MAGIC);
   g_bcPrevWhere = g_bcPrevValid ? g_bc.where : 0;
   g_bcPrevSeq   = g_bcPrevValid ? g_bc.seq   : 0;
+  g_bcPrevLowSprite = g_bcPrevValid ? g_bc.lowSprite : 0;
+  g_bcPrevLowPush   = g_bcPrevValid ? g_bc.lowPush   : 0;
+  g_bcPrevLowAny    = g_bcPrevValid ? g_bc.lowAny    : 0;
   g_bc.magic = BC_MAGIC; g_bc.where = 0;      // seq deliberately keeps counting across boots
+  g_bc.lowSprite = g_bc.lowPush = g_bc.lowAny = 0xFFFFFFFFu;   // this run starts fresh
 }
+/* Both runs, because only the pair is evidence: what memory looked like at the two suspect
+ * sites in the run that DIED, and what it looks like in the run that is answering you now. A
+ * live number alone cannot tell you whether it was falling. 0 = never sampled. */
+extern "C" void bunbun_bc_lows(unsigned *prevSprite, unsigned *prevPush, unsigned *prevAny,
+                               unsigned *nowSprite, unsigned *nowPush, unsigned *nowAny) {
+  const uint32_t NEVER = 0xFFFFFFFFu;
+  *prevSprite = (unsigned)g_bcPrevLowSprite;
+  *prevPush   = (unsigned)g_bcPrevLowPush;
+  *prevAny    = (unsigned)g_bcPrevLowAny;
+  *nowSprite  = (unsigned)(g_bc.lowSprite == NEVER ? 0 : g_bc.lowSprite);
+  *nowPush    = (unsigned)(g_bc.lowPush   == NEVER ? 0 : g_bc.lowPush);
+  *nowAny     = (unsigned)(g_bc.lowAny    == NEVER ? 0 : g_bc.lowAny);
+}
+
 extern "C" void bunbun_bc_snapshot(int *valid, int *where, unsigned *seq) {
   *valid = g_bcPrevValid ? 1 : 0;
   *where = (int)g_bcPrevWhere;
@@ -8949,7 +9000,7 @@ static void composeRoom(int fx, int fy, float sc, int lampOn, bool cloudLit, flo
     BC(BC_DISCO);
     discoBandStage(g_band, by, rows);
     { uint32_t t0 = micros();
-      BC(BC_PUSH);
+      BC(BC_PUSH); bcLow(&g_bc.lowPush, 4);
       scene.pushImage(0, by, UI_W, rows, g_band);
       g_tPushAcc += micros() - t0; }
   }
@@ -9112,7 +9163,7 @@ static void sheetLiftTick() {
 
 static void drawScene() {
   g_discoPulseFrame = beatPulse();    // snapshot: every band of this frame sees the same beat
-  BC(BC_CHARSPRITE);
+  BC(BC_CHARSPRITE); bcLow(&g_bc.lowSprite, 0);
   loadCharSprite();
   sheetLiftTick();                    // AFTER loadCharSprite: the clamp needs g_meta.h
   int fx = gx2s(S.x) + g_danceSway, fy = gy2s(S.y) - g_danceHop - g_sheetLift;

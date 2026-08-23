@@ -3,6 +3,8 @@
 #include "dac.h"
 #include "esp_log.h"
 #include "esp_mac.h"
+#include "esp_memory_utils.h"
+#include "esp_timer.h"
 #include <stdio.h>
 #include "nvs.h"
 #include <string.h>
@@ -89,11 +91,67 @@ esp_err_t settings_set_volume(float volume_db) {
   return ESP_OK;
 }
 
+/* A TASK WHOSE STACK IS IN PSRAM MAY NOT TOUCH FLASH.
+ *
+ * Writing NVS disables the flash cache, and PSRAM is reached THROUGH that cache - so a task
+ * running on a PSRAM stack cannot execute while the write is in progress, cannot even return.
+ * IDF asserts on it rather than let it fault:
+ *
+ *   assert failed: spi_flash_disable_interrupts_caches_and_other_cpu
+ *                  cache_utils.c:127 (esp_task_stack_is_sane_cache_disabled())
+ *
+ * That is W-096, open since 2026-08-16 and quarantining the whole 0.1.291 line. It fires on
+ * EVERY AirPlay disconnect, because rtsp_conn_free() persists the volume and client_task's
+ * stack is MALLOC_CAP_SPIRAM (rtsp_server.c:503). Jon: "connecting and disconnecting airplay
+ * is almost a guaranty to cause a crash panic." It was not almost - it was every time this
+ * path ran.
+ *
+ * Fixed here rather than at the one call site, because volume is unlikely to be the only
+ * thing ever persisted from a networking task: the check is on the CALLER's stack, so any
+ * future caller is covered too. A zero-delay esp_timer callback runs on the esp_timer task,
+ * which has an ordinary internal stack and may touch flash freely.
+ *
+ * The other two PSRAM stacks - s_recv_stack_psram and s_ctrl_stack_psram in
+ * audio_stream_realtime.c - are exposed to exactly the same hazard on any flash path they can
+ * reach. This makes THIS path safe; it does not audit those. */
+static void volume_flush_cb(void *arg);
+static bool caller_is_on_external_stack(void);
+static esp_err_t volume_write_now(void);
+static esp_timer_handle_t s_volume_flush = NULL;
+
 esp_err_t settings_persist_volume(void) {
   if (!g_volume_loaded) {
     return ESP_OK;
   }
+  if (caller_is_on_external_stack()) {
+    if (!s_volume_flush) {
+      const esp_timer_create_args_t a = {.callback = volume_flush_cb,
+                                         .name = "volflush",
+                                         .dispatch_method = ESP_TIMER_TASK};
+      if (esp_timer_create(&a, &s_volume_flush) != ESP_OK) {
+        return ESP_ERR_NO_MEM;     /* better to lose a volume than to panic the device */
+      }
+    }
+    esp_timer_stop(s_volume_flush);          /* coalesce a burst of calls into one write */
+    return esp_timer_start_once(s_volume_flush, 0);
+  }
+  return volume_write_now();
+}
 
+static void volume_flush_cb(void *arg) {
+  (void)arg;
+  volume_write_now();
+}
+
+static bool caller_is_on_external_stack(void) {
+  /* Only its ADDRESS is wanted - a local lives on the caller's stack, so where it sits tells
+   * us which memory that stack is in. Initialised because -Werror=maybe-uninitialized cannot
+   * see that the value is never read. */
+  volatile int probe = 0;
+  return esp_ptr_external_ram((void *)&probe);
+}
+
+static esp_err_t volume_write_now(void) {
   nvs_handle_t nvs;
   esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs);
   if (err != ESP_OK) {

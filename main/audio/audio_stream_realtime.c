@@ -569,6 +569,12 @@ static esp_err_t realtime_start(audio_stream_t *stream, uint16_t port) {
       return ESP_FAIL;
     }
     state->control_port = ctrl_bound;
+    /* The data socket has carried a receive timeout since the NACK work; this one never did,
+     * so its task blocked in recvfrom() indefinitely and could not notice running == false.
+     * Without it, stopping the stream cannot wait for this task and would be forced to free
+     * the socket underneath it - which is the use-after-free realtime_stop() now avoids. */
+    struct timeval ctv = {.tv_sec = 0, .tv_usec = 100000};
+    setsockopt(state->control_socket, SOL_SOCKET, SO_RCVTIMEO, &ctv, sizeof(ctv));
   }
 
   stream->running = true;
@@ -646,6 +652,27 @@ static void realtime_stop(audio_stream_t *stream) {
 
   stream->running = false;
 
+  /* STOP THE READERS BEFORE FREEING WHAT THEY ARE READING.
+   *
+   * This used to close both sockets and THEN wait for the tasks - so they were freed while both
+   * receiver tasks were still inside recvfrom() on them, and while LWIP could still deliver a
+   * datagram to a mailbox that no longer existed. That is W-096's second panic, caught on
+   * hardware 2026-08-23:
+   *
+   *   Guru Meditation Error: Core 1 panic'ed (LoadProhibited)
+   *   tcpip_thread -> ethernet_input -> ip4_input -> udp_input -> recv_udp
+   *     -> sys_mbox_trypost -> xQueueGenericSend -> xTaskRemoveFromEventList
+   *
+   * An RTP datagram already in flight, arriving microseconds after teardown. It is why
+   * "connecting and disconnecting AirPlay is almost a guaranty to cause a crash panic", and why
+   * it read as a flaky phone rather than a bug in here.
+   *
+   * Both sockets now carry a 100ms receive timeout, so the tasks see running == false and exit
+   * well inside the 1s budget below. Only then is anything freed. */
+  if (!realtime_wait_for_tasks_stopped(state, 20)) {
+    ESP_LOGW(TAG, "Audio receiver task did not exit within timeout");
+  }
+
   if (state->data_socket > 0) {
     close(state->data_socket);
     state->data_socket = 0;
@@ -653,10 +680,6 @@ static void realtime_stop(audio_stream_t *stream) {
   if (state->control_socket > 0) {
     close(state->control_socket);
     state->control_socket = 0;
-  }
-
-  if (!realtime_wait_for_tasks_stopped(state, 20)) {
-    ESP_LOGW(TAG, "Audio receiver task did not exit within timeout");
   }
 }
 

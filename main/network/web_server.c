@@ -1193,6 +1193,24 @@ static esp_err_t system_info_handler(httpd_req_t *req) {
     cJSON_AddBoolToObject(info, "bc_valid", bc_valid);
     cJSON_AddNumberToObject(info, "bc_where", bc_where);
     cJSON_AddNumberToObject(info, "bc_seq", (double)bc_seq);
+
+    /* W-096: the panic hunt, on the wire so it can be watched without a cable. Both units come
+     * back with reset_reason 4 / crumb 0 and breadcrumbs at BC_CHARSPRITE and BC_PUSH - two
+     * large contiguous allocations - while sitting well under the 31,744-byte baseline for
+     * largest free internal block. These are the low-water marks at exactly those two sites:
+     * `prev` from the run that died, `now` from the run answering you. If prev trends toward
+     * the size being requested, it is the g_spr famine again. If it does not, the theory is
+     * dead and we look elsewhere. 0 means never sampled. */
+    extern void bunbun_bc_lows(unsigned *, unsigned *, unsigned *,
+                               unsigned *, unsigned *, unsigned *);
+    unsigned ps = 0, pp = 0, pa = 0, ns = 0, np = 0, na = 0;
+    bunbun_bc_lows(&ps, &pp, &pa, &ns, &np, &na);
+    cJSON_AddNumberToObject(info, "low_sprite_prev", (double)ps);
+    cJSON_AddNumberToObject(info, "low_push_prev", (double)pp);
+    cJSON_AddNumberToObject(info, "low_any_prev", (double)pa);
+    cJSON_AddNumberToObject(info, "low_sprite_now", (double)ns);
+    cJSON_AddNumberToObject(info, "low_push_now", (double)np);
+    cJSON_AddNumberToObject(info, "low_any_now", (double)na);
   }
   // Last wish-recording outcome (0 none/ok, 1 mic, 2 memory, 3 too-short,
   // 4 storage) — so the mic can be debugged remotely on the canary.
