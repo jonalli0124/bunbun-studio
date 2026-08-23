@@ -311,13 +311,32 @@ document.getElementById('wifi-scan').addEventListener('click', async ()=>{
   try{ port = await openToy(); }catch(e){ msg('No device chosen.','err'); return; }
   const io = pump(port);
   try{
+    // WAIT FOR IT TO COME BACK FIRST. Opening the port resets this board, so for the next two
+    // seconds there is nothing listening. The old code fired the scan request 200ms after
+    // opening, straight into a booting chip; the request was simply lost, and the page then sat
+    // out its whole 15s window waiting for an answer to a question nobody heard. That is the
+    // "It found nothing" — the scan never ran at all.
+    msg('The toy restarts when we plug in — waiting for it…');
+    let ready=[];
+    for(let attempt=0; attempt<8 && !ready.length; attempt++){
+      await io.w.write(frame(T_RPC,[C_STATE,0]));
+      ready=await io.readFor(1200);
+    }
+    if(!ready.length){ msg('The toy never answered. Unplug it, plug it back in, try again.','err'); return; }
+    io.clear();
+
     msg('Asking the toy to look around… this takes a few seconds.');
     await io.w.write(frame(T_RPC,[5,0]));
+    // Rebuild the list from the whole buffer each pass rather than appending. readFor() returns
+    // everything accumulated so far, so appending counted every network again on every poll.
+    // The device hands these out one per tick and ends with an empty one, so keep looking until
+    // that terminator shows up.
     let nets=[], done=false;
-    const stop=Date.now()+15000;
+    const stop=Date.now()+20000;
     while(Date.now()<stop && !done){
-      const got=await io.readFor(1500);
-      for(const g of got){
+      await new Promise(r=>setTimeout(r,250));
+      nets=[]; done=false;
+      for(const g of parse(io.raw())){
         if(g.type!==T_RESULT || g.data[0]!==5) continue;
         const parts=strs(g.data);
         if(!parts.length){ done=true; break; }
