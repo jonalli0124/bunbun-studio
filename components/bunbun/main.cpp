@@ -3933,6 +3933,30 @@ static void think(float dt) {
   // brain below, which promptly sent him somewhere. Now the party takes the floor and the
   // walker is stood down; only a door already in progress is allowed to finish, because
   // stopping halfway would leave him between two rooms.
+  // A DOOR TRIP IS g_visit == 4 AND A TARGET. WITHOUT THOSE THE FLAG IS A GHOST.
+  //
+  // Only one place clears g_doorTrip in the ordinary course: the arrival test a few hundred
+  // lines down, `g_visit == 4 && g_doorTrip && |g_fx - g_tx| < 12`. So a crossing that loses
+  // its visit or its target can never complete, and the 9s/30s backstop cannot rescue it
+  // either - that lives inside `if (g_tx >= 0)`, and this is precisely the case where g_tx is
+  // -1. The flag then stays 1 for ever.
+  //
+  // It happens by ordinary means: the potty opens a crossing (g_visit=4, g_doorTrip=1), then
+  // any errand at all runs sceneErrandTo, which begins `if (!g_pottyLock) g_pottySeq = 0;` and
+  // overwrites g_visit/g_tx with its own. When THAT errand finishes it clears them to -1 and
+  // the crossing is orphaned. Measured on bunbun-6920: door=1, visit=-1, tx=-1, held for a
+  // minute-plus while he pottered about with "I really needed the potty" still on the board.
+  //
+  // Before today a ghost flag froze him (the dance branch returned unconditionally). Now it
+  // does something quieter and worse: the branch stands down for a crossing that will never
+  // arrive, so DANCE MODE IS SILENTLY DEAD until a reboot - "he stopped dancing", "he just sat
+  // down during dance mode" (Jon, 2026-08-23). Clearing the ghost is the fix; the crossing it
+  // referred to is already gone.
+  if (g_doorTrip && (g_visit != 4 || g_tx < 0)) {
+    g_doorTrip = 0;
+    g_doorAct[0] = 0;
+  }
+
   // YOU CANNOT DANCE IN YOUR SLEEP (Jon: "dance mode should wake them up"). The branch below
   // needs S.lights, so a party started over a sleeping pet set the mode, dropped the ball and
   // lit the beams while he lay on his bed in the dark - mode ON, nothing happening.

@@ -156,3 +156,27 @@ one-second bunny every fifteen seconds: the spontaneous joy hop, which no world 
 From 0.1.291 the pet **adopts** the animal his world declares, provided the pak really
 carries it. If you are on older firmware, install the matching species package.
 
+## Setting one up to give away
+
+Do it AT HOME, on your own network, before it leaves the house:
+
+1. Flash it from the flasher (full erase, then the starter package).
+2. Let it join wifi (Improv over the cable, or the AP portal).
+3. **Add it:**
+
+       py tools/wish_units.py --add <its ip>
+
+`--add` is `--arm` plus the step everybody forgets. It asks the unit its own name and MAC,
+arms the wish uploader, and writes it into `tools/fleet-units.json` so `--check` asks after
+it from then on.
+
+**Why this step exists at all:** where wishes go is runtime configuration, deliberately - so
+ONE image is safe to hand to anybody, and a unit only sends wishes when somebody arms it. The
+cost is that a full erase, which is exactly what the flasher does, takes the destination with
+it. An unarmed unit does not complain: it records to a shelf that holds SIX and then quietly
+refuses, so a child keeps pressing the button and nobody finds out for weeks.
+
+    py tools/wish_units.py --check
+
+is the question "are all my units still listening?" as a command. Run it after any handover,
+and after re-flashing anything.

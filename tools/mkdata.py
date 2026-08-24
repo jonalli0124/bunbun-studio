@@ -50,6 +50,17 @@ def gather_clips(root, generic=False, label=""):
         # and WEST are how travel is actually shipped (generate east, mirror west), and Adult_Walk
         # exists ONLY in directional form, so skipping all of them dropped the walk entirely.
         if c.endswith(('_NorthWest','_NorthEast','_SouthWest','_SouthEast')): continue
+        # A CLIP FOLDER IS A PHASE FOLDER, and nothing else is (Jon 2026-08-23: "what is the
+        # croc head and tails? that shouldnt be there ... as a separate secion to select in the
+        # animation creation"). This walked EVERY directory under the pack, so the croc's
+        # heads/ and tails/ - 64 loose part sheets left over from its generation session -
+        # arrived in the clip picker as if they were animations a child could pose. Named
+        # rather than silently dropped: a folder in a pack that is not a clip is either
+        # working material that belongs elsewhere, or a clip that is misnamed, and both are
+        # worth seeing at build time.
+        if not c.startswith(('Adult_', 'Baby_')):
+            print(f"   not a clip folder, skipped: {label}{c}")
+            continue
         # Adult-only (Jon 8/18: "kill the baby stuff... only one age and it can be adult").
         # The pak and the pet's own phases keep their baby art; the KIDS' tools offer adult.
         if c.startswith('Baby_'): continue
