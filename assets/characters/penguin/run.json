@@ -2,10 +2,10 @@
  "species": "penguin",
  "display": "Penguin",
  "started": "2026-08-18",
- "status": "PACK COMPLETE (adult-only) \u2014 self-reviewed; owner-approved base",
- "base_character": "e78bfb0e-2b45-4fad-89c5-f9a1239d8b15 (Penguin overalls v2 \u2014 owner keeper; pocket, seat puff, cream belly + orange chest band, gloss shading all ratified)",
+ "status": "PACK COMPLETE (adult-only) - self-reviewed; owner-approved base; +Adult_Dance 2026-08-23",
+ "base_character": "e78bfb0e-2b45-4fad-89c5-f9a1239d8b15 (Penguin overalls v2 — owner keeper; pocket, seat puff, cream belly + orange chest band, gloss shading all ratified)",
  "states": {
-  "Adult_Sit": "f653d9dd (roll 3 \u2014 roll 1 infra-failed HTTP 500, roll 2 undressed the penguin; garment stability clause added)",
+  "Adult_Sit": "f653d9dd (roll 3 — roll 1 infra-failed HTTP 500, roll 2 undressed the penguin; garment stability clause added)",
   "Adult_Sleep": "895749ea (override 120)"
  },
  "install": {
@@ -27,7 +27,7 @@
   "west_mirror": "Adult_Walk_West = horizontal flip of cleaned Adult_Walk_East"
  },
  "needs_jon": [
-  "can_hold set FALSE (flippers cannot grip) \u2014 held objects will use the floor-beside fallback",
+  "can_hold set FALSE (flippers cannot grip) — held objects will use the floor-beside fallback",
   "Sleep is a hunched head-tucked ball (a real penguin sleep) rather than a side-curl; eyes open dots as with all packs",
   "roll-2 bare-penguin sit kept in PixelLab as 07fb6782 (fallback, natural colours)"
  ],
@@ -47,5 +47,27 @@
   "Adult_Tired": 7,
   "Adult_Walk_East": 7,
   "Adult_Walk_West": 7
+ },
+ "added": {
+  "Adult_Dance": {
+   "date": "2026-08-23",
+   "animation_group": "11c222c4-3ae8-4ab0-b3ff-5461ae34ba02",
+   "animation_id": "df4d8d58-0866-419f-b997-e583f9384a47",
+   "cost": "1 generation (credits, plan allowance exhausted)",
+   "raw_size": "112x112 (v3 output size moved since 2026-08-18, when raw came back 96)",
+   "install": "NOT --norm: normalise_feet() shifts EACH frame to one feet row and would flatten the hop. Shared offset dx=8 dy=4 applied to all 7 frames; asserted zero opaque px clipped.",
+   "feet_rows": "90,90,88,84,87,90,90 (standing frames match the pack's flat 90; frame 3 lifts 6px)",
+   "palette_maps": {
+    "#a95aad": "#9151d3",
+    "#763680": "#5d229d",
+    "#afb3b7": "#a6aab0",
+    "#988966": "#8c7c60",
+    "#f17c8f": "#830442",
+    "#771413": "#830442"
+   },
+   "palette_result": "closed - 9 of the pack's 10 colours, zero new colours introduced",
+   "recipe": "tools/mkspecies.py dance/anim now prefers Adult_Dance, then Adult_Happy, then Adult_Love",
+   "owner": "'ooh the penguin adult dance looks great!'"
+  }
  }
 }

@@ -221,3 +221,41 @@ outline-close a scaled guide first, because v3 reproduces a broken silhouette ve
   frame 02 was left transparent (it is real limb separation, not a defect).
 - Crawl feet-norm centres the ink horizontally (raw ink sat off-centre on the 124 canvas;
   the symmetric crop would have clipped 1px). All 5 frames share the shift; feet y=90.
+
+## 2026-08-23 — Adult_Dance (audit fill-in; the clip `dance/anim` really wants)
+
+Keeper `d539a019-fdba-43b0-8632-d7fc57dc2f46`, v3, south only, frame_count 6 (7 stored), 1 generation.
+Animation group `84e28183-6599-4a40-a441-c891d7226a04`.
+
+The penguin's verified dance prompt with the species word substituted — the sanctioned
+Phase-2 pattern ("croc/canonical prompts, species word") — plus the one body-part swap
+"flipper wings" -> "arms", the same precedent as the beak-for-mouth substitution.
+
+```
+The croc stands upright and dances on the spot, bouncing rhythmically from one foot to the other while both arms lift and swing outward to the sides in time with the bounce, the head bobbing gently with each beat, then returning to the neutral upright posture so the motion repeats seamlessly. Empty hands, nothing in the mouth, no props.
+```
+
+Install: raw came back **116x116** (v3 output size varies per character — measure, never assume).
+Cleaned `--dist 70 --keep-outline`, NO `--norm` (normalise_feet shifts each frame separately and
+would flatten the bounce). One shared offset dx=10 dy=11 for all 7 frames, anchored on the clip's
+LOWEST extent so nothing sits below this pack's floor row 89. Zero opaque px clipped. Lift 4px.
+Garment mapped as an explicit PAIR to #9151d3/#5d229d — nearest-colour matching flattened the
+cat's base+shade into one value and sent the frog's shade to the wrong colour, which is exactly
+the failure the pair doctrine warns about. Everything else mapped to the pack's nearest existing
+colour, with a guard that refuses to collapse two source colours into one.
+check_pack: PASS, anchor purples missing in 0 frames.
+
+## 2026-08-23 — Adult_Play (audit fill-in; `play/anim` was substituting an emote)
+
+Keeper `d539a019-fdba-43b0-8632-d7fc57dc2f46`, v3, south, frame_count 6 (7 stored). Group `01448769-6405-4df7-a05c-35e4521c6e9f`.
+Structure reuses the cat's recorded Adult_Play scaffolding (crouch -> wiggle -> spring -> settle,
+"Keep the face exactly identical to the source", garment-fixed clause) with the action changed;
+the cat's own clip is a cat-specific batting/pouncing move that does not transfer verbatim.
+
+```
+The croc crouches down slightly, wiggles briefly, then springs back up and playfully bats at the air in front of it with one hand, swiping quickly downward several times while bouncing on the spot, then settles back into its resting posture. Keep the face exactly identical to the source. Its purple outfit remains fixed in place. Empty hands, no props.
+```
+
+Install: cleaned `--dist 70 --keep-outline`, no `--norm`; one shared offset anchored on the
+clip's lowest extent onto this pack's floor row; zero opaque px clipped; garment mapped as an
+explicit pair to #9151d3/#5d229d. check_pack PASS.

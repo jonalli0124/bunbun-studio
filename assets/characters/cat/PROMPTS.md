@@ -62,3 +62,50 @@ The cat crouches down slightly with its rear swaying, wiggles briefly, then spri
 (clean --dist 70 --keep-outline --norm 96; garment pair-swapped to #9151d3/#5d229d at
 install; Adult_Walk_West mirrored from the cleaned east). Verified by rendering and
 looking; details and flags in run.json.
+
+## 2026-08-23 — Adult_Dance (audit fill-in; the clip `dance/anim` really wants)
+
+Keeper `8b8523bf-d5d1-43cd-bd5d-8c3c42f3cd4c`, v3, south only, frame_count 6 (7 stored), 1 generation.
+Animation group `ba3ae46e-4c18-430b-a4c2-d5df8744524d`.
+
+The penguin's verified dance prompt with the species word substituted — the sanctioned
+Phase-2 pattern ("croc/canonical prompts, species word") — plus the one body-part swap
+"flipper wings" -> "arms", the same precedent as the beak-for-mouth substitution.
+
+```
+The cat stands upright and dances on the spot, bouncing rhythmically from one foot to the other while both arms lift and swing outward to the sides in time with the bounce, the head bobbing gently with each beat, then returning to the neutral upright posture so the motion repeats seamlessly. Empty hands, nothing in the mouth, no props.
+```
+
+Install: raw came back **104x104** (v3 output size varies per character — measure, never assume).
+Cleaned `--dist 70 --keep-outline`, NO `--norm` (normalise_feet shifts each frame separately and
+would flatten the bounce). One shared offset dx=4 dy=-1 for all 7 frames, anchored on the clip's
+LOWEST extent so nothing sits below this pack's floor row 89. Zero opaque px clipped. Lift 5px.
+Garment mapped as an explicit PAIR to #9151d3/#5d229d — nearest-colour matching flattened the
+cat's base+shade into one value and sent the frog's shade to the wrong colour, which is exactly
+the failure the pair doctrine warns about. Everything else mapped to the pack's nearest existing
+colour, with a guard that refuses to collapse two source colours into one.
+check_pack: PASS, anchor purples missing in 0 frames.
+
+## 2026-08-23 — Adult_Walk_NorthEast / _SouthEast (audit fill-in: the VERTICAL walk)
+
+Why: `walk-north/anim` and `walk-south/anim` had no source clip in this pack, so walking up or
+down the screen fell through `charSpriteKey`'s idle rescue — he GLIDED in his idle pose instead
+of walking. Only the croc and capybara ever had the diagonals.
+
+Keeper `8b8523bf-d5d1-43cd-bd5d-8c3c42f3cd4c`, v3, directions north-east + south-east in ONE group
+`a38dd49a-ff91-46cb-9d6f-33bc912eb769`, frame_count 6 (7 stored). 2 generations.
+West halves (NorthWest / SouthWest) are PC mirrors, not generations — the recorded croc rule.
+
+Prompt is the croc's walk line reused VERBATIM (it is direction-agnostic; the direction is the
+API parameter, not the wording):
+
+```
+walking forward with a long exaggerated stride, legs swinging far forward and far back, feet lifting high and clear of the ground on each step. Empty hands, nothing in the mouth, no props.
+```
+
+Install: raw 112x112. BOTH directions cleaned in ONE `clean_sprite` pass (`os.walk` recurses, so
+one shared palette across the whole set) — cleaning them separately produced two palettes whose
+near-duplicates then collapsed onto single pack colours. `--dist 70 --keep-outline`, no `--norm`.
+Shared offset per direction anchored on that direction's LOWEST extent onto pack floor 89
+(NE dy=5, SE dy=2). Zero opaque px clipped. Garment mapped as an explicit pair to
+#9151d3/#5d229d. check_pack PASS; `mkspecies.py cat` now reports no MISSING clips.

@@ -189,3 +189,65 @@ below on the keeper.
 (clean --dist 70 --keep-outline --norm 96; garment pair-swapped to #9151d3/#5d229d at
 install; Adult_Walk_West mirrored from the cleaned east). Verified by rendering and
 looking; details and flags in run.json.
+
+## 2026-08-23 — Adult_Dance (audit fill-in; the clip `dance/anim` really wants)
+
+Keeper `bd380030-1a07-4d5e-8ed8-02faf3f27000`, v3, south only, frame_count 6 (7 stored), 1 generation.
+Animation group `99f75863-5403-47ff-b1cf-303a7ebf3393`.
+
+The penguin's verified dance prompt with the species word substituted — the sanctioned
+Phase-2 pattern ("croc/canonical prompts, species word") — plus the one body-part swap
+"flipper wings" -> "arms", the same precedent as the beak-for-mouth substitution.
+
+```
+The bunny stands upright and dances on the spot, bouncing rhythmically from one foot to the other while both arms lift and swing outward to the sides in time with the bounce, the head bobbing gently with each beat, then returning to the neutral upright posture so the motion repeats seamlessly. Empty hands, nothing in the mouth, no props.
+```
+
+Install: raw came back **124x124** (v3 output size varies per character — measure, never assume).
+Cleaned `--dist 70 --keep-outline`, NO `--norm` (normalise_feet shifts each frame separately and
+would flatten the bounce). One shared offset dx=14 dy=13 for all 7 frames, anchored on the clip's
+LOWEST extent so nothing sits below this pack's floor row 91. Zero opaque px clipped. Lift 6px.
+Garment mapped as an explicit PAIR to #9151d3/#5d229d — nearest-colour matching flattened the
+cat's base+shade into one value and sent the frog's shade to the wrong colour, which is exactly
+the failure the pair doctrine warns about. Everything else mapped to the pack's nearest existing
+colour, with a guard that refuses to collapse two source colours into one.
+check_pack: PASS, anchor purples missing in 0 frames.
+
+## 2026-08-23 — Adult_Walk_NorthEast / _SouthEast (audit fill-in: the VERTICAL walk)
+
+Why: `walk-north/anim` and `walk-south/anim` had no source clip in this pack, so walking up or
+down the screen fell through `charSpriteKey`'s idle rescue — he GLIDED in his idle pose instead
+of walking. Only the croc and capybara ever had the diagonals.
+
+Keeper `bd380030-1a07-4d5e-8ed8-02faf3f27000`, v3, directions north-east + south-east in ONE group
+`f171f837-f8af-444b-ab17-e6cd5e195c62`, frame_count 6 (7 stored). 2 generations.
+West halves (NorthWest / SouthWest) are PC mirrors, not generations — the recorded croc rule.
+
+Prompt is the croc's walk line reused VERBATIM (it is direction-agnostic; the direction is the
+API parameter, not the wording):
+
+```
+walking forward with a long exaggerated stride, legs swinging far forward and far back, feet lifting high and clear of the ground on each step. Empty hands, nothing in the mouth, no props.
+```
+
+Install: raw 124x124. BOTH directions cleaned in ONE `clean_sprite` pass (`os.walk` recurses, so
+one shared palette across the whole set) — cleaning them separately produced two palettes whose
+near-duplicates then collapsed onto single pack colours. `--dist 70 --keep-outline`, no `--norm`.
+Shared offset per direction anchored on that direction's LOWEST extent onto pack floor 91
+(NE dy=13, SE dy=14). Zero opaque px clipped. Garment mapped as an explicit pair to
+#9151d3/#5d229d. check_pack PASS; `mkspecies.py bunny` now reports no MISSING clips.
+
+## 2026-08-23 — Adult_Play (audit fill-in; `play/anim` was substituting an emote)
+
+Keeper `bd380030-1a07-4d5e-8ed8-02faf3f27000`, v3, south, frame_count 6 (7 stored). Group `1a4515f3-8248-4b51-a160-1b00afbca7ab`.
+Structure reuses the cat's recorded Adult_Play scaffolding (crouch -> wiggle -> spring -> settle,
+"Keep the face exactly identical to the source", garment-fixed clause) with the action changed;
+the cat's own clip is a cat-specific batting/pouncing move that does not transfer verbatim.
+
+```
+The bunny crouches down slightly, wiggles briefly, then springs back up and playfully bats at the air in front of it with one hand, swiping quickly downward several times while bouncing on the spot, then settles back into its resting posture. Keep the face exactly identical to the source. Its purple outfit remains fixed in place. Empty hands, no props.
+```
+
+Install: cleaned `--dist 70 --keep-outline`, no `--norm`; one shared offset anchored on the
+clip's lowest extent onto this pack's floor row; zero opaque px clipped; garment mapped as an
+explicit pair to #9151d3/#5d229d. check_pack PASS.

@@ -74,7 +74,10 @@ SPEC_ADULT = {
     # The Scene Assembler has always offered it as "dancing"; the stock kit had no dance clip
     # at all, so emoteClip("dance", ...) fell through to jump - which is itself the idle pose
     # with an arc transform. So dancing, jumping and standing still were one image.
-    "dance/anim":       (7, ("anim", ("Adult_Happy", "Adult_Love"))),
+    # 2026-08-23: Adult_Dance is REAL dance art (penguin first), generated for this key rather
+    # than borrowed from an emote. It goes first so a pack that has it stops substituting; the
+    # Adult_Happy/Adult_Love fallback is untouched, so every other pack behaves exactly as before.
+    "dance/anim":       (7, ("anim", ("Adult_Dance", "Adult_Happy", "Adult_Love"))),
     "adult-cuddle":     (9, ("anim", "Adult_Love")),
 }
 SPEC_BABY = {

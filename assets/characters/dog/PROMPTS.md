@@ -83,3 +83,72 @@ nose, closed frown mouth, bib pocket (ratified), tail behind in every view.
 (clean --dist 70 --keep-outline --norm 96; garment pair-swapped to #9151d3/#5d229d at
 install; Adult_Walk_West mirrored from the cleaned east). Verified by rendering and
 looking; details and flags in run.json.
+
+## 2026-08-23 — Adult_Dance (audit fill-in; the clip `dance/anim` really wants)
+
+Keeper `21244f11-9d54-4e4c-a128-6d26888f8982`, v3, south only, frame_count 6 (7 stored), 1 generation.
+Animation group `55e88a26-85b0-451d-80e6-962471a3069d`.
+
+The penguin's verified dance prompt with the species word substituted — the sanctioned
+Phase-2 pattern ("croc/canonical prompts, species word") — plus the one body-part swap
+"flipper wings" -> "arms", the same precedent as the beak-for-mouth substitution.
+
+```
+The dog stands upright and dances on the spot, bouncing rhythmically from one foot to the other while both arms lift and swing outward to the sides in time with the bounce, the head bobbing gently with each beat, then returning to the neutral upright posture so the motion repeats seamlessly. Empty hands, nothing in the mouth, no props.
+```
+
+Install: raw came back **112x112** (v3 output size varies per character — measure, never assume).
+Cleaned `--dist 70 --keep-outline`, NO `--norm` (normalise_feet shifts each frame separately and
+would flatten the bounce). One shared offset dx=8 dy=4 for all 7 frames, anchored on the clip's
+LOWEST extent so nothing sits below this pack's floor row 90. Zero opaque px clipped. Lift 5px.
+Garment mapped as an explicit PAIR to #9151d3/#5d229d — nearest-colour matching flattened the
+cat's base+shade into one value and sent the frog's shade to the wrong colour, which is exactly
+the failure the pair doctrine warns about. Everything else mapped to the pack's nearest existing
+colour, with a guard that refuses to collapse two source colours into one.
+check_pack: PASS, anchor purples missing in 0 frames.
+
+## 2026-08-23 — Adult_Walk_NorthEast / _SouthEast (audit fill-in: the VERTICAL walk)
+
+Why: `walk-north/anim` and `walk-south/anim` had no source clip in this pack, so walking up or
+down the screen fell through `charSpriteKey`'s idle rescue — he GLIDED in his idle pose instead
+of walking. Only the croc and capybara ever had the diagonals.
+
+Keeper `21244f11-9d54-4e4c-a128-6d26888f8982`, v3, directions north-east + south-east in ONE group
+`37fd3f67-8fef-481b-a22a-253fcb2a12fe`, frame_count 6 (7 stored). 2 generations.
+West halves (NorthWest / SouthWest) are PC mirrors, not generations — the recorded croc rule.
+
+Prompt is the croc's walk line reused VERBATIM (it is direction-agnostic; the direction is the
+API parameter, not the wording):
+
+```
+walking forward with a long exaggerated stride, legs swinging far forward and far back, feet lifting high and clear of the ground on each step. Empty hands, nothing in the mouth, no props.
+```
+
+Install: raw 112x112. BOTH directions cleaned in ONE `clean_sprite` pass (`os.walk` recurses, so
+one shared palette across the whole set) — cleaning them separately produced two palettes whose
+near-duplicates then collapsed onto single pack colours. `--dist 70 --keep-outline`, no `--norm`.
+Shared offset per direction anchored on that direction's LOWEST extent onto pack floor 90
+(NE dy=5, SE dy=6). Zero opaque px clipped. Garment mapped as an explicit pair to
+#9151d3/#5d229d. check_pack PASS; `mkspecies.py dog` now reports no MISSING clips.
+
+## 2026-08-23 — Adult_Play (audit fill-in; `play/anim` was substituting an emote)
+
+Keeper `21244f11-9d54-4e4c-a128-6d26888f8982`, v3, south, frame_count 6 (7 stored). Group `1085d287-b657-4e04-be70-55e41e8d0841`.
+Structure reuses the cat's recorded Adult_Play scaffolding (crouch -> wiggle -> spring -> settle,
+"Keep the face exactly identical to the source", garment-fixed clause) with the action changed;
+the cat's own clip is a cat-specific batting/pouncing move that does not transfer verbatim.
+
+```
+The dog crouches down slightly, wiggles briefly, then springs back up and claps its hands together quickly several times in front of its chest while bouncing on the spot, then settles back into its resting posture. Keep the face exactly identical to the source. Its purple outfit remains fixed in place. Empty hands, nothing held, no props.
+```
+
+**ROLL 1 FAILED — THE NAMING-SUMMONS DOCTRINE, EXACTLY.** The first prompt said "bats at the AIR"
+and "Empty hands, no props", and the generator summoned props anyway: the dog got a cream ball on his
+chest (frame 3) and a small purple object in his raised paw (frames 4-5); the capybara got a tan object
+at its hand (frame 4). Naming an action that IMPLIES a target is enough - you do not have to name the
+toy. Roll 2 replaced the batting with CLAPPING, which implies no target, and came back clean. Do NOT
+add "no ball" to the prompt: naming it summons it.
+
+Install: cleaned `--dist 70 --keep-outline`, no `--norm`; one shared offset anchored on the
+clip's lowest extent onto this pack's floor row; zero opaque px clipped; garment mapped as an
+explicit pair to #9151d3/#5d229d. check_pack PASS.

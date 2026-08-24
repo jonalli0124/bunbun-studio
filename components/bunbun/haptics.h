@@ -21,10 +21,12 @@
 //      while paused.
 //
 // HONEST-BUTTON GATING: everything no-ops unless the motor is declared
-// present (NVS "bunbun"/"hapt" — set from the bench with serial 'v' once
-// the wiring is verified, cleared with 'V'). The SETUP shelf's HAPTICS
-// switch only draws itself when the motor is declared, so no unit ever
-// shows a control for a body part it doesn't have.
+// present (NVS "bunbun"/"hapt"). The SETUP shelf's HAPTICS switch and the
+// MUSIC panel's strength row only draw themselves when the motor is
+// declared, so no unit ever shows a control for a body part it lacks.
+// 2026-08-23: the DEFAULT is now present, because every unit ships with a
+// motor. Serial 'v' still declares one and runs the thump/purr test;
+// 'V' declares absent and writes an explicit 0, which beats the default.
 
 static const int PIN_HAPT = 44;
 static bool g_haptPresent = false;   // NVS-declared: the motor is wired
@@ -76,7 +78,13 @@ static void hapticOffNow() {
 
 static void hapticBegin() {
   prefs.begin("bunbun", true);
-  g_haptPresent = prefs.getUChar("hapt", 0) != 0;
+  // EVERY UNIT HAS A MOTOR NOW (Jon, 2026-08-23: "i plugged in a motor. all units will have
+  // a motor going forward"), so the DEFAULT is present. The honest-button rule below is
+  // unchanged in spirit - a unit still shows no control for a body part it lacks - but the
+  // fleet's truth flipped, and bench-declaring ten boards by hand to reflect it is the
+  // wrong way round. Serial 'V' remains the escape hatch for a board with no motor: it
+  // writes 0 explicitly, and an explicit 0 still wins over this default.
+  g_haptPresent = prefs.getUChar("hapt", 1) != 0;
   g_haptOn = prefs.getUChar("haptOn", 1) != 0;
   g_haptLevel = prefs.getUChar("haptLv", 3);
   prefs.end();

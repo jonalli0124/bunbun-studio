@@ -2,9 +2,9 @@
  "species": "dog",
  "display": "Dog",
  "started": "2026-08-18",
- "status": "PACK COMPLETE (adult-only) \u2014 self-reviewed; owner-approved base",
- "base_character": "3df87269-0d8f-4a92-a104-2d2e66d9921c (Dog overalls roll 1 \u2014 owner keeper)",
- "state_source": "21244f11-9d54-4e4c-a128-6d26888f8982 (Dog state source \u2014 v3 reference re-roll of the keeper's south; built because the keeper's stored rotations 404 server-side; KEEP for future dog states)",
+ "status": "PACK COMPLETE (adult-only) — self-reviewed; owner-approved base",
+ "base_character": "3df87269-0d8f-4a92-a104-2d2e66d9921c (Dog overalls roll 1 — owner keeper)",
+ "state_source": "21244f11-9d54-4e4c-a128-6d26888f8982 (Dog state source — v3 reference re-roll of the keeper's south; built because the keeper's stored rotations 404 server-side; KEEP for future dog states)",
  "states": {
   "Adult_Sit": "2dec732d (roll 3; rolls 1-2 infra-failed on rotation 404s)",
   "Adult_Sleep": "fc80a340 (roll 3, override 120)"
@@ -22,13 +22,13 @@
   },
   "palette": {
    "fur": "#ca9656 + #a26733 (pair)",
-   "garment": "#9151d3 + #5d229d (anchor pair; shade only ~5% of garment px \u2014 flat overalls, pair still swaps)",
+   "garment": "#9151d3 + #5d229d (anchor pair; shade only ~5% of garment px — flat overalls, pair still swaps)",
    "outline": "#000000",
    "accents": "#632d18 ear/nose dark, #f3c67b highlight"
   },
   "west_mirror": "Adult_Walk_West = horizontal flip of cleaned Adult_Walk_East"
  },
- "hands_check": "TAILED SPECIES check done on every clip: Pickup roll 1 FAILED (tail in hand, owner catch) \u2014 re-rolled clean; Love roll 1 FAILED (tail cradled in arms) \u2014 re-rolled clean; Bored passes with the tail sweeping in front of the legs but never held; all others clean.",
+ "hands_check": "TAILED SPECIES check done on every clip: Pickup roll 1 FAILED (tail in hand, owner catch) — re-rolled clean; Love roll 1 FAILED (tail cradled in arms) — re-rolled clean; Bored passes with the tail sweeping in front of the legs but never held; all others clean.",
  "needs_jon": [
   "Sleep NE/N-ish views lean sit-asleep (same as the croc's shipped flag; 5/8 properly lying)",
   "Sit/Sleep derive from the state-source re-roll, not the keeper directly (identity matched by eye; forced by the keeper's server-side rotation 404s)",
@@ -50,5 +50,6 @@
   "Adult_Tired": 7,
   "Adult_Walk_East": 7,
   "Adult_Walk_West": 7
- }
+ },
+ "KEEPER_CORRECTION_2026_08_23": "base_character 3df87269-0d8f-4a92-a104-2d2e66d9921c ('Dog overalls') NO LONGER EXISTS on PixelLab - animate_character returns 'character not found', and it is absent from all 81 characters in the account. The dog's 15 shipped clips were generated on it before it was deleted. The surviving character carrying the SAME art is 21244f11-9d54-4e4c-a128-6d26888f8982 ('Dog state source', 8dir 96x96, state:Idle, group 9a315ae2 with Adult_Sit 2dec732d + Adult_Sleep fc80a340). Verified by rendering its south rotation beside assets/characters/dog/Adult_Idle/south.png: same pose, ears, eye patch, tail and overalls - the repo copy differs only by the install-time pair swap to #9151d3 and the clean pass flattening the gloss. USE 21244f11 for any new dog animation."
 }

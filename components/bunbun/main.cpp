@@ -1347,6 +1347,12 @@ static void setAnim(const char *k) {
     // should say so regardless of what it is") - the moment one of the feeling clips
     // goes up, the ticker says which, whatever put it there.
     const char *ln = emoteLineFor(a->key);   // acquitted with the lamps and restored
+    // ...BUT NOT OVER THE PARTY (Jon, 2026-08-23: "not allow passive emtion notifications be
+    // present"). While the ball is down the ticker belongs to the dance; a passive feeling
+    // announcing itself on top of it reads as the pet complaining through the music. The
+    // dance's own caption still comes through - that one is emoteLineFor("jump") a few lines
+    // up, which already knows about g_danceMode and says "is dancing!" rather than a mood.
+    if (discoDown()) ln = nullptr;
     if (ln && tickerAwake()) {
       static const char *lastLn = nullptr;
       static uint32_t lastLnMs = 0;
@@ -2475,6 +2481,23 @@ static bool markIsRest(const char *key);
 // happen at all - both by the owner's rule.
 static uint8_t  g_doorTrip = 0;      // 1 = walking to the exit edge
 static uint8_t  g_whyDoor = 0;       // the reason that started this crossing
+
+// IS HE ACTUALLY ASLEEP, as opposed to merely standing in a dark room.
+//
+// Lights-off is a LAMP state, not a sleep state. The SLEEP button only walks him to bed when
+// `S.lights && sceneErrandTo("sleep")` succeeds; when he is mid-errand it falls through to the
+// blind toggle below it, which switches the lights off and says "is asleep" while he carries on
+// eating. drawSleepZs() keyed off S.lights alone, so it painted snoring Z's over a pet visibly
+// eating in the kitchen (Jon, 2026-08-23: "while he is eating there are zzzs ... it is the rk is
+// asleep that caused it"). It only showed up in side rooms because the double-Z guard below it
+// asks sceneActAnim("sleep"), which reads the CURRENT room's scene - the main room has a sleep
+// animation so the guard fired there and hid the bug.
+//
+// This is the test the lamp has always used (it was inlined at the lampOn site); the Z's simply
+// never asked. One definition now, so the room's light and its snores can never disagree.
+static inline bool petFastAsleep() {
+  return !S.lights && g_tx < 0 && g_visit < 0 && !g_doorTrip && !g_action;
+}
 static uint32_t g_visitHomeAt = 0;   // a fruitless side-room visit walks home at this time
 static uint32_t g_roomMinStay = 0;   // Jon: "at least 10 seconds" in a side room, whatever happens
 static uint32_t g_wakeUntil  = 0;    // 1 = play the child's waking-up animation as soon as we can
@@ -2683,7 +2706,18 @@ static bool sceneDoorTo(uint8_t tgt, const char *act) {
   // home has to pass: a walk home from a room whose own gauge is unfull is refused and the
   // next helping is scheduled instead. A command, bedtime or illness still overrides, and
   // REPEAT_CAP remains the backstop so an unreachable act can never trap him.
-  if (tgt == SCENE_ROLE_MAIN && !g_dbgAct[0] && S.lights && !S.sick && !g_danceMode) {
+  // ...AND BEDTIME REALLY DOES OVERRIDE IT. The paragraph above has claimed since it was
+  // written that "a command, bedtime or illness still overrides", but only the command
+  // (g_dbgAct), the illness (S.sick) and dancing were ever in the condition - bedtime was
+  // named and never implemented. So pressing SLEEP in a room whose own gauge was unfull was
+  // refused here, sceneErrandTo("sleep") returned false, and the SLEEP handler fell through
+  // to its blind lights toggle: "RK is asleep" with him still standing in the kitchen
+  // (Jon, 2026-08-23: "it keeps saying rk is asleep and not actually going back to the room
+  // to go to sleep"). Measured on D468 with food at 43 of ACT_FULL. Only the errand carries
+  // act="sleep"; every ambient walk home passes "" and is held exactly as before.
+  const bool bedtime = act && !strcmp(act, "sleep");
+  if (tgt == SCENE_ROLE_MAIN && !g_dbgAct[0] && S.lights && !S.sick && !g_danceMode &&
+      !bedtime) {
     const char *ra = roomOwnAct(g_scCurRole);
     // NOTHING ELSE PULLS AT HIM WHILE HE IS IN HERE (Jon: "the rooms should not allow the
     // negative emotions to start can we supress them so they arent pulling on him?"). I first
@@ -3124,6 +3158,25 @@ static uint32_t g_sheetLiftT0 = 0;
 // think() returning early for several seconds, so the ball would be down and bunbun would carry
 // on eating or sitting until the old animation happened to finish.
 static void danceBegin() {
+  // YOU CANNOT DANCE IN YOUR SLEEP (Jon, 2026-08-23: "dance mode should wake them up").
+  //
+  // Every behaviour that makes dancing visible is gated on S.lights - danceStep's own caller,
+  // the disco fixtures, the walk between bursts. So starting a party with the lights out set
+  // g_danceMode, dropped the ball, lit the beams... and left him lying on his bed in the dark,
+  // with the DANCE chip reading DANCE ON and nothing happening. The mode was on and the pet
+  // was asleep, which is the same class of lie as the SLEEP button announcing sleep it had not
+  // performed.
+  //
+  // Waking here rather than at the four call sites: the chip has two handlers, the room takes
+  // a double tap, and serial 'd' is a fifth door - all of them already funnel through this
+  // function to clear whatever he was doing, and being asleep is just one more thing to clear.
+  // Same three lines the SLEEP button's wake uses, so a dance-wake and a button-wake leave the
+  // pet in exactly the same state and the persisted night byte cannot survive either.
+  if (!S.lights || g_nightSleep || g_sleepPending) {
+    if (g_nightSleep) { g_nightSleep = false; saveSleepState(0); }
+    S.lights = 1;
+    g_sleepPending = 0;
+  }
   g_action = false;
   g_actionEnd = 0;
   g_settleUntil = 0;
@@ -3879,6 +3932,21 @@ static void think(float dt) {
   // brain below, which promptly sent him somewhere. Now the party takes the floor and the
   // walker is stood down; only a door already in progress is allowed to finish, because
   // stopping halfway would leave him between two rooms.
+  // YOU CANNOT DANCE IN YOUR SLEEP (Jon: "dance mode should wake them up"). The branch below
+  // needs S.lights, so a party started over a sleeping pet set the mode, dropped the ball and
+  // lit the beams while he lay on his bed in the dark - mode ON, nothing happening.
+  //
+  // This lives HERE, immediately in front of the branch it feeds, and not in danceBegin() or
+  // discoTick() where it was first written: instrumentation on D468 showed neither of those
+  // executing (an unconditional Serial.printf in discoTick printed nothing while prints
+  // elsewhere in this same file printed fine), and a fix that does not run is not a fix. That
+  // remains UNEXPLAINED and is worth its own look; what matters for the behaviour is that
+  // think() demonstrably runs, so the rule is stated where it is guaranteed to be read.
+  if (g_danceMode && alive() && (!S.lights || g_nightSleep || g_sleepPending)) {
+    if (g_nightSleep) { g_nightSleep = false; saveSleepState(0); }
+    S.lights = 1;
+    g_sleepPending = 0;
+  }
   if (g_danceMode && S.lights && !S.sick && !g_action && !g_sleepPending) {
     if (!g_doorTrip) {
       g_tx = g_ty = -1; g_visit = -1;
@@ -4333,7 +4401,20 @@ static void think(float dt) {
     // needs to slowly move towards it") and the doorway-to-basket run is 134px — 7.4s
     // against a 9s giveup, which is no margin at all on a panel that has been seen at
     // 10fps with 70ms draw spikes. The homecoming has its own 45s deadline below.
-    if (g_homeStage != 1 && millis() - targetAt > 9000) {
+    // ...AND NOR IS THE WALK TO BED. The paragraph above worked out that 9s leaves "no margin
+    // at all" for a deliberately half-speed walk, then exempted only the homecoming. Bedtime
+    // runs at the same half speed over the same room and never got the same relief, so any bed
+    // more than ~135px away is abandoned mid-walk and he is dumped where he stands - with a
+    // FREE clip, because that is what this branch is for, which is why the child's own sleep
+    // animation never played (Jon, 2026-08-23: "he is just sleep where he was standing" / "it
+    // isnt running the real sleep animation"). Measured on 6D1C: he set off from (263,214) after
+    // a dance, and the timer fired at (165,216) with the bed at (128,230).
+    //
+    // The backstop still exists for him - a bed he truly cannot reach must not strand the flag
+    // for ever - it just gets a deadline that fits the walk it is timing. 30s covers the full
+    // width of the room at half speed with room to spare on a 10fps panel.
+    const uint32_t giveUpMs = g_sleepPending ? 30000 : 9000;
+    if (g_homeStage != 1 && millis() - targetAt > giveUpMs) {
       // a side-room visit whose walk died still goes home eventually
       if (g_scCurRole != SCENE_ROLE_MAIN && !g_visitHomeAt)
         g_visitHomeAt = millis() + 12000;
@@ -6754,6 +6835,26 @@ static void discoTick(float dt) {
   // An egg cannot dance. Cleared rather than merely ignored, so the ball retracts if the pet is
   // reset to an egg while the party is running.
   if (!alive() && g_danceMode) g_danceMode = false;
+
+  // ...AND A DANCER IS NOT ASLEEP. The wake in danceBegin() only fires the instant the mode is
+  // switched ON, which is no help to a unit ALREADY in the state - both of Jon's were, on
+  // 2026-08-23: "both devices are currently in dance mode but they are sleeping". Anything that
+  // puts him down while the party runs (the night schedule, a SLEEP press, a restore from the
+  // persisted night byte) lands him in the same hole, because every visible part of dancing is
+  // gated on S.lights: mode on, room dark, pet motionless on his bed.
+  //
+  // So it is an INVARIANT here beside its sibling above, not a one-shot at the door: while dance
+  // mode is on he is awake, however he got asleep. Dance mode is switched off by a person, and
+  // until they do it outranks the schedule - the same way the egg rule outranks the mode itself.
+  // saveSleepState() is an unconditional NVS write and this runs every frame, so the persisted
+  // byte is only touched when it is actually set. The rest is RAM, and the condition clears
+  // itself on the first pass, so the party costs one flash write at most - and none at all in
+  // the ordinary case where the lights are merely out.
+  if (g_danceMode && (!S.lights || g_nightSleep || g_sleepPending)) {
+    if (g_nightSleep) { g_nightSleep = false; saveSleepState(0); }
+    S.lights = 1;
+    g_sleepPending = 0;
+  }
 
   // Hold the CPU at full speed while dancing. The scene runs at 16fps instead of 10, every
   // light spot is a per-pixel read-blend-write, and on the AirPlay path g_musicOn is FALSE — so
@@ -9214,7 +9315,7 @@ static void drawScene() {
   // walking home in the dark - every beam in the room goes out with him.
   // NOBODY SLEEPS WITH THE LAMPS ON - acquitted by the stabilization crash (the
   // image panicked with this off) and restored
-  const bool fastAsleep = !S.lights && g_tx < 0 && g_visit < 0 && !g_doorTrip && !g_action;
+  const bool fastAsleep = petFastAsleep();
   int lampOn = (g_workStage || g_danceMode || fastAsleep) ? 0 : (int)(lampLevel() * 255);
   bool cloudLit = nightAmount() < 0.5f;
   const float nt = nightAmount();
@@ -9918,7 +10019,7 @@ static const int WISH_BY = (SCENE_H - 48) / 2 + 48 + 10;
 // else. The snore haptic (touch-gated, haptics.h) breathes on the same
 // idea: the Z's are what sleep looks like, the snore is what it feels like.
 static void drawSleepZs() {
-  if (S.lights || !alive() || bunAway()) return;
+  if (!petFastAsleep() || !alive() || bunAway()) return;
   // The child's sleep animation BAKES its own Z's into the frames - drawing the firmware's
   // on top gave him two sets. One sleeper, one snore.
   if (sceneActAnim("sleep")) return;
@@ -11491,6 +11592,24 @@ static int careSheetTap(int x, int y) {
 static int sleepSheetTap(int x, int y) {
   int hit = sleepSheetHit(x, y);
   if (hit == 1) {
+    // SLEEP ANSWERS THE PARTY THE WAY EVERY OTHER ACT DOES (Jon, 2026-08-23: "i just wanted to
+    // have when i hit sleep while dance mode is active for it say dance mode - tap dance to
+    // stop"; "the other actions all do what i want like feed or bathe").
+    //
+    // FEED, BATH, SWEEP and the rest are already refused by the menu row's own guard - the same
+    // two lines, the same words - but SLEEP is not reached through that row. It has its own
+    // surface, the ZZZ sheet, and that surface never asked. So the one act that could END the
+    // party by putting him to bed was the one act the party did not stand up to.
+    //
+    // discoDown() rather than g_danceMode, deliberately: it is the exact predicate the menu
+    // uses, so sleep refuses on precisely the same beat as everything else rather than a
+    // slightly different one while the ball is still coming down.
+    if (discoDown()) {
+      sfxNo();
+      say("dance mode - tap DANCE to stop");
+      g_sleepSheet = false;
+      return 1;
+    }
     // LIGHTS OUT / WAKE UP — the ZZZ seat's old single tap, verbatim, then the sheet steps
     // aside: the room showing him settle (or stretch) IS the answer.
     if (!alive()) {
@@ -11512,20 +11631,37 @@ static int sleepSheetTap(int x, int y) {
       g_sleepSheet = false;
       return 1;
     }
-    // ONE PRESS. This was a blind toggle, so any state where he LOOKS asleep while S.lights
-    // is still 1 cost two presses: the first turned the lights off, the second woke him
-    // ("i have to hit sleep 2 times for him to wake up"). Being down for the night is the
-    // thing the button is about, so it decides.
-    if (g_nightSleep) S.lights = 1;
-    else              S.lights = !S.lights;
-    // a manual wake must also CLEAR the persisted night byte (review 8/14): tuck in, change
-    // your mind, then take an OTA — W-072's restore would put him straight back to sleep.
-    if (S.lights) { g_nightSleep = false; saveSleepState(0); g_sleepPending = 0; }
-    // Stamp bedtime HERE, not only in simulate()'s prevLights tracker: that tracker runs
-    // AFTER the energy-full wake check in the same pass, so a rested bunbun put to bed was
-    // judged against the PREVIOUS sleep's stamp and popped awake on the first tick.
-    if (!S.lights) g_sleepAtMs = millis();
-    say(S.lights ? "bunbun woke up" : "bunbun is asleep");
+    // BEDTIME IS A JOURNEY, NOT A LIGHT SWITCH.
+    //
+    // This was a blind toggle: when the walk above could not START - he was mid-meal, or the
+    // errand was refused - it put the lights out where he stood and announced "bunbun is
+    // asleep" while he carried on eating. The message was simply false, and because S.lights
+    // was now 0 the walk-to-bed branch above (which requires S.lights) could never run again
+    // either, so every further press just flickered the lights: "it keeps saying rk is asleep
+    // and not actually going back to the room to go to sleep" (Jon, 2026-08-23).
+    //
+    // g_sleepPending is the real bedtime and always has been - the comment on the debug act
+    // says so. It waits until he is FREE (no action, no trip, no visit), then walks him to the
+    // mark, or lies him down where he stands when there is no bed to reach, and puts the
+    // lights out THERE. Nothing else in this handler needs to touch S.lights: the only place
+    // the room goes dark is the place he actually lies down.
+    //
+    // Waking stays immediate and word for word - being down for the night still decides, so a
+    // pet who LOOKS asleep never costs two presses. A pending bedtime cancels on the next
+    // press, or asking for bed would be the one thing with no way back out of it.
+    if (g_nightSleep || !S.lights) {
+      S.lights = 1;
+      // a manual wake must also CLEAR the persisted night byte (review 8/14): tuck in, change
+      // your mind, then take an OTA - W-072's restore would put him straight back to sleep.
+      g_nightSleep = false; saveSleepState(0); g_sleepPending = 0;
+      say("bunbun woke up");
+    } else if (g_sleepPending) {
+      g_sleepPending = 0;
+      fmtPetSay("%s changed his mind");
+    } else {
+      g_sleepPending = 1;
+      say(sceneLine("bed", "bunbun is off to bed"));
+    }
     sfxOK();
     saveState();
     g_sleepSheet = false;

@@ -51,3 +51,72 @@ After: Wearing plain bright purple overalls with a square bib and two shoulder s
 (clean --dist 70 --keep-outline --norm 96; garment pair-swapped to #9151d3/#5d229d at
 install; Adult_Walk_West mirrored from the cleaned east). Verified by rendering and
 looking; details and flags in run.json.
+
+## 2026-08-23 — Adult_Dance (audit fill-in; the clip `dance/anim` really wants)
+
+Keeper `f0329005-4477-4d5c-ac13-8de844e4dda5`, v3, south only, frame_count 6 (7 stored), 1 generation.
+Animation group `29539ad5-a784-4e4b-bfb0-a7308fb0bc7e`.
+
+The penguin's verified dance prompt with the species word substituted — the sanctioned
+Phase-2 pattern ("croc/canonical prompts, species word") — plus the one body-part swap
+"flipper wings" -> "arms", the same precedent as the beak-for-mouth substitution.
+
+```
+The frog stands upright and dances on the spot, bouncing rhythmically from one foot to the other while both arms lift and swing outward to the sides in time with the bounce, the head bobbing gently with each beat, then returning to the neutral upright posture so the motion repeats seamlessly. Empty hands, nothing in the mouth, no props.
+```
+
+Install: raw came back **112x112** (v3 output size varies per character — measure, never assume).
+Cleaned `--dist 70 --keep-outline`, NO `--norm` (normalise_feet shifts each frame separately and
+would flatten the bounce). One shared offset dx=8 dy=7 for all 7 frames, anchored on the clip's
+LOWEST extent so nothing sits below this pack's floor row 88. Zero opaque px clipped. Lift 6px.
+Garment mapped as an explicit PAIR to #9151d3/#5d229d — nearest-colour matching flattened the
+cat's base+shade into one value and sent the frog's shade to the wrong colour, which is exactly
+the failure the pair doctrine warns about. Everything else mapped to the pack's nearest existing
+colour, with a guard that refuses to collapse two source colours into one.
+check_pack: PASS, anchor purples missing in 0 frames.
+
+## 2026-08-23 — Adult_Walk_NorthEast / _SouthEast (audit fill-in: the VERTICAL walk)
+
+Why: `walk-north/anim` and `walk-south/anim` had no source clip in this pack, so walking up or
+down the screen fell through `charSpriteKey`'s idle rescue — he GLIDED in his idle pose instead
+of walking. Only the croc and capybara ever had the diagonals.
+
+Keeper `f0329005-4477-4d5c-ac13-8de844e4dda5`, v3, directions north-east + south-east in ONE group
+`964ae34c-7fb9-4cea-9cd0-799f109f2c83`, frame_count 6 (7 stored). 2 generations.
+West halves (NorthWest / SouthWest) are PC mirrors, not generations — the recorded croc rule.
+
+Prompt is the croc's walk line reused VERBATIM (it is direction-agnostic; the direction is the
+API parameter, not the wording):
+
+```
+walking forward with a long exaggerated stride, legs swinging far forward and far back, feet lifting high and clear of the ground on each step. Empty hands, nothing in the mouth, no props.
+```
+
+Install: raw 112x112. BOTH directions cleaned in ONE `clean_sprite` pass (`os.walk` recurses, so
+one shared palette across the whole set) — cleaning them separately produced two palettes whose
+near-duplicates then collapsed onto single pack colours. `--dist 70 --keep-outline`, no `--norm`.
+Shared offset per direction anchored on that direction's LOWEST extent onto pack floor 88
+(NE dy=9, SE dy=13). Zero opaque px clipped. Garment mapped as an explicit pair to
+#9151d3/#5d229d. check_pack PASS; `mkspecies.py frog` now reports no MISSING clips.
+
+## 2026-08-23 — Adult_Play (audit fill-in; `play/anim` was substituting an emote)
+
+Keeper `f0329005-4477-4d5c-ac13-8de844e4dda5`, v3, south, frame_count 6 (7 stored). Group `a587918a-09b2-4561-b1ac-49e2ceb5d5b9`.
+Structure reuses the cat's recorded Adult_Play scaffolding (crouch -> wiggle -> spring -> settle,
+"Keep the face exactly identical to the source", garment-fixed clause) with the action changed;
+the cat's own clip is a cat-specific batting/pouncing move that does not transfer verbatim.
+
+```
+The frog crouches down slightly, wiggles briefly, then springs back up and playfully bats at the air in front of it with one hand, swiping quickly downward several times while bouncing on the spot, then settles back into its resting posture. Keep the face exactly identical to the source. Its purple outfit remains fixed in place. Empty hands, no props.
+```
+
+**INSTALL BUG, MINE NOT THE GENERATOR'S.** The first install INVERTED this garment (67 light /
+4463 dark against an idle of 4373/56). My auto-detect for the garment pair used `b>r>g`, which also
+admits near-greys - the frog's `#a09ba8` passed it and, being brighter, was ranked as the garment BASE,
+so the real garment `#7a52af` became the shade. Fixed with an explicit pair
+(#7a52af -> #9151d3, #4a2784 -> #5d229d); result 4463/34, matching idle. The heuristic is now
+hardened to require (b-g)>50 and a channel spread >50 so a grey can never be read as garment.
+
+Install: cleaned `--dist 70 --keep-outline`, no `--norm`; one shared offset anchored on the
+clip's lowest extent onto this pack's floor row; zero opaque px clipped; garment mapped as an
+explicit pair to #9151d3/#5d229d. check_pack PASS.

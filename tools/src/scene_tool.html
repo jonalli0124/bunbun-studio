@@ -4790,16 +4790,25 @@ function animalOptions(){
 const ACT_TEMPLATE={eat:'Adult_Eat', bath:'Adult_Bathe', wash:'Adult_Bathe', toilet:'Adult_Sit',
                     sleep:'Adult_Sleep', wake:'Adult_Idle', idle:'Adult_Idle', sit:'Adult_Sit',
                     work:'Adult_Pickup', walk_e:'Adult_Walk_East', walk_w:'Adult_Walk_West',
-                    play:'Adult_Happy', love:'Adult_Love',
+                    // every pack has a REAL Adult_Play as of 2026-08-23; the emote fallbacks stay
+                    // for any future pack that does not, same best-first rule as dance.
+                    play:['Adult_Play','Adult_Happy','Adult_Love'], love:'Adult_Love',
                     // the feelings a child can now tag a drawing as - so a world that swaps
                     // animal still finds a stand-in for each one
-                    dance:'Adult_Happy', bored:'Adult_Bored', tired:'Adult_Tired',
+                    // best-first, like mkspecies.py's recipe tuples: a pack that has REAL
+                    // dance art uses it, and one that does not still falls back to the emote
+                    // that stood in before 2026-08-23. Same rule, same order, both sides.
+                    dance:['Adult_Dance','Adult_Happy'], bored:'Adult_Bored', tired:'Adult_Tired',
                     hungry:'Adult_Hungry', angry:'Adult_Angry', sick:'Adult_Sick'};
 function templateFor(a, id){
   const act=(typeof actOfAnim==='function' ? actOfAnim(a) : (a&&a.actAs)) || '';
-  const t=ACT_TEMPLATE[act];
-  if(!t || !SD.characters[id] || !SD.characters[id].clips[t]) return null;
-  if(!SD.clips[id+':'+t]) SD.clips[id+':'+t]=SD.characters[id].clips[t];
+  const want=ACT_TEMPLATE[act];
+  if(!want || !SD.characters[id]) return null;
+  // a template may be ONE name or a best-first list; take the first the pack actually has
+  const clips=SD.characters[id].clips;
+  const t=(Array.isArray(want)?want:[want]).find(n=>clips[n]);
+  if(!t) return null;
+  if(!SD.clips[id+':'+t]) SD.clips[id+':'+t]=clips[t];
   return id+':'+t;
 }
 function switchClip(clip, id){

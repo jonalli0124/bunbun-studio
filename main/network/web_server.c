@@ -27,6 +27,7 @@
 #include "esp_heap_caps.h"
 #include "esp_timer.h"
 #include "nvs.h"
+#include "nvs_flash.h"   /* nvs_flash_erase_namespace, for /api/airplay/unpair */
 #include "wish_uploader.h"
 #include "wish_recorder.h"
 #include "spiffs_storage.h"
@@ -949,6 +950,51 @@ static esp_err_t debug_brain_handler(httpd_req_t *req) {
 // for an accidental "start over?".
 // GET /api/debug/clock?min=N - teach the wall clock (and the timezone) remotely.
 extern void bunbun_set_clock(int localMin);
+/* POST /api/airplay/unpair - forget every phone, and take a new identity.
+ *
+ * A phone stores its AirPlay pairing against the device's public key (the `pk` field in the
+ * mDNS TXT record). If that pairing goes stale the phone stops connecting - and does not say
+ * why, does not even open a socket, so the device's own log shows nothing at all while the
+ * owner is told "unable to connect". Both units advertised byte-identical records on
+ * 2026-08-23 except pk and deviceid; one worked from the same phone and one did not.
+ *
+ * Until now the only cure was erasing NVS, which also erases the PET - a child's months-old
+ * bunbun destroyed to fix a phone problem. That trade is unacceptable on a device somebody
+ * gave to a family, so: this clears ONLY the "airplay" namespace. The pet lives in "bunbun"
+ * and is not touched. On the next boot hap_init() finds no keypair and mints a fresh one, so
+ * every phone sees a new accessory and pairs cleanly.
+ *
+ * Guarded like every other write, and it restarts on purpose: the identity is read once at
+ * boot, so nothing changes until it does. */
+static esp_err_t airplay_unpair_handler(httpd_req_t *req) {
+  if (!origin_ok(req)) return deny_foreign(req);
+  /* Open the namespace and empty it. There is no erase-one-namespace call in this IDF -
+   * nvs_flash_erase_partition() would take the pet with it, which is the whole thing being
+   * avoided here. */
+  nvs_handle_t h;
+  esp_err_t err = nvs_open("airplay", NVS_READWRITE, &h);
+  if (err == ESP_ERR_NVS_NOT_FOUND) {
+    err = ESP_OK; /* nothing stored yet: already in the state we want */
+  } else if (err == ESP_OK) {
+    err = nvs_erase_all(h);
+    if (err == ESP_OK) {
+      err = nvs_commit(h);
+    }
+    nvs_close(h);
+  }
+  httpd_resp_set_type(req, "application/json");
+  if (err != ESP_OK) {
+    httpd_resp_sendstr(req, "{\"ok\":false}\n");
+    return ESP_OK;
+  }
+  ESP_LOGW(TAG, "AirPlay pairings cleared - restarting with a new identity");
+  httpd_resp_sendstr(req, "{\"ok\":true,\"note\":\"forgotten - rebooting. "
+                          "re-pair from your phone; the pet is untouched\"}\n");
+  vTaskDelay(pdMS_TO_TICKS(400));
+  esp_restart();
+  return ESP_OK;
+}
+
 static esp_err_t debug_clock_handler(httpd_req_t *req) {
   char q[48] = {0}, v[8] = {0};
   int m = -1;
@@ -2241,6 +2287,10 @@ esp_err_t web_server_start(uint16_t port) {
                                 .handler = debug_away_handler};
   httpd_register_uri_handler(s_server, &debug_away_uri);
 
+  httpd_uri_t unpair_uri = {.uri = "/api/airplay/unpair",
+                            .method = HTTP_POST,
+                            .handler = airplay_unpair_handler};
+  httpd_register_uri_handler(s_server, &unpair_uri);
   httpd_uri_t debug_clock_uri = {.uri = "/api/debug/clock",
                                  .method = HTTP_GET,
                                  .handler = debug_clock_handler};
