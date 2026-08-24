@@ -3926,8 +3926,9 @@ static void think(float dt) {
     } else return;
   }
 
-  // DANCING OWNS HIM, IN WHATEVER ROOM HE IS STANDING IN (Jon: "he should also be able to
-  // dance in every room he is in"). This used to wait for him to be completely free - no
+  // DANCING OWNS HIM - AT HOME (superseded 2026-08-23: he used to dance "in every room he is
+  // in"; the block above now walks him back to the main room first, and this branch is what
+  // runs once he is there). This used to wait for him to be completely free - no
   // target, no visit, no trip - and anything short of that fell through to the ordinary
   // brain below, which promptly sent him somewhere. Now the party takes the floor and the
   // walker is stood down; only a door already in progress is allowed to finish, because
@@ -3946,6 +3947,28 @@ static void think(float dt) {
     if (g_nightSleep) { g_nightSleep = false; saveSleepState(0); }
     S.lights = 1;
     g_sleepPending = 0;
+  }
+  // THE PARTY IS AT HOME (Jon, 2026-08-23: "it should be treated like the game and while he is
+  // on dance mode he stays in the main room" / "walking him home from any room").
+  //
+  // This REPLACES the older rule the paragraph below still describes - dancing wherever he
+  // happened to be standing. A party in the bathroom had nowhere to put the disco ball and no
+  // room to cross between bursts, and it left the pet parked in a side room for as long as the
+  // music lasted, which is the one thing the games are careful never to do.
+  //
+  // Walking rather than refusing: DANCE is a deliberate request, and the games set the
+  // precedent that a deliberate request outranks a room that still owes him something. He
+  // abandons the bath and comes home. sceneDoorTo's room-hold already stands aside while
+  // g_danceMode is set, so the walk is never refused on the way.
+  //
+  // Guarded on !g_doorTrip so the door is opened ONCE, not re-opened every frame; from the next
+  // frame the branch below stands down (it needs !g_doorTrip too) and think() carries on to the
+  // walker that actually moves him. He starts dancing when he arrives.
+  if (g_danceMode && S.lights && !S.sick && !g_action && !g_sleepPending &&
+      !g_doorTrip && g_scCurRole != SCENE_ROLE_MAIN) {
+    whyFor(WHY_BUTTON, "");
+    sceneDoorTo(SCENE_ROLE_MAIN, "");
+    return;
   }
   if (g_danceMode && S.lights && !S.sick && !g_action && !g_sleepPending && !g_doorTrip) {
     g_tx = g_ty = -1; g_visit = -1;
@@ -9522,6 +9545,18 @@ static void drawTicker() {
     else if (S.fun    < 35)  need = "bored - PLAY";
     else if (S.disc   < 25)  need = (S.phase == PH_BABY) ? "wants you - CUDL"
                                   : (S.phase == PH_TEEN) ? "behind - SCHL" : "behind - WORK";
+    // THE PARTY OWNS THE TICKER TOO (Jon, 2026-08-23: "i also am seeing rk grubby-bath while in
+    // dance mode"). This is the THIRD road a passive line takes to the screen and the last one
+    // still open: the emote captions go through emoteLineFor() in setAnim, the act refusals go
+    // through the menu row, and this one is the idle NEED HINT built right here. Silencing the
+    // first two left "RK  grubby - BATH" scrolling under the disco ball, which reads as the pet
+    // complaining through the music.
+    //
+    // The need is dropped rather than deferred - it is a hint, not an event, and it will be
+    // just as true and just as actionable the moment the ball goes back up. Now-playing still
+    // leads when there is music, because during a party that is the most relevant line on the
+    // device; with no metadata the prompt takes the idle slot instead of the age.
+    if (discoDown()) need = nullptr;
     // Now playing leads, with any outstanding need APPENDED rather than replacing it. The
     // ticker scrolls, so there is room for both — and hiding "hungry - FEED" behind a song
     // title would make the one actionable line on the screen disappear for as long as music
@@ -9535,6 +9570,7 @@ static void drawTicker() {
     // shows most of the time, so this is where a name earns its keep —
     // "CLOVER  BABY  22m  all good". Needs still win: an unnamed-pet or
     // an urgent need keeps the shorter, more actionable form.
+    else if (discoDown())    snprintf(buf, sizeof(buf), "dance mode - tap DANCE to stop");
     else if (need && g_petName[0])
                              snprintf(buf, sizeof(buf), "%s  %s", g_petName, need);
     else if (need)           snprintf(buf, sizeof(buf), "%s", need);
