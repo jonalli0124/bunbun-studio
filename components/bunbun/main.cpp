@@ -3947,14 +3947,29 @@ static void think(float dt) {
     S.lights = 1;
     g_sleepPending = 0;
   }
-  if (g_danceMode && S.lights && !S.sick && !g_action && !g_sleepPending) {
-    if (!g_doorTrip) {
-      g_tx = g_ty = -1; g_visit = -1;
-      g_workNextAt = 0; g_repeatAct[0] = 0; g_repeatN = 0;
-      if (discoDown()) danceStep(dt);
-    }
+  if (g_danceMode && S.lights && !S.sick && !g_action && !g_sleepPending && !g_doorTrip) {
+    g_tx = g_ty = -1; g_visit = -1;
+    g_workNextAt = 0; g_repeatAct[0] = 0; g_repeatN = 0;
+    if (discoDown()) danceStep(dt);
     return;
   }
+  // A DOOR ALREADY IN PROGRESS IS ALLOWED TO FINISH - and now actually is.
+  //
+  // The paragraph above has always said that, but the branch returned whether or not a crossing
+  // was in flight, and the code that ADVANCES a crossing lives below this point. So a door trip
+  // that started before the music did could never take another step: he froze half way, and
+  // dancing could not run either because the same `if (!g_doorTrip)` locked it out. Both halves
+  // stalled on each other.
+  //
+  // It bit outside, where the exit rule is the one that opens the door: fun reaches ACT_FULL
+  // (98), loop() says "has had enough fresh air" and calls sceneDoorTo(MAIN) - which sets
+  // g_doorTrip - and from that frame on think() did nothing at all. "he is stuck outside on d468
+  // even though fun is 100" / "i hit dance mode while he was outside and i think it broke his
+  // going inside" (Jon, 2026-08-23); he had to be sent to the bathroom to break it out.
+  //
+  // Moving g_doorTrip into the branch's own condition is the whole fix: with a crossing in
+  // flight the party simply does not take the floor this frame, and think() carries on to the
+  // walker that finishes the trip. He dances again the moment he is through the door.
   if (!S.lights) {
     // A COMMAND OUTRANKS BEDTIME. This return used to fire before the errand code and
     // wipe g_tx every tick, so at night BATHE/EAT/WORK started a door walk that died
