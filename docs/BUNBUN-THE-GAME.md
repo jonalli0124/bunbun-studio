@@ -7,6 +7,11 @@ verified on hardware unless marked otherwise.*
 
 ## 1. What it is
 
+**The product statement (owner, 2026-08-24): a pet that you can customize, on
+procedural interactions, with the ability to play music.** This is the line for the
+public README and the flasher page when release lands — it is a description, not a
+pitch, which is why it works.
+
 A virtual pet that lives on an ESP32 speaker (it is also a real AirPlay 2 receiver — the
 lofi box and the pet share the screen). The pet is a hand-raised tamagotchi with needs,
 moods, a cat who visits, mini-games, wishes spoken into a microphone — and, as of this

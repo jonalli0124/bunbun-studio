@@ -205,6 +205,33 @@ independent of whether the art is good.
 fills the frame from top edge to bottom edge"**. The one roll that got that clause came
 back at 70px where its siblings were ~50.
 
+## Lessons from the shaded-pack completion run (2026-08-24, imp/frill/spark, ~$2)
+
+- **An action verb that requires an object summons the object.** "playfully bats at the
+  air ... swiping quickly downward" put white motion streaks on the imp (roll 1), grey
+  dust puffs on it (roll 2), and a TEAL TOY in the sparktuft's hand — "no props" cannot
+  outweigh a verb whose meaning demands a prop. Same naming-summons mechanism as the tail
+  and the pocket, in verb form (the owner spotted it). Croc/penguin survived the old
+  wording by luck. THE play prompt now describes pure body motion: "...springs back up
+  and hops in place twice, waving both arms up and down in time with each hop..."
+  (verbatim in spark/PROMPTS.md). Dog's play was re-rolled onto it too.
+- **Canonical eye-change wording follows the SPECIES' eyes.** "eyes become round
+  wide-open dots" / "upward-curving happy arcs" balloon a narrow-eyed character's eyes
+  into round hollow orbs that read as deranged (owner: "a bit crazy"). For sly-eyed
+  species substitute e.g. "Its narrow wedge eyes curve into pleased upward arcs beneath
+  their heavy slanted brows and its wide grin stays exactly as it is." — recorded per
+  pack.
+- **OWNER RULING: sleep states have CLOSED eyes, every pack.** Overrides the
+  face-stability clause. New packs ask in the state prompt ("both eyes fully closed as
+  short dark curved lines" — worked first try on spark and imp); shipped packs were
+  fixed by deterministic pixel surgery (fill the eye cluster, draw the lid line) —
+  bunny/cat/dog/frog/penguin done 2026-08-24; croc/capybara/frill were already closed.
+- **OWNER RULING: the dog does not frown.** The dog pack's neutral frown (∩ mouth) was
+  flipped to a small smile (∪) across every neutral-face frame — idle, walks, sit,
+  sleep, pickup, bathe, play. Emote mouths (angry etc.) untouched. Vertical flip of the
+  mouth arc in place, fur-filled; recorded in dog/PROMPTS.md.
+- **Species ids cap at 8 chars** (`mkspecies`): "sparktuft" became pack dir/id `spark`.
+
 ## THE PAK CONTRACT — the species kit is baked at 0.5, always
 
 The firmware sizes any frame the pack supplied with `travelFactor() = scene.ts / 0.5`.

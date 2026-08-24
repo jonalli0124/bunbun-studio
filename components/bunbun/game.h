@@ -37,7 +37,12 @@ static const PhaseRates RATES_BABY  = {1.40f, 1.06f, 0.56f, 0.96f, 40.0f, 0.62f}
 // A teen eats more than an adult and tires faster, but is tidier than a baby — the needy
 // middle. SCHOOL (the disc meter) also slips a little quicker than an adult's work does.
 static const PhaseRates RATES_TEEN  = {1.16f, 0.88f, 0.48f, 0.76f, 36.0f, 0.54f};
-static const PhaseRates RATES_ADULT = {0.90f, 0.70f, 0.40f, 0.60f, 32.0f, 0.46f};
+// RULED 2026-08-24 (the meter re-tune, docs/METER-TUNING-2026-08-24.md): the day is
+// tuned so the owner can narrate it - food empties in ~4.8h (2-3 meals a day), fun the
+// same (a play session per stretch of day), clean in ~14h (one bath a day), energy in
+// ~5.5h (a nap plus the night), work in ~8h (one shift). NOTE phaseOf() is hard-wired
+// adult, so BABY/TEEN above are DORMANT until the aging revival - only this line is live.
+static const PhaseRates RATES_ADULT = {0.35f, 0.35f, 0.12f, 0.30f, 32.0f, 0.20f};
 
 // Sprites are authored at 96x96 but drawn larger, exactly as the browser does
 // (cScale: baby 0.78*1.45, adult 1.0*1.45). Scaling at blit time rather than baking it into
@@ -85,7 +90,9 @@ struct GameState {
   uint8_t  stage;         // Stage
   uint8_t  phase;         // Phase
   int64_t  ageMs;         // ACCUMULATED, never derived from the wall clock
-  int64_t  savedWallMs;   // wall clock at last save, for the power-loss gap estimate
+  int64_t  savedWallMs;   // wall clock at last save. RULED 2026-08-24: powered-off time
+                          // is FREE - no catch-up decay on boot. A deliberate kindness
+                          // (the Nintendogs model), not an unfinished feature.
   float    food, fun, clean, energy, health, disc;
   uint8_t  lights;
   uint8_t  sick;
@@ -97,6 +104,32 @@ struct GameState {
   // arrives with species_idx 0 — the base bunny — and keeps its age. That only holds while 0
   // is the correct default, which is the rule for every field added after this one.
   uint8_t  species_idx;
+  // ---- the 2026-08-24 meter re-tune (all APPENDED, all zero-default-correct) ----
+  // love2: the LOVE meter, finally in the save so DECAY persists (it used to live only
+  // in the NVS "love" key, written on cuddle events only - so every reboot restored the
+  // last cuddle's value and love could never really go down). Stored as value+1 so 0
+  // stays the "not migrated yet" sentinel: a pre-retune save arrives with 0 here and
+  // the loader keeps the legacy NVS value instead.
+  float    love2;
+  // neglectMin: the sickness accumulator, persisted so a reboot is no longer an amnesty
+  // (it was a function-local static; between that, the every-wake grace reset and the
+  // <15 gates, sickness never fired and MEDS was a dead button).
+  float    neglectMin;
+  // The LOVE BANK: the meter is about today, the bank is about everything before.
+  // loveLevel (0-5 hearts, the fifth added by the owner 8/24) only ever rises; loveProg counts good days (meter >= 60 at
+  // the night tuck-in) toward the next heart, 3 per heart. loveDay/sniffDay are
+  // (epoch-day % 65000)+1 day stamps (0 = never) guarding one bank check and one rare-
+  // sniffle roll per day.
+  uint8_t  loveLevel;
+  uint8_t  loveProg;
+  uint16_t loveDay;
+  uint16_t sniffDay;
+  // careMiss (2026-08-24, framework pass): the Tamagotchi care-mistake ledger. A need
+  // that sits on its cue floor (<25) for 15+ real minutes while he is awake logs one
+  // miss (once per excursion). The nightly bank check now requires love >= 60 AND at
+  // most one miss - a day of ignored calls does not bank, however cuddled the evening
+  // was. Reset after each daily check. Zero-default correct.
+  uint8_t  careMiss;
 };
 
 static const uint32_t SAVE_MAGIC = 0x4E554221;   // "!BUN"

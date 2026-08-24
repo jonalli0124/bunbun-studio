@@ -152,3 +152,32 @@ add "no ball" to the prompt: naming it summons it.
 Install: cleaned `--dist 70 --keep-outline`, no `--norm`; one shared offset anchored on the
 clip's lowest extent onto this pack's floor row; zero opaque px clipped; garment mapped as an
 explicit pair to #9151d3/#5d229d. check_pack PASS.
+
+## 2026-08-24 — the frown removed (owner: "we need the dog to not have a frown")
+
+Every neutral-face frame's ∩ mouth arc was flipped vertically in place to a small ∪
+smile (arc pixels only; the philtrum and all emote mouths untouched; vacated pixels
+filled with the local fur colour). Files: Adult_Idle south/south-east/south-west,
+Adult_Sit south/south-west + east, Adult_Sleep south/south-east/south-west,
+Adult_Walk_East 02, Adult_Walk_West 02, Adult_Pickup 00-02+04, Adult_Bathe 00-04+06,
+and all 7 frames of the new Adult_Play. Verified by rendering at 3x.
+
+## 2026-08-24 — sleep eyes closed (fleet-wide owner ruling)
+
+Adult_Sleep south/south-east/south-west/east/west: the open eye dots were filled with
+fur and a dark lid line drawn at each cluster's middle row. North-facing views show no
+face. Same treatment as bunny/cat/frog/penguin the same day.
+
+## 2026-08-24 — Adult_Play v2 (the old clip held a STICK; same play-verb lesson as the
+## shaded packs — see tools/GENERATION.md). Source "Dog state source" 21244f11 (the
+## original 3df87269 keeper no longer exists in PixelLab), v3, south, fc6, group
+## b2db4da0. THE object-free play prompt, species word "dog":
+
+```
+The dog crouches down slightly, wiggles briefly, then springs back up and hops in place twice, waving both arms up and down in time with each hop, then settles back into its resting posture. Keep the face exactly identical to the source. Empty hands, no props.
+```
+
+Install: cleaned --dist 70 --keep-outline (own pass), garment pair-swapped EXACTLY
+#8257a1/#523075 -> #9151d3/#5d229d, frown-flip applied to all 7 frames (the source
+character still frowns), one shared offset dx=-8 dy=-4 onto pack floor 90, zero px
+clipped. check_pack: dog PASS, purples 0 missing, hands 150/150.

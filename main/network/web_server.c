@@ -910,7 +910,10 @@ static esp_err_t cat_name_handler(httpd_req_t *req) {
   return ESP_OK;
 }
 static esp_err_t debug_act_handler(httpd_req_t *req) {
-  char q[48] = {0}, a[8] = {0};
+  // a[] was 8, which silently dropped any verb of 8+ chars ("pottysoon" was the first
+  // to hit it - the query parser refuses a value that doesn't fit, and the handler ran
+  // with an empty string). 16 covers every verb with room to grow.
+  char q[48] = {0}, a[16] = {0};
   if (httpd_req_get_url_query_str(req, q, sizeof(q)) == ESP_OK)
     httpd_query_key_value(q, "a", a, sizeof(a));
   bunbun_debug_act(a);
@@ -930,7 +933,10 @@ static esp_err_t debug_brain_handler(httpd_req_t *req) {
   // ...AND IT GREW AGAIN ("room", 8/22). The last overflow truncated valid JSON mid-string
   // and every reader failed to parse a reply that looked fine in a terminal; a snapshot is a
   // debugging tool, so it must never be the thing that needs debugging. Sized well clear.
-  char out[720], why[128], merged[980];
+  /* ...AND AGAIN (the re-tune fields, 8/24): love/love_lvl/love_prog/care_miss/
+   * neglect/potty_in tipped 720 over on a long ticker line and the gate caught the
+   * truncation within the hour. Third strike for this buffer - sized far clear now. */
+  char out[1100], why[128], merged[1400];
   bunbun_brain_snapshot(out, sizeof(out));
   bunbun_why(why, sizeof(why));
   /* the last decision's own words, straight from the record it wrote at the time */
@@ -1187,6 +1193,21 @@ static esp_err_t system_info_handler(httpd_req_t *req) {
     cJSON_AddNumberToObject(info, "pet_stage", pstage);
     cJSON_AddNumberToObject(info, "pet_phase", pphase);
     cJSON_AddNumberToObject(info, "pet_age_min", page);
+    // W-112: WHY is this pet young? A start-over and a lost save leave an identical device -
+    // egg, age zero, naming screen, species kept - and until now nothing outside the toy could
+    // tell them apart. It cost a false pet-loss alarm on a council docket (2026-08-23); the
+    // only reason the truth surfaced is that the owner happened to be standing there. In a
+    // gift household nobody is. pet_id is a fresh 8-hex code at every birth - pin it once and a
+    // later mismatch is self-evident to anyone, which a counter can never be. pet_born says WHY
+    // (chosen | lost), and pet_lost is the running total of saves this UNIT has failed to load,
+    // kept so a later deliberate start-over cannot erase that history. All three live outside the
+    // save struct, so the wipe that creates the event cannot erase the record of it.
+    extern const char *bunbun_pet_id(void);
+    extern const char *bunbun_pet_born(void);
+    extern uint32_t    bunbun_pet_lost(void);
+    cJSON_AddStringToObject(info, "pet_id", bunbun_pet_id());
+    cJSON_AddStringToObject(info, "pet_born", bunbun_pet_born());
+    cJSON_AddNumberToObject(info, "pet_lost", bunbun_pet_lost());
     // (species idx already exposed below by the Stage-1 field; the ID string lives at
     // GET /api/pet/species — a duplicate "species" key here confused every JSON parser)
   }

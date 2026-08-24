@@ -127,7 +127,14 @@ static void backlightBegin() {
   // ledcAttach(pin, freq, resolution), and ledcWrite() now takes the PIN, not the channel. This
   // is the single API change most likely to bite silently — passing a channel number where a pin
   // is expected compiles cleanly and drives the wrong GPIO, or nothing at all.
-  ledcAttach(PIN_BL, 300, 8);
+  // 5 kHz, not 300 Hz (the "very strange flashing" hunt, 2026-08-24): at 300 Hz the
+  // idle-dim duties (70/255, 18/255) leave the panel dark most of each 3.3 ms cycle,
+  // which is visible flicker on bright pixels - worst on the cream wall band of the
+  // brightest rooms, invisible at full duty. That is why every observation was
+  // touch-shaped: any tap restored full brightness "for a while", rain dimmed the
+  // palette under it, and dance mode began with a touch. 5 kHz is far past flicker
+  // fusion at 8-bit resolution and costs nothing.
+  ledcAttach(PIN_BL, 5000, 8);
   ledcWrite(PIN_BL, 255);
 }
 // When the backlight last moved. The charge detector waits for this to settle before believing
@@ -836,6 +843,11 @@ static const Cloud CLOUD_STYLE_TAB[SCENE_CLOUD_STYLES][3] = {
 };
 static Cloud g_clouds[SCENE_MAX_CLOUDS] = {{0,0,14,4,7.0f},{0,0,10,3,9.5f},{0,0,18,5,5.0f}};
 static int   g_cloudN       = 3;
+static int   g_cloudNSaved  = 0;   // the clouds0/cloudsback isolation levers' stash
+static volatile int g_vcomPending = -1;   // vcomXX lever: applied on the game task
+// retune0/retune1 lever: live kill-switch for the ENTIRE 8/24 behavior layer (potty
+// window, sniffle, ledger, bank hook, groove) - the owner's software-regression test.
+static volatile bool g_retuneOff = false;
 static float g_cloudSpeedK  = 1.0f;
 static int   g_cloudAlphaK  = 153;    // (60% of 255) == the shipped 3/5 blend, exactly
 static bool  g_cloudsInit   = false;
@@ -2028,6 +2040,15 @@ static bool g_action = false;
 static uint32_t g_actionEnd = 0;
 static int g_eggTaps = 0;
 static uint32_t g_poopDue = 0;             // a mess arrives a while after eating
+// THE POTTY CATCH (ruled 2026-08-24): ~90s before the potty deadline he does the potty
+// dance (the angry stomp - it reads perfectly and costs zero art) and the ticker says
+// so. A touch on the room during the window CATCHES it - he dashes straight off, paid
+// in fun and love. Missing it costs nothing: he quietly takes himself, exactly as
+// before. The signal state lives here; the window logic is in simulate(), the catch tap
+// in the petting block.
+static uint32_t g_pottySignalMs = 0;       // when this window's dance was announced; 0 = no window
+static uint32_t g_pottyDanceAt = 0;        // next time to repeat the dance while waiting
+static bool     g_pottyCaught = false;     // this window was caught (suppresses re-signal)
 static bool g_nightSleep = false;          // SLEEP double-tapped in the evening: down until morning
 // W-059: the family hours. Bedtime start gates the auto-nap window; the
 // morning number moves BOTH wakes together (Grim's clause — the screen and
@@ -2107,7 +2128,12 @@ static void saveName() {
   buildAirName();
 }
 
-static void saveState() { prefs.begin("bunbun", false); prefs.putBytes("state", &S, sizeof(S)); prefs.end(); }
+// love2 rides the blob (value+1; 0 = unmigrated) so love DECAY finally persists — the
+// 20s save cadence this key already had. g_love stays the working variable everywhere.
+static void saveState() {
+  S.love2 = g_love + 1.0f;
+  prefs.begin("bunbun", false); prefs.putBytes("state", &S, sizeof(S)); prefs.end();
+}
 
 // Sleep-state persistence (Jon, 8/11: "upon update the game needs to return
 // to its state like screen off, nap, or sleeping through the night"). An OTA
@@ -2117,6 +2143,72 @@ static void saveState() { prefs.begin("bunbun", false); prefs.putBytes("state", 
 // restored on the next boot IF that boot was a software reset (an OTA or a
 // crash), never a power-on: pulling the plug is a human choosing a fresh
 // start. 0=awake 1=screen-off 2=auto-nap 3=night-sleep.
+// W-112: EVERY PET GETS A UNIQUE CODE THE MOMENT IT IS BORN.
+//
+// freshState() is reached from exactly two places and they mean opposite things:
+//
+//   loadState() failed          -> the save was LOST. Somebody's pet is gone.
+//   the RESET panel was held    -> a deliberate START OVER. Somebody chose this.
+//
+// Both leave an identical device: stage EGG, age zero, the naming screen up, species kept. So
+// from outside - /api/system/info, the brain, the name, the world - the two were
+// indistinguishable. It cost a false pet-loss alarm on a council docket tonight: the session
+// read "the name survived, therefore not a wipe" and was wrong, because the owner had simply
+// re-typed the same name. He was in the room to say so; a gift household will not have him.
+//
+// THE ID IS THE PRIMITIVE, not a counter (Jon's steer: "can we not just write a unique code for
+// each spawn?"). A counter only answers if somebody wrote the old value down first. An ID
+// answers to anyone who ever saw it once: pin it, and a later mismatch is self-evident. The
+// fleet tooling can record it per unit and shout on change, and a parent can be told "your
+// rabbit is B4F0" without being told anything about save structs.
+//
+// pet_born says WHY this one exists, which the ID alone cannot. pet_lost is kept as a running
+// total because it is the fleet-health signal: an ID change tells you THIS pet is new, the
+// count tells you this UNIT has eaten a save before, and a later deliberate start-over must not
+// erase that history.
+//
+// ALL THREE LIVE OUTSIDE S ON PURPOSE. S is memset to zero by freshState, so a field inside it
+// could never survive the event it exists to describe. They are separate NVS keys in the
+// namespace the name and the sleep byte already use, so sizeof(S) does not change - no
+// SAVE_VERSION bump, nothing for the size-tolerant loader to negotiate, and no risk at all to
+// the rule that an update must never cost somebody their pet.
+static char     g_petId[9]  = {0};      // 8 hex chars, new at every birth
+static char     g_petBorn[8] = {0};     // "chosen" | "lost" | "" if never recorded
+static uint32_t g_petLost   = 0;        // times THIS UNIT failed to load a save, ever
+
+static void petIdLoad() {
+  prefs.begin("bunbun", true);
+  String id = prefs.getString("petid", "");
+  String bn = prefs.getString("petborn", "");
+  g_petLost = prefs.getUInt("petlost", 0);
+  prefs.end();
+  snprintf(g_petId,  sizeof(g_petId),  "%s", id.c_str());
+  snprintf(g_petBorn, sizeof(g_petBorn), "%s", bn.c_str());
+}
+
+// Called from freshState's two callers, BEFORE the wipe, so the new code is in place by the
+// time anything can ask. esp_random() is seeded by the RF clock and is fine here: this is an
+// identity for a toy rabbit, not a key.
+static void petNewId(const char *why) {
+  snprintf(g_petId, sizeof(g_petId), "%04X%04X",
+           (unsigned)(esp_random() & 0xFFFF), (unsigned)(esp_random() & 0xFFFF));
+  snprintf(g_petBorn, sizeof(g_petBorn), "%s", why);
+  if (!strcmp(why, "lost")) g_petLost++;
+  prefs.begin("bunbun", false);
+  prefs.putString("petid", g_petId);
+  prefs.putString("petborn", g_petBorn);
+  prefs.putUInt("petlost", g_petLost);
+  prefs.end();
+  Serial.printf("pet: new id %s (%s), lifetime saves lost on this unit: %u\n",
+                g_petId, g_petBorn, (unsigned)g_petLost);
+}
+static void petBornByChoice() { petIdLoad(); petNewId("chosen"); }
+static void petBornByLoss()   { petIdLoad(); petNewId("lost"); }
+
+extern "C" const char *bunbun_pet_id(void)   { return g_petId; }
+extern "C" const char *bunbun_pet_born(void) { return g_petBorn; }
+extern "C" uint32_t    bunbun_pet_lost(void) { return g_petLost; }
+
 static void saveSleepState(uint8_t s) {
   prefs.begin("bunbun", false);
   prefs.putUChar("sleepst", s);
@@ -2128,6 +2220,7 @@ static uint8_t g_pendingSleepRestore = 0;   // read at boot, applied in loop()
 // (below), and NEVER written by freshState. loadState falls back to it if the
 // primary key is unreadable. Cheap insurance against a single-key mishap.
 static void saveStateBackup() {
+  S.love2 = g_love + 1.0f;
   prefs.begin("bunbun", false);
   prefs.putBytes("statebk", &S, sizeof(S));
   prefs.end();
@@ -2148,13 +2241,30 @@ static bool loadStateFrom(const char *key) {
   size_t n = prefs.getBytesLength(key);
   if (n == 0) return false;
   GameState t; memset(&t, 0, sizeof(t));
-  prefs.getBytes(key, &t, sizeof(t));   // reads min(n, sizeof(t)); any tail stays zero
+  // BOTH directions must be size-tolerant. The old single getBytes call was documented
+  // as "reads min(n, sizeof)" - TRUE for a blob SHORTER than the struct, FALSE for a
+  // longer one: Preferences/nvs refuses a buffer smaller than the stored blob and
+  // writes NOTHING, so a firmware DOWNGRADE past a struct growth zeroed t, failed the
+  // magic, and hatched a fresh egg (CALEB, 2026-08-24, pet_lost 1 - restored from
+  // statebk within minutes, but the scar is real). A longer blob now goes through a
+  // stack staging buffer and the prefix is kept.
+  if (n <= sizeof(t)) {
+    prefs.getBytes(key, &t, sizeof(t));
+  } else {
+    uint8_t big[sizeof(GameState) + 256];   // room for a few future generations
+    if (n > sizeof(big)) n = sizeof(big);   // beyond that, the prefix still wins
+    prefs.getBytes(key, big, n);
+    memcpy(&t, big, sizeof(t));
+  }
   if (t.magic != SAVE_MAGIC) return false;
   if (!(t.version == SAVE_VERSION || t.version == 3)) return false;
   S = t;
   // A blob shorter than today's struct leaves the new tail fields zeroed; give
   // the ones that must not be zero a home so a migrated pet isn't dead-at-(0,0).
   if (S.x == 0 && S.y == 0) { S.x = 160; S.y = FLOOR_Y; }
+  // Love migration (2026-08-24): a blob that carries love2 (value+1) wins; a pre-retune
+  // blob arrives with 0 here and g_love keeps the legacy NVS "love" value read in setup.
+  if (S.love2 >= 1.0f) g_love = constrain(S.love2 - 1.0f, 0.0f, 100.0f);
   g_fx = S.x; g_fy = S.y;
   // v3 saves are structurally compatible but were accumulated under decay rates
   // 8x faster than these, so they arrive with every need on the floor. Top up.
@@ -2877,6 +2987,14 @@ extern "C" void bunbun_brain_snapshot(char *buf, int len) {
     // out of a ticker line - so a reader can render a stock line exactly as the toy will speak
     // it without reimplementing the fallback and getting it subtly different.
     "\"pet\":\"%s\","
+    // The 2026-08-24 re-tune on the wire (read the device, never reason about it): the
+    // love meter, the bank, and the sickness accumulator - the three numbers the bench
+    // check needs to watch move.
+    "\"love\":%d,\"love_lvl\":%d,\"love_prog\":%d,\"neglect\":%.1f,\"potty_in\":%ld,"
+    "\"care_miss\":%d,"
+    // The backlight on the wire (the flash hunt's phantom-touch test, 2026-08-24):
+    // if bl/bl_tgt move while nobody is touching, the digitizer is stamping ghosts.
+    "\"bl\":%d,\"bl_tgt\":%d,\"idle_ms\":%ld,"
     "\"room\":\"%s\",\"art\":\"%s\",\"fps\":%d,"
     "\"cat\":{\"on\":%d,\"x\":%d,\"y\":%d,\"art\":\"%s\",\"flip\":%d,\"name\":\"%s\","
     "\"k\":%.5f,\"pad\":%.1f}}",
@@ -2898,6 +3016,10 @@ extern "C" void bunbun_brain_snapshot(char *buf, int len) {
     (int)(g_workNextAt ? (millis() < g_workNextAt ? g_workNextAt - millis() : 0) : -1),
     (int)(millis() < g_roomMinStay ? g_roomMinStay - millis() : 0),
     petName(),
+    (int)g_love, (int)S.loveLevel, (int)S.loveProg, S.neglectMin,
+    (long)(g_poopDue ? (millis() < g_poopDue ? (g_poopDue - millis()) / 1000 : 0) : -1),
+    (int)S.careMiss,
+    (int)g_blNow, (int)g_blTarget, (long)(millis() - g_lastTouchMs),
     g_roomName, g_artKey, (int)(g_anim && g_anim->fps > 0.1f ? g_anim->fps : 7.0f),
     catOn, catX, catY, g_catArtKey, catFlip, catName(), catK, catPad);
 }
@@ -2951,6 +3073,62 @@ extern "C" void bunbun_debug_act(const char *a) {
     S.energy = 75.0f; S.sick = 0;
     saveState();
     say("all his meters are low - watch him work through them");
+    return;
+  }
+  // The 2026-08-24 re-tune bench levers: put each new mechanism where the next tick
+  // triggers it, so the whole loop can be watched without waiting for the day.
+  if (a && !strcmp(a, "lonely"))  { g_love = 20.0f; return; }
+  if (a && !strcmp(a, "neglect")) { S.neglectMin = 44.0f; S.food = 20.0f; return; }
+  if (a && !strcmp(a, "pottysoon")) {   // arms the dance window, not the trip itself
+    g_poopDue = millis() + 85000UL; g_pottySignalMs = 0; g_pottyCaught = false; return;
+  }
+  if (a && !strcmp(a, "goodday")) {     // bank one good day at the next tuck-in
+    g_love = 80.0f; S.careMiss = 0; return;
+  }
+  // Framework demo levers: set the bank level directly to see each heart's payout
+  // without waiting three days per heart. heart0 resets for a fresh run.
+  if (a && strlen(a) == 6 && !strncmp(a, "heart", 5) && a[5] >= '0' && a[5] <= '5') {
+    S.loveLevel = a[5] - '0'; S.loveProg = 0; saveState();
+    return;                             // the pip cache repaints on the level change
+  }
+  if (a && !strcmp(a, "miss")) { if (S.careMiss < 9) S.careMiss++; return; }
+  // The one-time petid6f rescue lever (2026-08-24, second use: the full-erase
+  // rebuild) - restores CALEB's identity after the flasher wipe. pet_id lives in
+  // its own NVS key, NOT in the GameState blob, so restorebk can't bring it back.
+  if (a && !strcmp(a, "petid6f")) {
+    snprintf(g_petId, sizeof(g_petId), "6F3E835A");
+    snprintf(g_petBorn, sizeof(g_petBorn), "chosen");
+    prefs.begin("bunbun", false);
+    prefs.putString("petid", g_petId);
+    prefs.putString("petborn", g_petBorn);
+    prefs.end();
+    Serial.printf("pet: rescue lever restored id %s\n", g_petId);
+    return;
+  }
+  // THE CLOUD ISOLATION LEVERS (owner: "remove the clouds to isolate it") - the flash
+  // bisect exonerated the firmware, leaving the world's authored clouds as the last
+  // suspect. clouds0 kills them at runtime without touching the world file; cloudsback
+  // restores. Watch the window: flash gone under clouds0 = verdict delivered.
+  if (a && !strcmp(a, "retune0")) { g_retuneOff = true;  return; }
+  if (a && !strcmp(a, "retune1")) { g_retuneOff = false; return; }
+  if (a && !strcmp(a, "clouds0"))   { g_cloudNSaved = g_cloudN; g_cloudN = 0; return; }
+  if (a && !strcmp(a, "cloudsback")) { if (g_cloudNSaved) g_cloudN = g_cloudNSaved; return; }
+  // THE VCOM CALIBRATION LEVER (the flash hunt's endgame, 2026-08-24): the shimmer is
+  // panel-level frame-inversion flicker, visible only on bright uniform shades (cream
+  // walls, the bone settings page) and only on this panel's batch. The ST7789's VCOMS
+  // register (0xBB) tunes it out; the factory default suits some batches and not
+  // others. a=vcomXX (two hex digits, e.g. vcom2b) writes the value live so the owner
+  // can call out the flicker-null while watching the glass. Range ~0x15..0x3F.
+  if (a && strlen(a) == 6 && !strncmp(a, "vcom", 4)) {
+    auto hex = [](char c) -> int {
+      if (c >= '0' && c <= '9') return c - '0';
+      if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+      return -1;
+    };
+    int hi = hex(a[4]), lo = hex(a[5]);
+    // Applied on the GAME task (see loop) - a register write from the web task would
+    // race the renderer's SPI transaction mid-push.
+    if (hi >= 0 && lo >= 0) g_vcomPending = (hi << 4) | lo;
     return;
   }
   // THE LEVERS THAT UNSTICK HIM (rehearsal M10): while sick, away or asleep every act
@@ -4973,8 +5151,32 @@ static void simulate(float dt) {
   // consequence; waiting just means it happens when he is up.
   // Nor mid-dance. Same DEFERRAL as sleep rather than a cancellation: the mess still arrives
   // once the party stops, so dance mode is not a way to opt out of cleaning up.
-  if (!g_poopDue)
-    g_poopDue = millis() + 480000 + esp_random() % 420000;   // 8-15 min: nature's own clock
+  if (!g_poopDue) {
+    // RULED 2026-08-24: genre spec is about every three hours (the community-measured
+    // Tamagotchi cadence), not the 8-15 minutes this shipped with (4-7.5 trips/hour -
+    // "he goes to the potty too frequently"). Meals still visibly hasten it (see FEED).
+    g_poopDue = millis() + 9000000UL + esp_random() % 3600000UL;   // 150-210 min
+    g_pottySignalMs = 0; g_pottyCaught = false;                    // fresh window
+  }
+  // The potty-dance window: the last ~90s before the deadline, only when a bathroom
+  // exists to dash to and he is awake, well, and not partying. One announcement, then
+  // the dance repeats every ~25s while the window lasts.
+  if (!g_retuneOff && g_poopDue && S.lights && !discoDown() && !S.sick && !bunAway() &&
+      g_scRoleAvail[SCENE_ROLE_BATH] && !g_pottyCaught &&
+      millis() + 90000UL >= g_poopDue && millis() < g_poopDue) {
+    if (!g_pottySignalMs) {
+      g_pottySignalMs = millis();
+      g_pottyDanceAt = millis() + 25000UL;
+      if (!g_quietGreet) hapticPulse();
+      fmtPetSay("%s needs the potty!");
+      if (!g_action && !g_workStage && g_visit < 0)
+        startEmote(emoteClip("angry", "angry"), 1.6f);     // the potty dance
+    } else if (millis() >= g_pottyDanceAt) {
+      g_pottyDanceAt = millis() + 25000UL;
+      if (!g_action && !g_workStage && g_visit < 0)
+        startEmote(emoteClip("angry", "angry"), 1.6f);
+    }
+  }
   if (g_poopDue && millis() >= g_poopDue && S.lights && !discoDown()) {
     // THE ONLY PASSIVE ROOM TRIP (Jon: "the if he needs to go to the bathroom is the
     // only thing that is passive"): with a bathroom defined he takes himself there
@@ -4986,6 +5188,10 @@ static void simulate(float dt) {
           sceneRoomHolds(g_scCurRole)) {   // from home OR outside: both are places he lingers
         g_poopDue = 0;
         Serial.println("nature calls: off to the bathroom");
+        // RULED 2026-08-24: a potty trip taken while already grubby feeds the sickness
+        // accumulator directly — the Tamagotchi "sitting in poop" pattern, wired to
+        // hygiene. Wash your hands, kids.
+        if (S.clean < 30.0f) S.neglectMin += 10.0f;
         g_pottySeq = 1;
         g_pottyLock = true;
         whyNote(WHY_ROLL, "toilet", "");
@@ -5002,13 +5208,10 @@ static void simulate(float dt) {
       // timer ripened mid-settle and died right there). No return: the rest of
       // think() must keep running or the very trip being waited on would freeze.
     } else {
+      // No bathroom in this world: the need passes quietly. The floor-mess corpse that
+      // used to sit here (already behind `if (false)`) was deleted 2026-08-24 with the
+      // rest of the mess system — SWEEP's slot stays but never lights.
       g_poopDue = 0;
-      if (false && S.poopN < 4) {   // retired: nothing drops on the floor any more
-        S.poopX[S.poopN] = S.x; S.poopY[S.poopN] = S.y; S.poopN++;
-        S.clean = max(0.0f, S.clean - 8.0f);
-        sfxPlop();                       // W-046, per Piper: "PLOP. hehehehe."
-        say(sceneLine("mess", "bunbun made a mess"));
-      }
     }
   }
   Phase np = phaseOf();
@@ -5051,7 +5254,16 @@ static void simulate(float dt) {
       if (cm >= g_bedEndMin && cm < 18 * 60) {
         g_nightSleep = false; S.lights = 1; saveSleepState(0);
         g_quietGreet = true;               // W-059: silent until someone says hello
-        say(sceneLine("morning", "good morning! bunbun slept the whole night"));
+        // HEART 4 — the morning greeting: a four-heart pet wakes up glad to see you.
+        // A world's own authored morning line still wins (sceneLine returns it when it
+        // exists); only the stock fallback is upgraded. Text only - W-059's quiet
+        // morning holds until someone says hello.
+        {
+          const char *ml = sceneLine("morning", "");
+          if (ml && ml[0])            say(ml);
+          else if (S.loveLevel >= 4)  fmtPetSay("good morning! %s can't wait to see you");
+          else                        say("good morning! bunbun slept the whole night");
+        }
       }
     } else if (S.energy >= 100) {
       // Evening sleeps HOLD (Jon, launch night): after 6pm, a bunbun put
@@ -5078,8 +5290,10 @@ static void simulate(float dt) {
     // enough that the +1/s outruns the drain anyway - outside is the one that had to stop)
     if (g_scCurRole != SCENE_ROLE_OUTSIDE)
       S.fun = max(0.0f, S.fun - r.fun * m);
-    // each mess on the floor drags cleanliness down faster, as in the HTML
-    S.clean = max(0.0f, S.clean - (r.clean + S.poopN * 0.3f) * m);
+    // RULED 2026-08-24: the floor-mess system is deleted (the potty catch replaced it);
+    // the poopN drag term is gone with it. poopN itself stays in GameState as dead
+    // padding — removing a field would shift the save layout.
+    S.clean = max(0.0f, S.clean - r.clean * m);
     S.energy = max(0.0f, S.energy - r.energy * m);
     float discWas = S.disc;
     S.disc = max(0.0f, S.disc - r.meterDecay * m);
@@ -5090,10 +5304,14 @@ static void simulate(float dt) {
       say(S.phase == PH_BABY ? "bunbun wants some attention..."
                              : "bunbun is behind on work...");
     }
-    // The LOVE meter drains gently through the waking day (100 -> 0 in
-    // roughly a day of neglect); cuddles and petting refill it. Nights
-    // leave it alone — absence while asleep is not neglect.
-    g_love = max(0.0f, g_love - 0.50f * m);   // Jon 8/12: 0.20 still read as "not going down at all" - now ~30/waking-hour, visible across a morning
+    // The LOVE meter drains gently through the waking day; cuddles and petting refill
+    // it. Nights leave it alone — absence while asleep is not neglect.
+    // RULED 2026-08-24: 0.10/min ≈ 16 waking hours full-to-empty — ignored all day he
+    // is wistful by evening, but one busy day never zeroes him. The old 0.50 looked
+    // right on the bench and wrong on the shelf because decay was never SAVED (see
+    // GameState.love2) — every reboot restored the last cuddle's value. Now that decay
+    // persists, the gentle rate is the honest one.
+    g_love = max(0.0f, g_love - 0.10f * m);
     // W-022 addendum (Jon): passive-emotion cues — bunbun EXPRESSING
     // himself when a need crosses low, never notifying. One soft chirp
     // (FX-gated) + one gentle pulse (motor-gated), per need, at most once
@@ -5103,9 +5321,25 @@ static void simulate(float dt) {
     {
       static uint32_t needCueAt[4] = {0, 0, 0, 0};   // food, energy, clean, love
       static float prevN[4] = {100, 100, 100, 100};
+      // THE CARE-MISTAKE LEDGER (framework pass, 2026-08-24): the Tamagotchi loop in
+      // miniature. Each need tracks how long it has sat under the cue floor; 15 real
+      // minutes ignored logs ONE miss for the excursion (recovering clears the arm).
+      // The ledger feeds the nightly bank check - a day of ignored calls does not
+      // bank, however cuddled the evening was. Awake-time only (this branch).
+      static uint32_t lowSince[4] = {0, 0, 0, 0};
+      static bool missed[4] = {false, false, false, false};
       float nowN[4] = {S.food, S.energy, S.clean, g_love};
       bool spoke = false;
       for (int i = 0; i < 4; i++) {
+        if (!g_retuneOff && nowN[i] < 25.0f) {
+          if (!lowSince[i]) lowSince[i] = millis();
+          if (!missed[i] && millis() - lowSince[i] > 900000UL) {
+            missed[i] = true;
+            if (S.careMiss < 9) S.careMiss++;
+          }
+        } else {
+          lowSince[i] = 0; missed[i] = false;
+        }
         if (!spoke && prevN[i] >= 25.0f && nowN[i] < 25.0f &&
             millis() - needCueAt[i] > 180000UL) {
           needCueAt[i] = millis();
@@ -5131,6 +5365,20 @@ static void simulate(float dt) {
         prevN[i] = nowN[i];
       }
     }
+    // HEART 2 — HE GROOVES WHEN MUSIC PLAYS (the Amie rule: every banked heart pays
+    // out something real). A pet at two hearts who hears actual audio (audioLive() is
+    // amplitude-based, the honest signal) breaks into his dance clip now and then,
+    // unprompted. Idle only — never interrupting an errand, a visit, the potty, or
+    // the real dance mode.
+    if (!g_retuneOff && S.loveLevel >= 2 && audioLive() && !g_danceMode && !g_action && !g_workStage &&
+        g_visit < 0 && g_pottySeq == 0 && g_tx < 0) {
+      static uint32_t grooveAt = 0;
+      if (!grooveAt) grooveAt = millis() + 45000UL + esp_random() % 75000UL;
+      if (millis() >= grooveAt) {
+        grooveAt = millis() + 45000UL + esp_random() % 75000UL;
+        startEmote(emoteClip("dance", danceKitKey()), 3.0f);
+      }
+    }
   }
   float st = 0;
   if (S.food < 15) st += 1;
@@ -5151,24 +5399,92 @@ static void simulate(float dt) {
   // at 0, so uptime itself must clear an hour first). Neglect heals off
   // twice as fast as it accrues, and the ghost stays unreachable: MEDS fixes
   // this on the first tap, always.
+  // RULED 2026-08-24 (the meter re-tune): sickness becomes REACHABLE. The W-028 shape
+  // above stands — rare, earned, never an ambush — but the old numbers multiplied out
+  // to "never": the accumulator was a function-local static (any reboot amnestied it),
+  // the hour grace reset on EVERY wake (and he naps), the gates sat at <15 under decay
+  // that took hours to get there, and 120 game-minutes had to survive all of it.
+  // Now: the accumulator is S.neglectMin (persisted), the gates are <25, the threshold
+  // is 45 game-minutes, and the grace is the first hour of UPTIME plus ten minutes
+  // after any wake (Lou's no-ambush clause, kept in miniature).
   {
-    static float neglectMin = 0;
     static uint8_t prevLights = 1;
     if (!prevLights && S.lights) g_wokeSickMs = millis();   // just woke up
-    if (prevLights && !S.lights) g_sleepAtMs = millis();    // just fell asleep
+    if (prevLights && !S.lights) {
+      g_sleepAtMs = millis();                               // just fell asleep
+      // THE LOVE BANK deposits at the night tuck-in (ruled 2026-08-24): the meter is
+      // about today, the bank is about everything before. End the day with love >= 60
+      // and a good day is banked; three good days lock in a heart, permanently, to a
+      // cap of four. A bad day deposits nothing and costs nothing. One check per
+      // calendar day, stamped in loveDay.
+      if (g_nightSleep && !g_retuneOff) {
+        time_t t = time(NULL);
+        uint16_t d = (t > 1672531200) ? (uint16_t)((t / 86400) % 65000) + 1
+                                      : (uint16_t)((S.ageMs / 86400000LL) % 65000) + 1;
+        if (S.loveDay != d) {
+          S.loveDay = d;
+          // A good day is loved AND attended (framework pass): the meter says the
+          // evening was warm, the ledger says the day's calls were answered. Two
+          // misses or more and today deposits nothing - that is the "have to care"
+          // (Jon, framework ruling). The ledger resets either way; tomorrow is fresh.
+          if (g_love >= 60.0f && S.careMiss <= 1 && S.loveLevel < 5) {
+            S.loveProg++;
+            if (S.loveProg >= 3) {
+              S.loveProg = 0;
+              S.loveLevel++;
+              sfxGrow();
+              char hb[64];
+              snprintf(hb, sizeof(hb), "%s's heart grew! %d heart%s now", petName(),
+                       (int)S.loveLevel, S.loveLevel == 1 ? "" : "s");
+              say(hb);
+            }
+          }
+          S.careMiss = 0;
+          saveState();
+        }
+        // HEART 3 — the goodnight ritual: a three-heart pet's tuck-in line becomes his
+        // own. Line only, no sound - the tuck-in chime stays the night's last sound
+        // (Ivy's rule).
+        if (S.loveLevel >= 3) fmtPetSay("%s blows a goodnight kiss");
+      }
+    }
     prevLights = S.lights;
     if (S.lights && !S.sick) {
-      if (S.food < 15 || S.clean < 15) neglectMin += m;
-      else neglectMin = max(0.0f, neglectMin - 2.0f * m);
-      if (neglectMin >= 120.0f && millis() - g_wokeSickMs > 3600000UL) {
+      if (S.food < 25 || S.clean < 25) S.neglectMin += m;
+      else S.neglectMin = max(0.0f, S.neglectMin - 2.0f * m);
+      if (S.neglectMin >= 45.0f && millis() > 3600000UL &&
+          millis() - g_wokeSickMs > 600000UL) {
         S.sick = 1;
-        neglectMin = 0;
+        S.neglectMin = 0;
         sfxDroop();                  // W-046, per Maya: "a balloon going
                                      // sad. Not scary."
         say("bunbun caught a sniffle - MEDS will fix it");
       }
+      // THE RARE BEAT (ruled 2026-08-24): a deterministic little sniffle roughly every
+      // twelve days, seeded by the pet's own id, rolled once per day in the morning —
+      // so MEDS stays a verb every family knows even under perfect care. Deterministic,
+      // not random: the same pet sniffles on the same days, which makes it learnable
+      // and fair (the P1 lesson — the original Tamagotchi has no RNG at all).
+      if (!g_retuneOff) {
+        time_t t = time(NULL);
+        if (t > 1672531200) {
+          int cm = clockNowMin();
+          uint16_t d = (uint16_t)((t / 86400) % 65000) + 1;
+          if (S.sniffDay != d && cm >= 8 * 60 && cm < 11 * 60 &&
+              millis() > 3600000UL) {
+            S.sniffDay = d;
+            unsigned h = 0;
+            for (const char *p = g_petId; *p; p++) h = h * 31u + (unsigned)*p;
+            if ((d + h) % 12 == 0) {
+              S.sick = 1;
+              sfxDroop();
+              fmtPetSay("%s caught a little sniffle - MEDS will fix it");
+            }
+          }
+        }
+      }
     } else if (S.sick) {
-      neglectMin = 0;                       // the cure starts the clock over
+      S.neglectMin = 0;                     // the cure starts the clock over
     }
     // W-036 BRAVE mode: the run-away day. Only past the sniffle — already
     // sick AND still starving/filthy for two more game-hours. He packs a
@@ -5616,9 +5932,10 @@ static void runMenu(int i) {
             // 15-35 SECONDS, so every feed produced a mess almost immediately and the floor
             // was never clean — it's minutes now, and less of a certainty.
             if ((esp_random() % 100) < (b ? 55 : 35)) {
-              // back to the shipped pace (the 20s test setting is retired) - and a
-              // meal only ever HASTENS the standing baseline, never postpones it
-              uint32_t mealDue = millis() + 240000 + esp_random() % 300000;   // 4-9 min
+              // a meal only ever HASTENS the standing baseline, never postpones it.
+              // RULED 2026-08-24: 20-35 minutes after eating - still visibly cause and
+              // effect, no longer the 4-9 min that stacked feeds into a potty parade.
+              uint32_t mealDue = millis() + 1200000UL + esp_random() % 900000UL;
               if (!g_poopDue || mealDue < g_poopDue) g_poopDue = mealDue;
             }
             break;
@@ -9427,13 +9744,17 @@ static void statsInvalidate() {
 // the CARE sheet lifts them to its top (Jon 8/14). Same bars, same incremental redraw —
 // statsInvalidate() is what makes them repaint their labels and frames at a new address.
 static void drawStats(int sy = STATS_Y) {
-  const char *lbl[STAT_COLS] = {"FOOD","FUN","CLN","ZZZ","CUDL","LOVE","HP"};
+  // LOVE moved to the FAR RIGHT (owner, framework day): its bar anchors the corner and
+  // the bank hearts hang just above it, poking slightly into the room - which reads as
+  // his hearts floating at the room's edge rather than crowding the HP label (the
+  // first pip placement overflowed into HP's column; this ends the collision class).
+  const char *lbl[STAT_COLS] = {"FOOD","FUN","CLN","ZZZ","CUDL","HP","LOVE"};
   if (S.phase == PH_TEEN)       lbl[4] = "SCHL";
   else if (S.phase == PH_ADULT) lbl[4] = "WORK";
-  float val[STAT_COLS] = {S.food, S.fun, S.clean, S.energy, S.disc, g_love, S.health};
+  float val[STAT_COLS] = {S.food, S.fun, S.clean, S.energy, S.disc, S.health, g_love};
   // Straight from the stylesheet: .bar i is --orange, #b_disc i is #8a6ee6, #b_hp i is
   // #27ae60, and .bar.low i turns #c0392b. LOVE is pink, obviously.
-  uint16_t col[STAT_COLS] = {C_ORANGE, C_ORANGE, C_ORANGE, C_ORANGE, C_DISC, 0xFB56, C_HP};
+  uint16_t col[STAT_COLS] = {C_ORANGE, C_ORANGE, C_ORANGE, C_ORANGE, C_DISC, C_HP, 0xFB56};
   int pad = 3, gap = 2;
   int w = (UI_W - pad * 2 - gap * (STAT_COLS - 1)) / STAT_COLS;
   if (g_statsFirst) {
@@ -9454,6 +9775,80 @@ static void drawStats(int sy = STATS_Y) {
     g_lastFill[i] = f; g_lastLow[i] = low;
     tft.fillRect(x + 1, by + 1, f, BAR_H, low ? C_LOW : col[i]);
     if (f < w - 2) tft.fillRect(x + 1 + f, by + 1, w - 2 - f, BAR_H, C_PAPER);
+  }
+  // THE LOVE BANK on the LOVE column (ruled 2026-08-24): up to four little pips in the
+  // label row, one per banked heart. The meter below is about today; these are about
+  // everything before, and they never go away.
+}
+
+// THE BANK HEARTS (owner, framework day: "4 outline hearts and they can see them fill
+// up ... just above the bar itself. yes it will slightly be in the room").
+// Four 5x5 hearts right-aligned over the LOVE column (now the far-right bar), floating
+// in the last rows of the room. That strip is INSIDE the scene sprite's push region, so
+// this is drawn EVERY FRAME, after the push - a cached draw there is erased by the next
+// push and flickers, which is the chip-row lesson relearned deliberately.
+// Earned = solid pink; unearned = hollow outline (the empty slots ARE the promise -
+// Amie's rule; endowed progress); the NEXT heart fills bottom-up a third per good day,
+// so one banked day is visible the next morning.
+static void drawLoveHearts(int sy, bool inScene) {
+  // The owner's reference at the owner's scale ("make it bigger and just above the
+  // white - it isnt very obvious"): 10x8 classic console hearts - dark outline, red
+  // fill, a white shine - the bottom row sitting right on the stats strip's white
+  // edge, right-aligned over the LOVE bar. Hollow = unearned, the room showing
+  // through; the next heart fills bottom-up in thirds, one good day at a time.
+  // inScene: the room copy is drawn INTO the sprite with the rest of the chrome so it
+  // rides the push atomically - the after-push tft draw was erased for the length of
+  // every push and shimmered ("the heart is slightly flashing"). The tft path remains
+  // only for the CARE sheet, whose rows the clipped push never touches.
+  static const uint16_t OUT[8]  = {0b0111001110, 0b1000110001, 0b1000000001,
+                                   0b1000000001, 0b0100000010, 0b0010000100,
+                                   0b0001001000, 0b0000110000};
+  static const uint16_t FILL[8] = {0b0000000000, 0b0111001110, 0b0111111110,
+                                   0b0111111110, 0b0011111100, 0b0001111000,
+                                   0b0000110000, 0b0000000000};
+  const int HW = 10, HH = 8, HGAP = 2;
+  // Left-aligned with the gear's own chip (owner's alignment call) - the right column
+  // reads as one piece of chrome: gear above, hearts below, same left edge.
+  int x0 = GEAR_BX + 4;
+  int y0 = sy - HH;
+  // The chip backdrop every other piece of chrome wears: without it the hollow hearts
+  // sank into whatever the room hung there (the farmhouse lantern ate two of them).
+  // Rooms vary; the bone chip is what makes the hearts readable in all of them.
+  // AT HALF OPACITY (owner: "cut the opacity in the heart bar by 50%") - a true blend
+  // toward bone, so the room breathes through and the hearts stay the loud part.
+  if (inScene) {
+    const int cw = 5 * HW + 4 * HGAP + 8, ch = HH + 6;
+    for (int yy = 0; yy < ch; yy++)
+      for (int xx = 0; xx < cw; xx++) {
+        // rounded corners: skip the 2x2 notches
+        int ex = min(xx, cw - 1 - xx), ey = min(yy, ch - 1 - yy);
+        if (ex + ey < 2) continue;
+        bool edge = (xx == 0 || xx == cw - 1 || yy == 0 || yy == ch - 1 || ex + ey == 2);
+        uint16_t base = scene.readPixel(GEAR_BX + xx, y0 - 3 + yy);
+        uint16_t tint = edge ? C_BONE_EDGE : C_BONE_LO;
+        uint16_t mix = (uint16_t)((((base >> 1) & 0x7BEF) + ((tint >> 1) & 0x7BEF)));
+        scene.drawPixel(GEAR_BX + xx, y0 - 3 + yy, mix);
+      }
+  }
+  for (int p = 0; p < 5; p++) {
+    int hx = x0 + p * (HW + HGAP);
+    bool full = p < S.loveLevel;
+    int grow = (!full && p == S.loveLevel) ? (int)S.loveProg : 0;   // 0..2 good days
+    for (int r = 0; r < HH; r++) {
+      for (int c = 0; c < HW; c++) {
+        uint16_t m = 0b1000000000 >> c;
+        uint16_t col = 0;
+        if (OUT[r] & m) col = C_INK;
+        else if (FILL[r] & m) {
+          bool growRow = grow > 0 && r >= HH - 2 - grow * 2;   // thirds, rising
+          if (full || growRow)
+            col = (full && r == 2 && c == 2) ? C_PAPER : C_LOW;
+        }
+        if (!col) continue;
+        if (inScene) scene.drawPixel(hx + c, y0 + r, col);
+        else         tft.drawPixel(hx + c, y0 + r, col);
+      }
+    }
   }
 }
 
@@ -9586,6 +9981,9 @@ static void drawTicker() {
     // device. Flagged as owed drift by the 8/12 registry sweep (§8) and carried
     // unfixed since. Every other line here names a real button — this one now does
     // too. The whole point of the hint is that it is actionable.
+    // RULED 2026-08-24: low love finally has a ticker line — it used to be the one
+    // meter with no pose and no hint, so it could sag invisibly to the voice-cue floor.
+    else if (g_love   < 25)  need = "lonely - CUDL";
     else if (S.fun    < 35)  need = "bored - PLAY";
     else if (S.disc   < 25)  need = (S.phase == PH_BABY) ? "wants you - CUDL"
                                   : (S.phase == PH_TEEN) ? "behind - SCHL" : "behind - WORK";
@@ -9618,6 +10016,15 @@ static void drawTicker() {
     else if (need && g_petName[0])
                              snprintf(buf, sizeof(buf), "%s  %s", g_petName, need);
     else if (need)           snprintf(buf, sizeof(buf), "%s", need);
+    // HEART 1 — the loved idle lines: a one-heart pet's quiet moments have a voice.
+    // Every third two-minute block the "all good" line becomes affection, rotating
+    // through a small set. Needs always win (they returned above).
+    else if (S.loveLevel >= 1 && (millis() / 120000UL) % 3 == 2) {
+      static const char *LOVED[] = {
+        "%s purrs happily beside you", "%s is so glad to be yours",
+        "%s loves this little home", "%s saved you the warmest spot"};
+      snprintf(buf, sizeof(buf), LOVED[(millis() / 360000UL) % 4], petName());
+    }
     else if (m < 60)         snprintf(buf, sizeof(buf), "%s%s%s  %ldm  all good",
                                       g_petName[0] ? g_petName : "", g_petName[0] ? "  " : "",
                                       st, m);
@@ -11266,7 +11673,10 @@ static void drawSheetChrome() {
 // Card order is the row's order, minus the two verbs that became tabs (PLAY, ZZZ), plus the
 // two the sheet adds: WISH (promoted out of the pause overlay, spec 1.8) and CLOSE.
 // -1 in the runMenu column = the card is not a care verb.
-static const int8_t CARE_MENU[8] = {0, 2, 3, 4, 5, 7, -1, -1};
+// SWEEP's card left with the mess system (the 8/24 rulings): the potty catch is the
+// game now, so the chore seat it opened is an empty chair. The seat table (MID/MLBL)
+// keeps "sweep" so old dispatch names stay valid; it is simply no longer reachable.
+static const int8_t CARE_MENU[8] = {0, 2, 4, 5, 7, -1, -1, -1};
 static const int CARE_WISH = 6, CARE_CLOSE = 7;
 
 // The sheet says the longer word. The icon row had 23px and said "CUDL"; a 53px card has
@@ -11277,11 +11687,12 @@ static const char *careCardLabel(int c) {
   if (c == CARE_WISH)  return "WISH";
   if (c == CARE_CLOSE) return "CLOSE";
   int m = CARE_MENU[c];
+  if (m < 0) return "";                       // SWEEP's vacated chair
   const char *l = menuLabel(m);
   if (!l[0]) return "";                       // the baby's empty chair
   if (m == 5) return "CUDDLE";
   if (m == 7) return teenSchool() ? "SCHOOL" : "WORK";
-  return l;                                   // FEED / BATH / SWEEP / MEDS / TREAT
+  return l;                                   // FEED / BATH / MEDS / TREAT
 }
 
 // Same zero-new-art rule the tab bar follows: pak icon where one exists, vector where none
@@ -11407,9 +11818,10 @@ static void drawCareSheet() {
 // the tab bar are tested by the caller, not here.
 static int careSheetHit(int x, int y) {
   // While away the sheet is one big button (see drawCareSheet): anywhere on it is TREAT,
-  // which is card index 3 — the seat menuLabel() already relabels while he is gone.
+  // which is card index 2 now that SWEEP's card is gone — the seat menuLabel() already
+  // relabels while he is gone.
   if (bunAway()) {
-    if (y >= 157 && y < 240 && x >= 20 && x < 220) return 3;
+    if (y >= 157 && y < 240 && x >= 20 && x < 220) return 2;
     return -1;
   }
   for (int r = 0; r < 2; r++) {
@@ -12828,7 +13240,18 @@ void setup() {
   // (loadName() moved up above the splash paint — the name rule.)
   // The copy follows the gesture (P3, R4d): there is no MENU key to press anymore, and the
   // shell has always been the thing kids actually reach for.
-  if (!loadState()) { freshState(); say("tap the egg to warm it"); }
+  // W-112: count it BEFORE freshState, and say which kind of birth this was.
+  if (!loadState()) { petBornByLoss(); freshState(); say("tap the egg to warm it"); }
+  else {
+    petIdLoad();   // a normal boot still needs the id in RAM to report it
+    // ADOPT A PET THAT PREDATES THE RECORD. Every bunbun alive when this shipped has no id,
+    // and as written it would not get one until the next birth - which is the exact moment the
+    // id was supposed to have been written down ALREADY. So a living pet with no code is given
+    // one now, marked "adopted" rather than "chosen" or "lost", because that is the truth: we
+    // do not know how this one came to exist, only that it is here and is not new. Runs once;
+    // from the next boot it simply loads.
+    if (!g_petId[0] && S.stage != STAGE_EGG) petNewId("adopted");
+  }
   // A RESTART OPENS ON HIM AT HOME (Jon: "restart should just put him in the main
   // room idle in the center"): the save's position could be a side room's tub or a
   // corner mid-errand, and restoring it read as him materialising somewhere odd.
@@ -13078,7 +13501,16 @@ void loop() {
     bool live = audioLive();
     if (live) g_lastAudioLiveMs = now;      // W-043: playing audio holds off the auto-nap
     if (!live && wasLive) deadSince = now;
-    if (live && !wasLive && (deadSince == 0 || now - deadSince >= 8000)) {
+    // THE FLASH ABOVE PAUSE (Jon, framework day, confirmed by "i tested dance mode and
+    // it disappeared" - the mode pins the button): quiet lofi passages sit under the
+    // beat-tuned amplitude floor for 8s+ routinely, so every one ended in a fresh
+    // 5-second button apparition - appear, roll away, reappear, forever. A sender that
+    // gives metadata gets its invitations from track changes alone (setNowPlaying's
+    // guarded path); the amplitude edge stays only as the fallback for senders that
+    // never send metadata, gated at 30s - a real between-sessions silence, not a
+    // musical breath.
+    if (live && !wasLive && !g_nowPlaying[0] &&
+        (deadSince == 0 || now - deadSince >= 30000)) {
       danceBtnInvite();   // deadSince==0 = first sound since boot: always invite
     }
     wasLive = live;
@@ -14518,6 +14950,7 @@ void loop() {
       uint32_t held = millis() - rpHoldAt;
       if (held >= 2000) {
         rpSpokes = -1;
+        petBornByChoice();          // W-112: this birth was chosen, and the record says so
         freshState(); saveState();
         g_resetPanel = false;
         redrawRoomChrome();
@@ -14926,6 +15359,18 @@ void loop() {
     if (sceneHold && !wasDown) {
       petStart = now; petting = false;
       petX = tx; petY = ty;
+      // THE POTTY CATCH lands here: a touch on the room during the dance window means
+      // someone noticed him. He dashes off immediately, paid in fun and love — the
+      // catchable-moment loop (ruled 2026-08-24). The touch still goes on to be
+      // whatever else it was going to be (a pet, a menu); catching is not a mode.
+      if (g_pottySignalMs && !g_pottyCaught && g_poopDue && millis() < g_poopDue) {
+        g_pottyCaught = true;
+        S.fun = min(100.0f, S.fun + 2.0f);
+        g_love = min(100.0f, g_love + 1.0f);
+        fmtPetSay("caught it! %s dashes to the potty");
+        sfxOK();
+        g_poopDue = millis();              // fires on the next simulate pass
+      }
       // Petting must be UNMISTAKABLY deliberate (field, launch night: at
       // 600ms every lingering tap became affection — love popping in and
       // out, menus eaten, buttons seemingly dead). The 1.2s motionless
@@ -14960,7 +15405,10 @@ void loop() {
         startEmote(emoteClip("love", "love"), 1.2f);
       }
       g_actionEnd = now + 700;           // rolling: the love clip holds while held
-      g_love = min(100.0f, g_love + 2.0f * dt);
+      // RULED 2026-08-24: +0.5/s, was +2.0/s — against the old drain that was a 240x
+      // ratio (a 25-second hold refilled the whole bar). A refill is now ~3 minutes of
+      // real attention, which is what the meter is supposed to be measuring.
+      g_love = min(100.0f, g_love + 0.5f * dt);
       hapticPurrStart(400);              // rolling refresh: purrs while held
     }
     if (!down) {
@@ -15026,8 +15474,23 @@ void loop() {
   // Dance mode runs the scene faster. The beat pulse decays over roughly half a second, so at
   // the usual 10fps a flash gets five frames and reads as a stutter rather than a strobe. Only
   // while the ball is actually down, so the extra redraw cost is not paid the rest of the time.
-  uint32_t frameMs = (g_blTarget == BL_BRIGHT) ? 100 : 250;
-  if (discoVisible() && g_blTarget == BL_BRIGHT) frameMs = 50;   // 20fps target, matching idle
+  // 10fps ALWAYS (the "very strange flashing" verdict, 2026-08-24): the idle 250ms
+  // cadence made the SPI push wave sweep the panel at 4fps - slow enough to SEE on
+  // bright uniform areas (the cream wall, edge to the dark chips at the gear), on
+  // panels whose batch shows the write scan. Every suppressor in the two-hour hunt
+  // was secretly this line: a touch raised the target to BRIGHT and with it the rate
+  // to 10fps "for a while"; dance ran at 20fps; rain and pause dimmed the band under
+  // it. The power motive was real but the backlight is already dimmed at idle and is
+  // the dominant load; a serene shelf face is worth the SPI delta.
+  uint32_t frameMs = 100;
+  if (discoVisible() && g_blTarget == BL_BRIGHT) frameMs = 50;   // 20fps for the party
+  // The vcomXX lever lands here, on the render task, between pushes.
+  if (g_vcomPending >= 0) {
+    uint8_t v = (uint8_t)g_vcomPending; g_vcomPending = -1;
+    tft.writecommand(0xBB);            // ST7789 VCOMS
+    tft.writedata(v);
+    Serial.printf("vcom set 0x%02X\n", v);
+  }
   // A full-screen panel owns the glass; the pet scene must not paint over it.
   // The panels return early on later passes, but on the OPENING pass the menu
   // tap set the flag mid-loop and control still reaches here — which drew the
@@ -15083,6 +15546,12 @@ void loop() {
     // the digits now, so they no longer overlap at all, but the order stays: chrome that
     // shares a column should be painted in the order it must be read.
     drawClock();
+    // The bank hearts join the chrome IN the sprite (see drawLoveHearts), UNDER THE
+    // GEAR (owner's second placement call): the right column mirrors the left -
+    // PAUSE + clock, GEAR + hearts - on the light wall where they read, grouped with
+    // the chrome they belong to. Inside the clipped push too, so an open sheet keeps
+    // them on screen with no special case.
+    drawLoveHearts(40, true);
     // THE CLIPPED PUSH — the single render change P3 makes, and the only new viewport pair
     // in the whole redesign. Three adjacent statements with no branch between them, so
     // set/reset are paired on every path including every early return above (there are
