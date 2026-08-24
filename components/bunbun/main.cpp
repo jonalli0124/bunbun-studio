@@ -523,8 +523,28 @@ static bool roomLoad(const char *n) {
   // valid header with one entry at offset 0xFFFF0000 installs, reboots, and takes a
   // LoadProhibited on the first draw - a boot loop with no serial-free way out.
   if (!pakEntryInRange(e)) return false;
+  // ...AND THE SIZE MUST COVER THE PIXELS THE ENTRY CLAIMS. w and h are bounded above and the
+  // entry lies inside the partition, but nothing yet said it actually CONTAINS w*h bytes. The
+  // band reader walks y to SCENE_H at `g_roomPix + y * g_roomW` and never consults size, so a
+  // truncated or malformed export reads past its own data - into the next entry, which draws a
+  // garbled room and reports nothing, or off the end of a 4 MB mmap, which is a LoadProhibited
+  // on the first draw and the same boot loop the offset check above exists to prevent. Both are
+  // failure modes this function already rejects w and h to avoid; they were simply reachable
+  // through a third field.
+  //
+  // Checked BEFORE the palette is read, not after: `pakRead(e->offset + 2, g_pal, c * 2)` is
+  // itself an unbounded memcpy of up to 512 bytes and has the same problem.
+  //
+  // Exact, not generous. Measured across both shipped paks (34 room entries, factory and
+  // starter): every single one is EXACTLY 2 + pal*2 + w*h, slack zero. There is no legitimate
+  // room with a byte to spare, so `<` is the right comparison and a tolerance would only widen
+  // the hole. Rejecting rather than clamping, for the reason the guard above gives: a clamped
+  // room renders wrong and says nothing, and nothing here is trimmed silently.
+  if (e->size < 2) return false;
   uint16_t c = 0; pakRead(e->offset, &c, 2);
   if (c > 256) return false;
+  const uint32_t need = 2u + (uint32_t)c * 2u + (uint32_t)e->w * (uint32_t)e->h;
+  if (e->size < need) return false;
   pakRead(e->offset + 2, g_pal, c * 2);
   g_roomPix = e->offset + 2 + c * 2; g_roomW = e->w;
   strncpy(g_roomName, n, 32);
