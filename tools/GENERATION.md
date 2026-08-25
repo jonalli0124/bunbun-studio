@@ -222,14 +222,25 @@ back at 70px where its siblings were ~50.
   their heavy slanted brows and its wide grin stays exactly as it is." — recorded per
   pack.
 - **OWNER RULING: sleep states have CLOSED eyes, every pack.** Overrides the
-  face-stability clause. New packs ask in the state prompt ("both eyes fully closed as
-  short dark curved lines" — worked first try on spark and imp); shipped packs were
-  fixed by deterministic pixel surgery (fill the eye cluster, draw the lid line) —
-  bunny/cat/dog/frog/penguin done 2026-08-24; croc/capybara/frill were already closed.
-- **OWNER RULING: the dog does not frown.** The dog pack's neutral frown (∩ mouth) was
-  flipped to a small smile (∪) across every neutral-face frame — idle, walks, sit,
-  sleep, pickup, bathe, play. Emote mouths (angry etc.) untouched. Vertical flip of the
-  mouth arc in place, fur-filled; recorded in dog/PROMPTS.md.
+  face-stability clause. Ask in the state prompt: "both eyes fully closed as short dark
+  curved lines" — the clause is now proven on spark, imp, and frill.
+- **OWNER RULING 2026-08-24 (evening): PC-SIDE FACE FIXES ARE RETIRED.** The pixel
+  surgeries above were tried first and left blemishes — the frill's recoloured iris
+  kept its open-eye OUTLINES ("he still read awake"), the dog's flipped smiles left
+  artifacts across twenty frames (owner: "i dont love the pc side solution... weird
+  blemishes"). Faces get REGENERATED with the adjusted prompt instead. Deterministic
+  pixel work remains fine for everything that is not a face: mirrors, palette
+  pair-swaps, feet shifts, fragment scrubs.
+- **Fix the source, not the copies.** A face defect on a keeper (the dog's frown)
+  reaches every clip; fix it once as a state on the keeper, then regenerate the
+  affected clips from the fixed state with their recorded verbatim prompts. Done for
+  the dog 2026-08-24 (Idle_smile → sit/sleep/walk/pickup/bathe/play).
+- **Pose coherence: edit states ON states.** A fresh sleep roll from an Idle keeper
+  can come back rotationally incoherent (lying in five views, sitting in three —
+  bunny/cat/frog/penguin, 2026-08-24). To change one facial feature of an existing
+  coherent state, run create_character_state ON that state ("Exactly the same lying
+  curled sleeping pose, unchanged. Both eyes fully closed...") — the pose is pinned
+  by the source rotations and only the edit moves.
 - **Species ids cap at 8 chars** (`mkspecies`): "sparktuft" became pack dir/id `spark`.
 
 ## THE PAK CONTRACT — the species kit is baked at 0.5, always

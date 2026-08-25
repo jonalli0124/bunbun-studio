@@ -171,3 +171,18 @@ The penguin crouches down slightly, wiggles briefly, then springs back up and pl
 Install: cleaned `--dist 70 --keep-outline`, no `--norm`; one shared offset anchored on the
 clip's lowest extent onto this pack's floor row; zero opaque px clipped; garment mapped as an
 explicit pair to #9151d3/#5d229d. check_pack PASS.
+
+## 2026-08-24 — Adult_Sleep regenerated with closed eyes (PC-side face fixes retired)
+
+The 8/24 pixel eye-fix is superseded (owner: "weird blemishes"). TWO rolls:
+1. Fresh state on the Idle keeper (6593657c) — DISCARDED: the beak came back mangled
+   (owner: "There's something going on with the penguin beak") and poses mixed.
+2. The KEEPER route for a one-feature edit: create_character_state ON the old coherent
+   Adult_Sleep state 895749ea — pose pinned by the source rotations, only the eyes
+   move. State cbe2ca67, use_color_palette_from_reference=True:
+```
+Exactly the same lying curled sleeping pose, unchanged. Both eyes fully closed as short dark curved lines inside the pale eye patches. Keep everything else exactly identical to the source. Empty hands, nothing in the mouth, no props.
+```
+Proper pointed beak, closed curved eyes, coherent curl in all 8 views. Installed via
+clean --dist 70 --keep-outline --norm 96 (feet y=90); garment pair-swapped
+#a95aad/#763680 -> #9151d3/#5d229d. Verified by rendering at 4x.

@@ -181,3 +181,26 @@ Install: cleaned --dist 70 --keep-outline (own pass), garment pair-swapped EXACT
 #8257a1/#523075 -> #9151d3/#5d229d, frown-flip applied to all 7 frames (the source
 character still frowns), one shared offset dx=-8 dy=-4 onto pack floor 90, zero px
 clipped. check_pack: dog PASS, purples 0 missing, hands 150/150.
+
+## 2026-08-24 (evening) — THE SMILE CASCADE (PC-side face fixes retired)
+
+Owner: "i dont love the pc side solution because it isnt quite right always just like
+the fix for the sad dog. its pretty good but there are weird blemishes." The flipped
+smiles above are superseded. Root fix: state `Idle_smile` on "Dog state source"
+21244f11 — character 1398763c — prompt:
+```
+Standing in the same neutral idle pose, unchanged. The mouth is a small closed upward-curving smile instead of a frown. Keep everything else exactly identical to the source - the solid black dot eyes with brow patches, the oval nose, the floppy ears, the purple overalls, unchanged. Empty hands, nothing in the mouth, no props.
+```
+From it, every frown-flipped clip regenerated with its recorded verbatim prompt:
+- Adult_Sit state 41b294df (96, face words "two small solid black dot eyes and the
+  small closed smile")
+- Adult_Sleep state ff2536c7 (override 120x120, the sparktuft closed-eye clause +
+  the smile — kills the sleep eye pixel-fix in the same pass)
+- Adult_Walk_East group c3fdbdab (v3 east fc6, exaggerated-stride prompt; west
+  mirrored at install) · Adult_Pickup 5686516a · Adult_Bathe a2eee16e (mouth-hold
+  wording "a small closed smile" for the croc's "short closed line" — one recorded
+  substitution) · Adult_Play c29936c5 (the object-free v2 prompt)
+Emote clips untouched (their mouths were never flipped). Install per the recorded
+pipelines: states --dist 70 --keep-outline --norm 96 (feet y=90); anims no norm, one
+shared offset per clip onto floor 90, zero px clipped; garment pair-swapped
+#8257a1/#422560 -> #9151d3/#5d229d (59/150 frames). Verified by rendering at 4x.

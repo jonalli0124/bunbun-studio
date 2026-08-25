@@ -124,3 +124,14 @@ states should ask for closed eyes in the prompt instead (see sparktuft).
 ```
 Lying down on the ground, curled on one side, head resting on the ground, legs tucked in close to the body. Keep the face exactly identical to the source - the two orange eyes and the short mouth line, unchanged. Empty hands, nothing in the mouth, no props.
 ```
+
+### Adult_Sleep REDO 2026-08-24 (create_character_state, override 120x120, use_color_palette_from_reference=True) — state character 54d8cbc4
+
+**Owner, same day: "i dont love the pc side solution because it isnt quite right always
+just like the fix for the sad dog... there are weird blemishes."** The pixel fix above
+recoloured the iris but left the open-eye OUTLINES, so he still read awake (and slightly
+cross). PC-side face fixes are retired; regenerate instead. The prompt is the original
+sleep prompt with ONLY the eye words swapped for sparktuft's proven closed clause:
+```
+Lying down on the ground, curled on one side, head resting on the ground, legs tucked in close to the body. Both eyes fully closed as short dark curved lines. Keep the rest of the face exactly identical to the source - the short mouth line, unchanged. Empty hands, nothing in the mouth, no props.
+```

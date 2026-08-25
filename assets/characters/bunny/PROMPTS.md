@@ -251,3 +251,19 @@ The bunny crouches down slightly, wiggles briefly, then springs back up and play
 Install: cleaned `--dist 70 --keep-outline`, no `--norm`; one shared offset anchored on the
 clip's lowest extent onto this pack's floor row; zero opaque px clipped; garment mapped as an
 explicit pair to #9151d3/#5d229d. check_pack PASS.
+
+## 2026-08-24 — Adult_Sleep regenerated with closed eyes (PC-side face fixes retired)
+
+The 8/24 pixel eye-fix is superseded (owner: "weird blemishes"). Regenerated as a fresh
+state on the Idle keeper — state 6381275c, override 120x120,
+use_color_palette_from_reference=True — the canonical sleep prompt with the eye words
+swapped for the proven closed clause:
+```
+Lying down on the ground, curled on one side, head resting on the ground, legs tucked in close to the body. Both eyes fully closed as short dark curved lines. Keep the rest of the face exactly identical to the source - <species mouth words>, unchanged. Empty hands, nothing in the mouth, no props.
+```
+The roll came back with MIXED poses across rotations (lying in some views, dozing
+sitting up in others). Flagged to the owner with old-vs-new sheets; OWNER RULING:
+"I think they will work fine... Generally they are better than the original" — KEPT.
+(A pose-pinned alternative was generated on the old sleep state the same evening and
+sits unused in PixelLab if the mixed poses ever grate.) Installed via clean --dist 70
+--keep-outline --norm 96 (feet y=90); garment pair-swapped to the anchor purples.
