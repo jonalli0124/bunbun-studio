@@ -80,3 +80,11 @@ The mouse crouches down slightly, wiggles briefly, then springs back up and hops
 ```
 pixel art sprite of a small quick spark squirrel creature standing on two short legs, two short arms and two short legs all four clearly separated from the body silhouette, a rounded head merging directly into a heavy rounded body, body widest at the base, russet orange body with a cream underside, tall pointed ears standing upright with long fur tufts at the tips, narrow almond-shaped eyes with a confident upward tilt, looking straight ahead at the viewer, a small closed smile, a big bushy squirrel tail rising behind the body and curling forward over the back with a pale golden tip, the creature fills the frame from top edge to bottom edge, hard dark outline in a deep tinted shade of the orange body and never pure black, a tight palette of about a dozen colours in two hue families with one cool accent against the warm body, banded cel shading with three value steps, separate shade ramps for body and underside, large flat areas of colour, no dithering, solid white background
 ```
+
+## 2026-08-25 (late 8/24 night) — Baby Onesie preview roll — [PENDING owner review]
+
+Character f5291f85 ("Spark Baby Onesie"): pro 25 gens, style_character=keeper 424fbd13, composed from recorded appearance.
+The croc-pilot baby clauses folded in verbatim: "with the head noticeably larger
+relative to the body, about half the total height, and short stubby arms and legs" +
+"Wearing a simple flat bright purple onesie, one piece covering the whole body, short
+sleeves and short legs." South idle shown in the 8/24 nursery sheet; nothing installed.

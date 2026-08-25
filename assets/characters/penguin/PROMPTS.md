@@ -186,3 +186,11 @@ Exactly the same lying curled sleeping pose, unchanged. Both eyes fully closed a
 Proper pointed beak, closed curved eyes, coherent curl in all 8 views. Installed via
 clean --dist 70 --keep-outline --norm 96 (feet y=90); garment pair-swapped
 #a95aad/#763680 -> #9151d3/#5d229d. Verified by rendering at 4x.
+
+## 2026-08-25 (late 8/24 night) — Baby Onesie preview roll — [PENDING owner review]
+
+Character 0b453492 ("Penguin Baby Onesie"): v3, ~3 gens, adult creation prompt + baby clauses + onesie.
+The croc-pilot baby clauses folded in verbatim: "with the head noticeably larger
+relative to the body, about half the total height, and short stubby arms and legs" +
+"Wearing a simple flat bright purple onesie, one piece covering the whole body, short
+sleeves and short legs." South idle shown in the 8/24 nursery sheet; nothing installed.

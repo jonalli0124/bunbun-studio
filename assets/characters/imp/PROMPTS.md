@@ -77,3 +77,11 @@ unchanged".
   the darkest tone must be a deep TINT of the body hue.
 - Raw generator output looks AI-made because of 25-50 near-duplicate shades.
   `clean_sprite.py` is part of the style, not a polish step.
+
+## 2026-08-25 (late 8/24 night) — Baby Onesie preview roll — [PENDING owner review]
+
+Character 218a9c2a ("Imp Baby Onesie"): pro 25 gens, style_character=Adult_Sit state fb103589 (keeper deleted), composed from recorded appearance.
+The croc-pilot baby clauses folded in verbatim: "with the head noticeably larger
+relative to the body, about half the total height, and short stubby arms and legs" +
+"Wearing a simple flat bright purple onesie, one piece covering the whole body, short
+sleeves and short legs." South idle shown in the 8/24 nursery sheet; nothing installed.

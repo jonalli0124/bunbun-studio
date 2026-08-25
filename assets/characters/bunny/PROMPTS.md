@@ -267,3 +267,11 @@ sitting up in others). Flagged to the owner with old-vs-new sheets; OWNER RULING
 (A pose-pinned alternative was generated on the old sleep state the same evening and
 sits unused in PixelLab if the mixed poses ever grate.) Installed via clean --dist 70
 --keep-outline --norm 96 (feet y=90); garment pair-swapped to the anchor purples.
+
+## 2026-08-25 (late 8/24 night) — Baby Onesie preview roll — [PENDING owner review]
+
+Character ce60f29b ("Bunny Baby Onesie"): v3, ~3 gens, adult creation prompt + baby clauses + onesie.
+The croc-pilot baby clauses folded in verbatim: "with the head noticeably larger
+relative to the body, about half the total height, and short stubby arms and legs" +
+"Wearing a simple flat bright purple onesie, one piece covering the whole body, short
+sleeves and short legs." South idle shown in the 8/24 nursery sheet; nothing installed.

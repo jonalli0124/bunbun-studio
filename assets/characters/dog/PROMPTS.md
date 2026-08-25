@@ -204,3 +204,11 @@ Emote clips untouched (their mouths were never flipped). Install per the recorde
 pipelines: states --dist 70 --keep-outline --norm 96 (feet y=90); anims no norm, one
 shared offset per clip onto floor 90, zero px clipped; garment pair-swapped
 #8257a1/#422560 -> #9151d3/#5d229d (59/150 frames). Verified by rendering at 4x.
+
+## 2026-08-25 (late 8/24 night) — Baby Onesie preview roll — [PENDING owner review]
+
+Character 46bc2648 ("Dog Baby Onesie"): v3, ~3 gens, adult creation prompt + baby clauses + onesie.
+The croc-pilot baby clauses folded in verbatim: "with the head noticeably larger
+relative to the body, about half the total height, and short stubby arms and legs" +
+"Wearing a simple flat bright purple onesie, one piece covering the whole body, short
+sleeves and short legs." South idle shown in the 8/24 nursery sheet; nothing installed.

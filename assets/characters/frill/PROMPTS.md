@@ -135,3 +135,11 @@ sleep prompt with ONLY the eye words swapped for sparktuft's proven closed claus
 ```
 Lying down on the ground, curled on one side, head resting on the ground, legs tucked in close to the body. Both eyes fully closed as short dark curved lines. Keep the rest of the face exactly identical to the source - the short mouth line, unchanged. Empty hands, nothing in the mouth, no props.
 ```
+
+## 2026-08-25 (late 8/24 night) — Baby Onesie preview roll — [PENDING owner review]
+
+Character 568025f8 ("Frill Baby Onesie"): pro 25 gens, style_character=keeper 2c74bef9, composed from recorded appearance.
+The croc-pilot baby clauses folded in verbatim: "with the head noticeably larger
+relative to the body, about half the total height, and short stubby arms and legs" +
+"Wearing a simple flat bright purple onesie, one piece covering the whole body, short
+sleeves and short legs." South idle shown in the 8/24 nursery sheet; nothing installed.
