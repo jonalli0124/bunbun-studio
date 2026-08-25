@@ -133,3 +133,44 @@ The croc-pilot baby clauses folded in verbatim: "with the head noticeably larger
 relative to the body, about half the total height, and short stubby arms and legs" +
 "Wearing a simple flat bright purple onesie, one piece covering the whole body, short
 sleeves and short legs." South idle shown in the 8/24 nursery sheet; nothing installed.
+
+## 2026-08-25 (overnight) — THE BABY SET, owner-signed (states on the keeper, capybara model)
+
+Target structure (owner): 1 character, 3 adult states, 4 baby states; baby walk is CRAWL.
+Baby_Onesie b29cc958 = a WARDROBE STATE on the keeper (the earlier standalone-create
+babies were owner-rejected and deleted: "i expected you to create states of the main
+character"). Onesie clause, owner-ruled FOOTED ("make sure the onesie doesnt show their
+feet. it is to add to the cuteness"): "Wearing a simple flat bright purple onesie, one
+piece covering the whole body, short sleeves, and closed footed legs covering the feet
+completely like footed pajamas." Derived from the signed onesie with the species face
+words and the footed-hold clause "whose closed footed legs still cover the feet
+completely" (proven on capybara): Baby_Sit 34624b26 (96) · Baby_Sleep 3dd62c3f
+(override 120x120, the closed-eye clause) · Baby_Crawl 59f76a62 (96). All
+use_color_palette_from_reference=True except the onesie itself. Reviewed in the 8/25
+grid sheets; baby SIZE is render-time scale, never art. Nothing installed to the pak yet.
+
+### Baby_Sleep — FOUR ROLLS 2026-08-25 (owner: "Cat sleep is a little weird")
+
+Roll 1 (3dd62c3f, the batch prompt): onesie swallowed the body into a purple ball in
+half the views — DELETED. Roll 2 (b7edea84, verbatim retry per doctrine): better, but
+NW/W pure blobs and NE head raised awake — DELETED. Roll 3 (9df21b35, added "head and
+tail rest outside the onesie and stay visible in every view"): the visibility clause
+pulled her UPRIGHT — five views dozing sitting up — DELETED. Roll 4 (3c6b2cdc, KEPT):
+"Lying flat on the ground on one side, curled up, never sitting up, in every view. The
+head rests low on the ground with the pointed ears and face visible outside the onesie,
+and the striped orange tail curls around the body outside the onesie." + the standard
+closed-eye/footed clauses. All 8 views lying; residual quirks accepted: north shows the
+face where the back of the head would be, south-east tucks the face away.
+LESSON: a visibility clause without a posture pin RAISES the pose; pin "lying flat...
+never sitting up" whenever asking for parts to stay visible in a lying state.
+
+## 2026-08-25 — THE BABY EMOTES (v3, south, fc6, on the Baby_Onesie character)
+
+Per the croc-pilot rule, the emote prompts ran BYTE-IDENTICAL across adult and baby —
+the species' own recorded texts (with their documented face-word adaptations: dog's
+smile mouth-hold in bathe, spark/imp's narrow-eye lines in hungry/love, frill's
+dropped outfit clause) fired on the Baby_Onesie character, whose onesie and palette
+carry through the animation automatically. The baby set is the croc-proven eight
+(eat, bathe, angry, sick, bored, tired, love, hungry) plus play (each species' own
+object-free play). One server-side loss (spark bored) re-fired byte-identical.
+Reviewed in "The Baby Emotions" artifact; nothing installed to the pak yet.

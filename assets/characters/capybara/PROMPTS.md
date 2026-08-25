@@ -46,3 +46,14 @@ add "no ball" to the prompt: naming it summons it.
 Install: cleaned `--dist 70 --keep-outline`, no `--norm`; one shared offset anchored on the
 clip's lowest extent onto this pack's floor row; zero opaque px clipped; garment mapped as an
 explicit pair to #9151d3/#5d229d. check_pack PASS.
+
+## 2026-08-25 — THE BABY EMOTES (v3, south, fc6, on the Baby_Onesie character)
+
+Per the croc-pilot rule, the emote prompts ran BYTE-IDENTICAL across adult and baby —
+the species' own recorded texts (with their documented face-word adaptations: dog's
+smile mouth-hold in bathe, spark/imp's narrow-eye lines in hungry/love, frill's
+dropped outfit clause) fired on the Baby_Onesie character, whose onesie and palette
+carry through the animation automatically. The baby set is the croc-proven eight
+(eat, bathe, angry, sick, bored, tired, love, hungry) plus play (each species' own
+object-free play). One server-side loss (spark bored) re-fired byte-identical.
+Reviewed in "The Baby Emotions" artifact; nothing installed to the pak yet.

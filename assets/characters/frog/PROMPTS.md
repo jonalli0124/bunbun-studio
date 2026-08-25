@@ -144,3 +144,29 @@ The croc-pilot baby clauses folded in verbatim: "with the head noticeably larger
 relative to the body, about half the total height, and short stubby arms and legs" +
 "Wearing a simple flat bright purple onesie, one piece covering the whole body, short
 sleeves and short legs." South idle shown in the 8/24 nursery sheet; nothing installed.
+
+## 2026-08-25 (overnight) — THE BABY SET, owner-signed (states on the keeper, capybara model)
+
+Target structure (owner): 1 character, 3 adult states, 4 baby states; baby walk is CRAWL.
+Baby_Onesie 91c1f089 = a WARDROBE STATE on the keeper (the earlier standalone-create
+babies were owner-rejected and deleted: "i expected you to create states of the main
+character"). Onesie clause, owner-ruled FOOTED ("make sure the onesie doesnt show their
+feet. it is to add to the cuteness"): "Wearing a simple flat bright purple onesie, one
+piece covering the whole body, short sleeves, and closed footed legs covering the feet
+completely like footed pajamas." Derived from the signed onesie with the species face
+words and the footed-hold clause "whose closed footed legs still cover the feet
+completely" (proven on capybara): Baby_Sit 13b8d4f2 (96) · Baby_Sleep e0b0fbb1
+(override 120x120, the closed-eye clause) · Baby_Crawl 1bcb7ece (96). All
+use_color_palette_from_reference=True except the onesie itself. Reviewed in the 8/25
+grid sheets; baby SIZE is render-time scale, never art. Nothing installed to the pak yet.
+
+## 2026-08-25 — THE BABY EMOTES (v3, south, fc6, on the Baby_Onesie character)
+
+Per the croc-pilot rule, the emote prompts ran BYTE-IDENTICAL across adult and baby —
+the species' own recorded texts (with their documented face-word adaptations: dog's
+smile mouth-hold in bathe, spark/imp's narrow-eye lines in hungry/love, frill's
+dropped outfit clause) fired on the Baby_Onesie character, whose onesie and palette
+carry through the animation automatically. The baby set is the croc-proven eight
+(eat, bathe, angry, sick, bored, tired, love, hungry) plus play (each species' own
+object-free play). One server-side loss (spark bored) re-fired byte-identical.
+Reviewed in "The Baby Emotions" artifact; nothing installed to the pak yet.

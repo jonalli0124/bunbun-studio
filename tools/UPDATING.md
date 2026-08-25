@@ -170,6 +170,11 @@ Do it AT HOME, on your own network, before it leaves the house:
 arms the wish uploader, and writes it into `tools/fleet-units.json` so `--check` asks after
 it from then on.
 
+4. **Confirm the purr by hand before it leaves.** Pet it and feel the buzz with your own
+   fingers. The software defaults to believing a motor is present (W-110), so a unit with no
+   motor - or a motor wire that lost the argument with the case - will happily promise a purr
+   it cannot give, and the kid it goes to is the one who finds out.
+
 **Why this step exists at all:** where wishes go is runtime configuration, deliberately - so
 ONE image is safe to hand to anybody, and a unit only sends wishes when somebody arms it. The
 cost is that a full erase, which is exactly what the flasher does, takes the destination with

@@ -271,3 +271,15 @@ frames were dropped by the already-seen guard, and one room silently performed t
 drawing. "penguin Adult Love" and "penguin Adult Eat (2)" both cut to `penguin-adult`,
 which is how a kitchen ate a love animation, hearts and all.
 
+
+- **The crawl orientation table is the OWNER'S EYES, not inference.** The 2026-08-25
+  crawl build proved facing judgments from small sprites are unreliable secondhand:
+  the fix was an interactive review artifact (flip/swap buttons per direction, the
+  page saves its own state back via the artifact capability) and the owner's saved
+  table applied verbatim: dog NE mirrored, penguin SE/NE swapped + NE mirrored,
+  capybara SE mirrored, frog SE = his east profile as-is (his generated diagonals
+  hide the face), everything else as generated. Baby crawls ship as DIAGONALS ONLY
+  (SE/NE generated, SW/NW mirrored; E/W travel borrows the diagonals) — the
+  generator's angled-orientation bias makes pure-profile crawls unreliable, which
+  is why the pilots only ever shipped E/W. Shipping frames staged in
+  assets/characters/<sp>/Baby_Crawl_Anim/.

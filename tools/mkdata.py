@@ -49,7 +49,11 @@ def gather_clips(root, generic=False, label=""):
         # The diagonals stay out - six near-identical entries would drown the clip picker. But EAST
         # and WEST are how travel is actually shipped (generate east, mirror west), and Adult_Walk
         # exists ONLY in directional form, so skipping all of them dropped the walk entirely.
-        if c.endswith(('_NorthWest','_NorthEast','_SouthWest','_SouthEast')): continue
+        # ...except the BABY CRAWL, which ships as diagonals ONLY (the 8/25 crawl ruling:
+        # the generator's angle bias makes profile crawls unreliable, E/W borrow the
+        # diagonals) - skip those and the baby has no travel animation at all.
+        if c.endswith(('_NorthWest','_NorthEast','_SouthWest','_SouthEast')) \
+           and not c.startswith('Baby_Crawl_'): continue
         # A CLIP FOLDER IS A PHASE FOLDER, and nothing else is (Jon 2026-08-23: "what is the
         # croc head and tails? that shouldnt be there ... as a separate secion to select in the
         # animation creation"). This walked EVERY directory under the pack, so the croc's
@@ -61,9 +65,10 @@ def gather_clips(root, generic=False, label=""):
         if not c.startswith(('Adult_', 'Baby_')):
             print(f"   not a clip folder, skipped: {label}{c}")
             continue
-        # Adult-only (Jon 8/18: "kill the baby stuff... only one age and it can be adult").
-        # The pak and the pet's own phases keep their baby art; the KIDS' tools offer adult.
-        if c.startswith('Baby_'): continue
+        # Baby_ clips are IN again (Jon 2026-08-25: the age concept — "you select animal
+        # and age so we can do different rooms based on their age"; supersedes the 8/18
+        # adult-only ruling). The assembler groups clips by their Adult_/Baby_ prefix;
+        # teen is a UI placeholder over the adult set until teen art exists.
         fr=[]
         for f in sorted(x for x in os.listdir(d) if x.endswith('.png')):
             im=Image.open(os.path.join(d,f)).convert('RGBA')

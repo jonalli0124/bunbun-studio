@@ -218,6 +218,11 @@
         background:var(--bg);color:var(--ink);margin-bottom:10px">
       <label>this room is <span class="hint">&mdash; acts travel to the room that owns them</span></label>
       <select id="worldAnimal" title="keep every room, object and rule - just change WHO does it. Animations whose clip the new animal doesn't have keep their old art (reopen those in Animation Creation)."></select>
+      <select id="worldAge" title="the same animal at a different age - rooms can be made for each age. The animal never changes between ages.">
+        <option value="adult">age: grown up</option>
+        <option value="baby">age: baby &mdash; onesie, crawling</option>
+        <option value="teen">age: teen &mdash; PLACEHOLDER (wears adult art for now)</option>
+      </select>
       <select id="sceneRole">
         <option value="">the main room</option>
         <option value="kitchen">the kitchen &mdash; EAT comes here</option>
@@ -481,6 +486,14 @@ const SD=window.ATTACH_DATA;
 // which animal this world is FOR - the select when set, else whatever the
 // room's animations were drawn with
 var gWorldAnimal='';                 // the whole house's animal, across every room
+// THE AGE (Jon 2026-08-25): one animal per world, forever - but rooms can be authored per
+// age. baby wears the onesie set and crawls (diagonals only, per the crawl ruling); teen is
+// a PLACEHOLDER that wears adult art until teen art exists. The scene carries `age`.
+var gWorldAge='adult';
+function worldAgeId(){ return gWorldAge||'adult' }
+// baby stand-ins for the stock adult verbs - best-first, only names the packs really have
+const BABY_ACT={idle:'Baby_Onesie', wake:'Baby_Onesie', sleep:'Baby_Sleep', sit:'Baby_Sit',
+                toilet:'Baby_Sit', walk_e:'Baby_Crawl_SouthEast', walk_w:'Baby_Crawl_SouthWest'};
 // THE HOUSE SIZE. The dial ships at 45 and always has, but a brand-new animation in an
 // empty world was born at 100 - the dial said one thing and the tool did another until
 // somebody touched it. 45 is the default in both places now. (0 still means "nobody has set
@@ -1446,13 +1459,14 @@ function authoredWalk(dir){
 }
 function walkClipFor(a, dir){
   { const w=authoredWalk(dir); if(w && SD.clips[w]) return w; }
-  const baby = phaseOf(a.clip)==='baby';
+  const baby = phaseOf(a.clip)==='baby' || worldAgeId()==='baby';
   const west = dir<0;
   // an animation that arrived on another animal walks AS that animal - its travel kit
   // registered under animal:Adult_Walk_* at import ("it defaults to capybara")
   const ns = (a.clip&&a.clip.includes(':')) ? a.clip.split(':')[0]+':' : '';
   const base = baby
-    ? [west?'Baby_Crawl_West':'Baby_Crawl_East','Baby_Crawl','Baby_Onesie']
+    ? [west?'Baby_Crawl_SouthWest':'Baby_Crawl_SouthEast',
+       west?'Baby_Crawl_West':'Baby_Crawl_East','Baby_Crawl','Baby_Onesie']
     : [west?'Adult_Walk_West':'Adult_Walk_East','Adult_Walk','Adult_Idle'];
   const order = ns ? base.map(k=>ns+k).concat(base) : base;
   return order.find(k=>SD.clips[k]) || null;
@@ -1776,9 +1790,9 @@ function idleAnim(){
 }
 const idleAnimFor=a=>(a && idleAnim()===a) ? a : null;
 // The stock fallback, only when the scene has nothing of its own to idle in.
-const idleClip=a=>{ const baby=phaseOf(a.clip)==='baby';
+const idleClip=a=>{ const baby=phaseOf(a.clip)==='baby' || worldAgeId()==='baby';
   const ns=(a.clip&&a.clip.includes(':')) ? a.clip.split(':')[0]+':' : '';
-  const base=baby?['Baby_Idle','Baby_Bored','Baby_Sit']:['Adult_Idle','Adult_Bored'];
+  const base=baby?['Baby_Onesie','Baby_Idle','Baby_Bored','Baby_Sit']:['Adult_Idle','Adult_Bored'];
   return (ns?base.map(k=>ns+k).concat(base):base).find(k=>SD.clips[k]) || null };
 function drawSim(){
   if(!simOn||!sim) return;
@@ -3725,6 +3739,7 @@ async function importBundle(buf){
     const slot={ v:1, scene:{ room:SD.rooms[roomKey]?roomKey:Object.keys(SD.rooms)[0],
                               role:roleKeyName||undefined, objects, zones,
                               animal:sc.animal||undefined,
+                              age:(sc.age||((worldAgeId()!=='adult')?worldAgeId():undefined)),
                               character:{x:160,y:200,scalePercent:145} },
                  sceneName:sc.name||'', anims,
                  weather:{raining:!!(sc.env&&sc.env.rw), clouding:!!(sc.env&&sc.env.cn),
@@ -3761,6 +3776,9 @@ async function importBundle(buf){
   booting=false;
   // register the declared animal's own clips, the way choosing it from the list would, so the
   // character in the room is that creature rather than whatever the base pack is
+  const wage=(scenes.find(x=>x.age)||{}).age;
+  gWorldAge=(wage==='baby'||wage==='teen')?wage:'adult';
+  { const sel=document.getElementById('worldAge'); if(sel) sel.value=gWorldAge; }
   const wa=(scenes.find(x=>x.animal)||{}).animal;
   if(wa && SD.characters && SD.characters[wa]){
     gWorldAnimal=wa;
@@ -4802,7 +4820,9 @@ const ACT_TEMPLATE={eat:'Adult_Eat', bath:'Adult_Bathe', wash:'Adult_Bathe', toi
                     hungry:'Adult_Hungry', angry:'Adult_Angry', sick:'Adult_Sick'};
 function templateFor(a, id){
   const act=(typeof actOfAnim==='function' ? actOfAnim(a) : (a&&a.actAs)) || '';
-  const want=ACT_TEMPLATE[act];
+  let want=ACT_TEMPLATE[act];
+  if(worldAgeId()==='baby' && BABY_ACT[act])
+    want=[BABY_ACT[act]].concat(Array.isArray(want)?want:(want?[want]:[]));
   if(!want || !SD.characters[id]) return null;
   // a template may be ONE name or a best-first list; take the first the pack actually has
   const clips=SD.characters[id].clips;
@@ -4848,6 +4868,11 @@ async function switchWorldAnimal(id){
       (kept?`, ${kept} kept their old art (reopen those in Animation Creation to re-dress them)`:'')+
       `. \u{1F4E6} ships it.`);
 }
+$('worldAge').onchange=e=>{
+  gWorldAge=e.target.value||'adult';
+  if(scene) scene.age=(gWorldAge!=='adult')?gWorldAge:undefined;
+  draw(); if(typeof autosave==='function') autosave();
+};
 $('worldAnimal').onchange=e=>{ const v=e.target.value; e.target.value='';
   if(v) switchWorldAnimal(v); };
 // ONE ROOM PER SLOT. session() embeds the other slots and the custom art libraries,
@@ -4869,6 +4894,7 @@ function freshSlot(role){
   return {v:1, travelScale: (gMasterScale||MASTER_DEFAULT)/100,
           scene:{room, role:role||undefined, objects:[], zones:[],
                       animal:gWorldAnimal||undefined,
+                      age:((worldAgeId()!=='adult')?worldAgeId():undefined),
                       character:{x:160,y:200,scalePercent:145}},
           sceneName:'', anims:[],
           weather:{raining:false, clouding:false, cloudN:3, cloudStyle:'shipped',
