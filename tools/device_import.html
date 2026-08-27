@@ -223,19 +223,26 @@ function mark(i,cls){ const el=$('st'+i); if(el) el.className=cls; }
 // Downloads folder. It re-imports like any other package, so yesterday is always one
 // file away - and it costs the device nothing: the art comes from the pak already
 // fetched, the rooms from files it already serves.
+// every age variant rides in the backup too - a vault that loses the baby's rooms
+// is not a vault (per-age rooms, 8/26)
+const AGE_SUFFIX=['','-baby','-teen'];
 const ROLE_FILES=[['','/spiffs/scene.json'],['kitchen','/spiffs/scene-kitchen.json'],
                   ['bathroom','/spiffs/scene-bathroom.json'],['work','/spiffs/scene-work.json'],
                   ['outside','/spiffs/scene-outside.json']];
 async function rescueBundle(pak){
   const scenes=[];
-  for(const [role,path] of ROLE_FILES){
+  for(const [role,basePath] of ROLE_FILES){
+   for(const suf of AGE_SUFFIX){
+    const path=basePath.replace(/\.json$/, suf+'.json');
     try{
       const r=await fetch('/api/fs/download?path='+path);   // RAW: the device does not percent-decode
       if(!r.ok) continue;
       const o=JSON.parse(await r.text());
       if(role && !o.role) o.role=role;
+      if(suf && !o.age) o.age=suf.slice(1);
       scenes.push(o);
     }catch(e){}
+   }
   }
   if(!scenes.length) return null;
   // the art those scenes stand on: every custom animation, plus each room's picture
@@ -494,7 +501,10 @@ $('go').onclick=async()=>{
     const worldScenes = bundle.sceneObj.world || [bundle.sceneObj];
     for(const s2 of worldScenes){
       const role=s2.role;
-      const rolePath=(role&&role!=='main')?`/spiffs/scene-${role}.json`:'/spiffs/scene.json';
+      let rolePath=(role&&role!=='main')?`/spiffs/scene-${role}.json`:'/spiffs/scene.json';
+      // PER-AGE ROOMS (8/26): a scene tagged baby/teen lands as that age's variant file;
+      // the firmware picks it by the pet's phase and falls back to the plain file
+      if(s2.age==='baby'||s2.age==='teen') rolePath=rolePath.replace(/\.json$/,'-'+s2.age+'.json');
       const r2=await fetch('/api/fs/upload?path='+rolePath,
         {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(s2)});
       if(!r2.ok) throw new Error('scene upload failed: '+r2.status);

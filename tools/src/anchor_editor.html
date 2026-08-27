@@ -43,6 +43,11 @@
   .clips button{text-align:left;display:flex;justify-content:space-between;gap:8px}
   .tag{font-size:11px;color:var(--soft)}
   .tag.edited{color:var(--accent);font-weight:700}
+  .tag.ok{color:#3fa860;font-weight:700}
+  .prog{font-size:10px;color:var(--soft)}
+  .prog.full{color:#3fa860;font-weight:700}
+  #doneBtn{font-size:12px;padding:4px 10px}
+  #doneBtn.on{background:#3fa860;border-color:#3fa860;color:#fff}
   #stage{background:
       repeating-conic-gradient(from 0deg, #00000010 0 25%, #00000000 0 50%) 0 0/16px 16px;
       border:1px solid var(--line);border-radius:10px;touch-action:none;display:block}
@@ -71,12 +76,22 @@
   <div class="col">
     <h2>Animal</h2>
     <div class="pick" id="animals"></div>
+    <h2 style="margin-top:14px">Age</h2>
+    <div class="pick" id="ageRow">
+      <button data-age="adult">adult</button>
+      <button data-age="baby">baby</button>
+      <button data-age="teen" disabled
+        title="the teen set: 21 clips, his own art - anchor away">teen</button>
+    </div>
     <h2 style="margin-top:14px">Animation <span id="clipCount"></span></h2>
     <div class="clips" id="clips"></div>
   </div>
 
   <div class="col">
-    <h2 id="frameTitle">&mdash;</h2>
+    <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
+      <h2 id="frameTitle" style="margin:0">&mdash;</h2>
+      <button id="doneBtn">&#10003; mark done</button>
+    </div>
     <canvas id="stage" width="480" height="480"></canvas>
     <div class="strip" id="strip"></div>
     <p class="hint"><b>Fast way:</b> press <b>1&ndash;6</b> to pick a point, then <b>click</b>
@@ -100,13 +115,19 @@
       <button id="clearOne">drop this override</button>
     </div>
 
+    <h2 style="margin-top:14px">Facing</h2>
+    <p class="hint">which way he faces in this frame &mdash; hats and held things mirror by it.
+      <b>auto</b> = the pack's measured facing.</p>
+    <div id="facingRow" style="display:flex;gap:4px;flex-wrap:wrap"></div>
     <h2 style="margin-top:14px">Save</h2>
     <div style="display:flex;gap:6px;flex-wrap:wrap">
       <button id="save" class="go">&#128190; save this animal</button>
       <button id="saveAll">save every animal</button>
     </div>
+    <p class="hint" id="savedNote"></p>
     <p class="hint">Your work is kept in this browser as you go. Saving downloads a file;
-      <b>py tools/install_anchors.py &lt;file&gt;</b> puts it into the pack.</p>
+      <b>py tools/install_anchors.py &lt;file&gt; --build</b> puts it into the pack AND
+      rebuilds the Animation Creation tool and the Assembler so they use it.</p>
   </div>
 </div>
 
@@ -136,6 +157,7 @@ let dragging=null;
 const imgCache={};
 
 // ---------- the store: master, then per-clip, then per-frame ----------
+const FACINGS=['auto','south','south-east','east','north-east','north','north-west','west','south-west'];
 const KEY='bunbun-anchors';
 function loadAll(){ try{ return JSON.parse(localStorage.getItem(KEY)||'{}') }catch(e){ return {} } }
 function saveAll(a){ try{ localStorage.setItem(KEY, JSON.stringify(a)) }catch(e){} }
@@ -143,7 +165,25 @@ let A=loadAll();
 // seed from whatever the pack already carries, so a second session continues the first
 for(const k of Object.keys(D)) if(!A[k]) A[k]=JSON.parse(JSON.stringify(D[k].attach||{}));
 
+// ---------- bookkeeping: what has been gone over, and when ----------
+// Lives under its OWN key so a saved attach file never carries it - the installer
+// only ever sees anchor records.
+const MKEY='bunbun-anchors-meta';
+function loadMeta(){ try{ return JSON.parse(localStorage.getItem(MKEY)||'{}') }catch(e){ return {} } }
+function saveMeta(m){ try{ localStorage.setItem(MKEY, JSON.stringify(m)) }catch(e){} }
+let M=loadMeta();
+function metaOf(s){ return M[s]||(M[s]={done:{}}); }
+function doneCount(s){ const d=metaOf(s).done||{}; return clipsShown(s).filter(c=>d[c]).length; }
+function fmtWhen(iso){ if(!iso) return '';
+  const d=new Date(iso);
+  return d.toLocaleDateString(undefined,{month:'short',day:'numeric'})+' '
+       + d.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}); }
+
 const clipsOf=s=>Object.keys(D[s].clips);
+// the age toggle: babies are Baby_* clips in the same pack; teen has no art in the packs yet
+let gAge='adult';
+const ageOf=c=>c.startsWith('Baby_')?'baby':c.startsWith('Teen_')?'teen':'adult';
+const clipsShown=s=>clipsOf(s).filter(c=>ageOf(c)===gAge);
 const framesOf=(s,c)=>D[s].clips[c].names;
 const frameKey=()=>clip+'#'+framesOf(sp,clip)[frameIdx];
 
@@ -230,26 +270,31 @@ function drawPoints(g,pts,ox,oy,ghost){
 
 // ---------- panels ----------
 function paintAnimals(){
-  $('animals').innerHTML=Object.keys(D).map(k=>
-    `<button data-sp="${k}" class="${k===sp?'on':''}">${D[k].display}</button>`).join('');
+  $('animals').innerHTML=Object.keys(D).map(k=>{
+    const n=doneCount(k), t=clipsShown(k).length;
+    return `<button data-sp="${k}" class="${k===sp?'on':''}">${D[k].display}`+
+      `<span class="prog ${n===t?'full':''}">${n?' '+n+'/'+t+' &#10003;':''}</span></button>`;
+  }).join('');
   $('animals').querySelectorAll('[data-sp]').forEach(b=>b.onclick=()=>{
-    sp=b.dataset.sp; clip=clipsOf(sp)[0]; frameIdx=0; paintAll(); });
+    sp=b.dataset.sp; clip=clipsShown(sp)[0]||clipsOf(sp)[0]; frameIdx=0; paintAll(); });
 }
 function paintClips(){
   const a=A[sp]||{};
-  $('clipCount').textContent='('+clipsOf(sp).length+')';
-  $('clips').innerHTML=clipsOf(sp).map(c=>{
+  $('clipCount').textContent='('+clipsShown(sp).length+')';
+  const dn=metaOf(sp).done||{};
+  $('clips').innerHTML=clipsShown(sp).map(c=>{
     const own=a[c]?'set here':Object.keys(a).some(k=>k.startsWith(c+'#'))?'a frame set':'';
+    const tag=dn[c]?'&#10003; '+fmtWhen(dn[c]):(own||D[sp].clips[c].kind);
     return `<button data-clip="${c}" class="${c===clip?'on':''}">
-      <span>${c.replace(/^Adult_/,'')}</span>
-      <span class="tag ${own?'edited':''}">${own||D[sp].clips[c].kind}</span></button>`;
+      <span>${c.replace(/^(Adult|Baby|Teen)_/,'')}</span>
+      <span class="tag ${dn[c]?'ok':own?'edited':''}">${tag}</span></button>`;
   }).join('');
   $('clips').querySelectorAll('[data-clip]').forEach(b=>b.onclick=()=>{
     clip=b.dataset.clip; frameIdx=0; paintAll(); });
 }
 function paintStrip(){
   const names=framesOf(sp,clip);
-  $('frameTitle').innerHTML=clip.replace(/^Adult_/,'')+
+  $('frameTitle').innerHTML=clip.replace(/^(Adult|Baby|Teen)_/,'')+
     ' <span style="font-weight:400;color:var(--soft);font-size:12px">&mdash; '+
     names[frameIdx]+', from '+whereItComesFrom()+'</span>';
   $('strip').innerHTML=names.map((n,i)=>
@@ -259,6 +304,14 @@ function paintStrip(){
 }
 function paintAnchorList(){
   const pts=resolve()||{};
+  { const cur=(target().facing)||'auto';
+    $('facingRow').innerHTML=FACINGS.map(f=>
+      `<button data-f="${f}" style="padding:4px 8px;font-size:12px;border-radius:7px;border:1px solid var(--line);cursor:pointer;${f===cur?'background:var(--dot-hand);color:#fff;border-color:var(--dot-hand)':'background:var(--card,#fff);color:inherit'}">${f}</button>`).join('');
+    for(const b of $('facingRow').querySelectorAll('button'))
+      b.onclick=()=>{ const v=b.dataset.f; const rec=target();
+        if(v==='auto') delete rec.facing; else rec.facing=v;
+        saveAll(A); paintAnchorList(); };
+  }
   $('anchors').innerHTML=POINTS.map(p=>{
     const v=pts[p.k];
     return `<div class="arow"><span class="swatch" style="background:${p.col}"></span>
@@ -275,7 +328,31 @@ function paintScope(){
     scope=b.dataset.sc; paintScope(); });
   $('scopeWhy').textContent=(SCOPES.find(s=>s[0]===scope)||[])[2]||'';
 }
-function paintAll(){ paintAnimals(); paintClips(); paintScope();
+function paintAge(){
+  $('ageRow').querySelectorAll('[data-age]').forEach(b=>
+    b.className = b.dataset.age===gAge ? 'on' : '');
+}
+// the day Teen_* clips reach a pack, the toggle wakes up by itself
+if(Object.values(D).some(v=>Object.keys(v.clips).some(c=>c.startsWith('Teen_'))))
+  $('ageRow').querySelector('[data-age="teen"]').disabled=false;
+$('ageRow').querySelectorAll('[data-age]').forEach(b=>b.onclick=()=>{
+  if(gAge===b.dataset.age) return;
+  gAge=b.dataset.age;
+  if(ageOf(clip)!==gAge) clip=clipsShown(sp)[0]||clip;
+  frameIdx=0; paintAll();
+});
+function paintDone(){
+  const b=$('doneBtn'), t=(metaOf(sp).done||{})[clip];
+  b.className=t?'on':'';
+  b.innerHTML=t?'&#10003; done &middot; '+fmtWhen(t):'&#10003; mark done';
+  b.title=t?'gone over '+fmtWhen(t)+' - click to un-mark':'mark this animation as gone over';
+}
+function paintSaved(){
+  const t=metaOf(sp).savedAt;
+  $('savedNote').textContent=t?'this animal last saved to a file: '+fmtWhen(t):
+    'this animal has not been saved to a file yet';
+}
+function paintAll(){ paintAnimals(); paintAge(); paintClips(); paintScope(); paintDone(); paintSaved();
   draw().then(paintStrip); }
 
 // ---------- dragging ----------
@@ -324,7 +401,7 @@ addEventListener('keydown', ev=>{
     frameIdx=(frameIdx + (k===']'?1:names.length-1)) % names.length;
     paintStrip(); draw(); return; }
   if(k==='-' || k==='=' ){ ev.preventDefault();
-    const cs=clipsOf(sp), i=cs.indexOf(clip);
+    const cs=clipsShown(sp).length?clipsShown(sp):clipsOf(sp), i=cs.indexOf(clip);
     clip=cs[(i + (k==='='?1:cs.length-1)) % cs.length]; frameIdx=0; paintAll(); return; }
   // m / c / f - what a nudge changes
   if(k==='m'||k==='c'||k==='f'){ ev.preventDefault();
@@ -367,10 +444,19 @@ async function download(name, obj){
   setTimeout(()=>{ URL.revokeObjectURL(u); a.remove() }, 400);
   return true;
 }
-$('save').onclick=async()=>{ if(await download('attach-'+sp+'.json',{animal:sp,attach:A[sp]||{}}))
-  say('saved attach-'+sp+'.json — run py tools/install_anchors.py on it'); };
-$('saveAll').onclick=async()=>{ if(await download('attach-all.json',{all:A}))
-  say('saved attach-all.json — every animal in one file'); };
+$('doneBtn').onclick=()=>{
+  const m=metaOf(sp); m.done=m.done||{};
+  if(m.done[clip]) delete m.done[clip]; else m.done[clip]=new Date().toISOString();
+  saveMeta(M); paintAnimals(); paintClips(); paintDone();
+};
+$('save').onclick=async()=>{ if(await download('attach-'+sp+'.json',{animal:sp,attach:A[sp]||{}})){
+  metaOf(sp).savedAt=new Date().toISOString(); saveMeta(M); paintSaved();
+  say('saved attach-'+sp+'.json — run py tools/install_anchors.py on it with --build'); } };
+$('saveAll').onclick=async()=>{ if(await download('attach-all.json',{all:A})){
+  const t=new Date().toISOString();
+  for(const k of Object.keys(D)) metaOf(k).savedAt=t;
+  saveMeta(M); paintSaved();
+  say('saved attach-all.json — every animal in one file'); } };
 
 let tT=null;
 function say(msg,bad){ const t=$('toast'); t.textContent=msg;

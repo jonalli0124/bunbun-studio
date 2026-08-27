@@ -23,6 +23,10 @@ import io, json, pathlib, sys
 REPO = pathlib.Path(__file__).resolve().parent.parent
 CHARS = REPO / "assets" / "characters"
 POINTS = ("head", "face", "hand_l", "hand_r", "foot_l", "foot_r")
+# Per-record ORIENTATION (Jon 2026-08-25): which way the character faces in this
+# frame/clip, so hats and held objects mirror correctly in the attach editor.
+FACINGS = ("south", "south-east", "east", "north-east", "north",
+           "north-west", "west", "south-west", "auto")
 
 
 def check(animal, attach):
@@ -36,6 +40,10 @@ def check(animal, attach):
             problems.append(f"{key}: not an object")
             continue
         for name, v in pts.items():
+            if name == "facing":
+                if v not in FACINGS:
+                    problems.append(f"{key}.facing: not one of {', '.join(FACINGS)}")
+                continue
             if name not in POINTS:
                 problems.append(f"{key}.{name}: not one of {', '.join(POINTS)}")
             elif (not isinstance(v, list) or len(v) != 2
@@ -94,7 +102,20 @@ def main():
     else:
         sys.exit("that file has neither an 'animal' nor an 'all' - is it from the editor?")
     if not dry and ok:
-        print("\nInstalled. Run: py tools/build.py   (so the tools see it)")
+        if "--build" in sys.argv:
+            # bake it straight into the Animation Creation tool and the Assembler,
+            # so "installed" and "the tools show it" are never two different truths
+            print("\nInstalled. Rebuilding the tools...")
+            import subprocess
+            r = subprocess.run([sys.executable, str(REPO / "tools" / "build.py")])
+            if r.returncode:
+                sys.exit("build.py failed - the tools do NOT have the new anchors yet")
+            print("Done. tools/build/*.html now carry the new anchors."
+                  " Ask Claude to republish the hosted artifacts when you want"
+                  " the phone versions updated too.")
+        else:
+            print("\nInstalled. Run: py tools/build.py   (so the tools see it)"
+                  "\n(or rerun this with --build to do both in one go)")
     sys.exit(0 if ok else 1)
 
 

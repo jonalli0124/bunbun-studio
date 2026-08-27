@@ -192,3 +192,21 @@ looks pasted on. The fork is real — **chunky outlined creature + blocky rooms*
 cast suits the blocky rooms; the shaded direction (see `tools/GENERATION.md`) wants the
 older soft room set.
 
+
+## school — [PASS] (installed as room 'school', 1 roll, 2026-08-26; the teen's work room)
+
+The room word is never said (the naming-summons rule): the green board says it.
+outline "selective outline", shading "basic shading", detail "medium detail":
+
+```
+soft pixel art children's game room background, flat front view of a completely empty room with warm cream walls, a wide dark green framed board mounted on the back wall with a thin wooden chalk rail, one bright framed window beside it showing blue sky and clouds, warm honey-brown wooden plank floor along the bottom, cozy cheerful lighting, the room is bare, no desks, no chairs, no books, no furniture, no objects at all
+```
+
+## daycare — [PASS] (installed as room 'daycare', 1 roll, 2026-08-26; the baby's work room)
+
+Neither "daycare" nor "nursery" is said (cribs would come): pastels and the star band say it.
+outline "selective outline", shading "basic shading", detail "medium detail":
+
+```
+soft pixel art children's game room background, flat front view of a completely empty room with soft pastel mint and cream walls, a gentle painted band of pastel stars and clouds along the top of the wall, one bright framed window on the back wall showing blue sky and clouds, a soft pale-pink rug floor along the bottom, warm gentle cheerful lighting, the room is bare, no cribs, no toys, no furniture, no objects at all
+```

@@ -1831,10 +1831,27 @@ static const char *sleepClipHere() {
 }
 
 static Phase phaseOf() {
-  // ADULT-ONLY (Jon 8/18: "he stays an adult since we got rid of the aging") - a
-  // fresh egg, a restored save, a clock hiccup: none of them may show a baby again.
-  // ageMin() keeps counting; it is the OTA pet-preservation signal, not a life stage.
-  return PH_ADULT;
+  // THE GROWTH SPEC (Jon 2026-08-25: "Baby becomes adult" at FIVE HEARTS - supersedes
+  // the 8/18 adult-only rule). Growth is EARNED, never timed: a new egg hatches a baby
+  // and the love bank is the only clock - five hearts of good days makes an adult, and
+  // a neglected baby simply stays a baby. NOBODY REGRESSES: an adult save is adult
+  // forever, whatever the bank says. ageMin() stays what it was - the OTA
+  // pet-preservation signal and the within-babyhood crawl/walk stager, not a life stage.
+  // THE FULL LADDER (8/26, the teen set complete): baby -> teen at THREE hearts,
+  // teen -> adult at FIVE. The bank carries through the teen years and resets at
+  // adulthood exactly as the growth spec always said. Never regresses.
+  if ((S.phase == PH_BABY || S.phase == PH_TEEN) && S.loveLevel >= 5) return PH_ADULT;
+  if (S.phase == PH_BABY && S.loveLevel >= 3) return PH_TEEN;
+  return (Phase)S.phase;
+}
+// The room follows the phase (per-age worlds, owner 8/25): the suffix makes sceneLoad
+// prefer scene-*-baby.json / -teen.json variants, falling back to the plain files. Called
+// at boot and from the tick that watches for graduation, so a phase flip (real or bench
+// lever) swaps the rooms live.
+static void sceneApplyPhase() {
+  const char *want = S.phase == PH_BABY ? "-baby" : S.phase == PH_TEEN ? "-teen" : "";
+  if (sceneSetPhaseSuffix(want))
+    Serial.printf("scene: phase rooms -> %s\n", want[0] ? want : "(adult)");
 }
 static bool babyCanStand() { return ageMin() >= TODDLER_AT; }
 static bool babyWalksOnly() { return ageMin() >= WALKER_AT; }
@@ -1956,6 +1973,7 @@ static bool g_modeBrave = false;
 static bool g_modeAsk = false;         // the chooser screen is up
 static bool g_modePainted = false;
 static uint32_t g_awayUntil = 0;       // millis deadline while away, else 0
+static float g_awayMinAcc = 0;         // the neglect countdown toward the run-away day
 // Kid-council revision (launch week, from the actual kids): coming home is
 // EARNED — while bunbun is away the MEDS button becomes TREATS, and putting
 // treats out is what draws him back, ten minutes on the dot. The sealed rule
@@ -2092,7 +2110,7 @@ static void freshState() {
   memset(&S, 0, sizeof(S));
   S.magic = SAVE_MAGIC; S.version = SAVE_VERSION;
   S.species_idx = keepSpecies;
-  S.stage = STAGE_EGG; S.phase = PH_ADULT;   // there is only one age now
+  S.stage = STAGE_EGG; S.phase = PH_BABY;   // a new egg hatches a BABY (growth spec 8/25)
   S.food = S.fun = S.clean = S.energy = S.health = S.disc = 100;
   S.lights = 1; S.x = 160; S.y = FLOOR_Y;
   g_fx = 160; g_fy = FLOOR_Y;
@@ -2206,6 +2224,7 @@ static void petBornByChoice() { petIdLoad(); petNewId("chosen"); }
 static void petBornByLoss()   { petIdLoad(); petNewId("lost"); }
 
 extern "C" const char *bunbun_pet_id(void)   { return g_petId; }
+extern "C" const char *bunbun_pet_name(void) { return g_petName; }
 extern "C" const char *bunbun_pet_born(void) { return g_petBorn; }
 extern "C" uint32_t    bunbun_pet_lost(void) { return g_petLost; }
 
@@ -2600,6 +2619,11 @@ static bool catArtPresent();
 // first time it is called. Defined with the rest of her code far below; declared here because
 // his arrival at a mark happens first in this translation unit.
 static bool catYieldSpot(int mx, int my);
+// Motion 8 (council 8/23) companions to catYieldSpot, defined with her code below: is she
+// actively moving off the spot (his wait keys on her STATE now, not a stopwatch), and where
+// is "beside her" (the no-overlap settle when the cap expires and she still has the spot).
+static bool catMovingOff();
+static bool catBesideSpot(int mx, int my, int *outX, int *outY);
 // Is this mark one of the places she is allowed to sleep - i.e. a sit or a sleep? He only ever
 // waits for her at those; she has no business on the tub or the workbench, and waiting at one
 // would be him standing about for no reason.
@@ -3092,9 +3116,40 @@ extern "C" void bunbun_debug_act(const char *a) {
     return;                             // the pip cache repaints on the level change
   }
   if (a && !strcmp(a, "miss")) { if (S.careMiss < 9) S.careMiss++; return; }
+  // BENCH ONLY (growth-spec demo levers, 2026-08-25): flip a canary's phase to see the
+  // baby wardrobe/daycare/crawl live, then flip back. phaseOf() never regresses on its
+  // own - these are the one deliberate exception, owner-driven, reversible, and they
+  // leave the love bank alone so a demo cannot cost a real pet its progress.
+  if (a && !strcmp(a, "phasebaby"))  { S.phase = PH_BABY;  saveState(); return; }
+  if (a && !strcmp(a, "phaseteen"))  { S.phase = PH_TEEN;  saveState(); return; }
+  // THE WATCHABLE DEPARTURE (owner 8/26: "set 6920 to just about to go away so i can
+  // watch the sequence"). Primes the REAL neglect chain - brave (RAM only, the stored
+  // choice is untouched and returns at reboot), sick, starving, filthy, and the
+  // countdown at 118 of 120 game-minutes - so the genuine leaving code fires about two
+  // real minutes later, in front of whoever asked for it. TREATS brings him home.
+  if (a && !strcmp(a, "awaysoon")) {
+    g_modeBrave = true;
+    S.sick = 1; S.lights = 1;
+    S.food = 5.0f; S.clean = 5.0f;
+    g_awayMinAcc = 118.0f;
+    return;
+  }
+  if (a && !strcmp(a, "phaseadult")) { S.phase = PH_ADULT; saveState(); return; }
   // The one-time petid6f rescue lever (2026-08-24, second use: the full-erase
   // rebuild) - restores CALEB's identity after the flasher wipe. pet_id lives in
   // its own NVS key, NOT in the GameState blob, so restorebk can't bring it back.
+  // The rename lever (owner 8/25, closing the QRQ loose end from the full-erase
+  // rebuild): the flasher wipe left CALEB answering to the placeholder QRQ. Same
+  // one-shot shape as petid6f below.
+  if (a && !strcmp(a, "namecaleb")) {
+    strncpy(g_petName, "CALEB", sizeof(g_petName) - 1);
+    g_petName[sizeof(g_petName) - 1] = 0;
+    prefs.begin("bunbun", false);
+    prefs.putString("petname", g_petName);
+    prefs.end();
+    Serial.printf("pet: rename lever -> %s\n", g_petName);
+    return;
+  }
   if (a && !strcmp(a, "petid6f")) {
     snprintf(g_petId, sizeof(g_petId), "6F3E835A");
     snprintf(g_petBorn, sizeof(g_petBorn), "chosen");
@@ -3179,7 +3234,17 @@ extern "C" void bunbun_debug_act(const char *a) {
   // go to the bed, lie down in the child's own pose, and put the lights out. bunbun_debug_act
   // is called from the web task, so it may only SET the flag; think() owns the rest.
   if (a && !strcmp(a, "sleep")) { g_sleepPending = 1; return; }
-  if (a && !strcmp(a, "treats")) { g_treatsOutMs = millis(); return; }   // brings him home
+  if (a && !strcmp(a, "treats")) {                       // brings him home
+    // The 8/26 treat audit: this set the basket out but never pulled the deadline in,
+    // so a REMOTE treat left him away until the 24h failsafe while the on-device
+    // button brought him home in ten seconds. Mirror the button exactly.
+    g_treatsOutMs = millis();
+    if (bunAway()) {
+      uint32_t soon = millis() + 10UL * 1000UL;
+      if (soon < g_awayUntil) g_awayUntil = soon;
+    }
+    return;
+  }
   if (a && !strcmp(a, "lights")) { S.lights = S.lights ? 0 : 1; return; }
   if (a && !strcmp(a, "play")) { g_dbgOpenPlay = true; return; }   // open the PLAY shelf
   if (a && !strcmp(a, "out"))  { g_dbgOutside = true; return; }   // the row, without a finger
@@ -3882,13 +3947,24 @@ static bool adoptWorldAnimal() {
   if (!g_scAnimal[0]) return false;
   const int ci = (S.species_idx < CHARACTERS_N) ? S.species_idx : 0;
   const char *mine = CHARACTERS[ci].id ? CHARACTERS[ci].id : "";
-  if (strcmp(g_scAnimal, mine) == 0) return false;
+  // W-109 ask 1 (council 8/23, Amendment 3): the guard uses the SAME comparator as the
+  // selection below. It said strcmp while the selection said strcasecmp, so a pak id
+  // differing from the world's animal only in case could never read as "already agree" -
+  // the block re-entered, re-adopted the same index and re-committed NVS every frame,
+  // spending the flash budget at roughly eighteen times its design rate.
+  if (strcasecmp(g_scAnimal, mine) == 0) return false;
   int want = -1;
   for (int i = 1; i < CHARACTERS_N; i++)
     if (!strcasecmp(CHARACTERS[i].id, g_scAnimal)) { want = i; break; }
   char probe[40];
   snprintf(probe, sizeof(probe), "%s/idle-anim/0", g_scAnimal);
   if (want <= 0 || !pakFind(probe)) return false;   // no frames: nothing to wear
+  // W-109 ask 2 (Tempo's rider, 8/21): a minimum interval on adoption commits. Even the
+  // correct path can legitimately fire repeatedly during a door-walk, and every fire is
+  // an NVS commit; a real species change is a rare event, so ten seconds costs nothing.
+  static uint32_t lastAdoptMs = 0;
+  if (lastAdoptMs && millis() - lastAdoptMs < 10000UL) return false;
+  lastAdoptMs = millis();
   S.species_idx = (uint8_t)want;
   saveState();
   return true;
@@ -3919,7 +3995,9 @@ static void think(float dt) {
   if (g_scAnimal[0]) {
     const int ci = (S.species_idx < CHARACTERS_N) ? S.species_idx : 0;
     const char *mine = CHARACTERS[ci].id ? CHARACTERS[ci].id : "";
-    if (strcmp(g_scAnimal, mine) != 0) {
+    // strcasecmp, matching adoptWorldAnimal's guard (W-109 ask 1) - a case-only
+    // difference is agreement, not a mismatch to nag about once a minute.
+    if (strcasecmp(g_scAnimal, mine) != 0) {
       // ...AND IF THE ART IS ALREADY HERE, HE JUST BECOMES IT. A WORLD package carries the
       // animal's frames but never touched S.species_idx - only a SPECIES package did that -
       // so a pet could stand in a penguin world, with 90 penguin frames sitting in the pak,
@@ -4816,9 +4894,8 @@ static void think(float dt) {
       // her own walk pausing near the spot, a re-pick that lands close by, the 30px test simply
       // staying true - left him standing against her for good (Jon, 2026-08-22: "he got stuck
       // walking into the cat"). There is no pet<->cat collision anywhere in this firmware, so a
-      // wait is the ONLY thing that can pin him. Six seconds is longer than her wake-stretch-
-      // climb-down takes and short enough that a jam reads as a pause; after that he settles
-      // anyway. Him sitting near her occasionally is a far smaller fault than him freezing.
+      // wait is the ONLY thing that can pin him.
+      int settleX = g_markX, settleY = g_markY;
       if (g_visit == 3 && markIsRest(g_markAnim)) {
         // ARM ON ENTERING THE WAIT, not on the mark's x changing. Keying the timer to g_markX
         // meant any exit that was not the fall-through - a button, a door, bedtime - left it
@@ -4830,11 +4907,26 @@ static void think(float dt) {
         const bool blocked = catYieldSpot(g_markX, g_markY);
         if (blocked && !waiting) { waiting = true; waitFrom = millis(); }
         if (!blocked) waiting = false;
-        if (blocked && millis() - waitFrom < 6000UL) {
-          setAnim(moodAnim());
-          return;
+        if (blocked) {
+          // Motion 8 (council 8/23 - "That's not nice. She came to visit."): the wait tracks
+          // HER STATE, not a stopwatch. Six seconds was shorter than her relocation walk, so
+          // he "gave up" on a guest who was already doing what he asked. While she is
+          // actively moving off - waking to leave the spot (6), walking to her new one (4) -
+          // he keeps waiting, under a hard 20s cap so a stuck cat can never pin him. A cat
+          // that is blocked-but-settled keeps only the old six seconds: catYieldSpot() has
+          // already asked her, and if she is not moving, more patience will not move her.
+          if (millis() - waitFrom < (catMovingOff() ? 20000UL : 6000UL)) {
+            setAnim(moodAnim());
+            return;
+          }
+          whyNote(WHY_SCHEDULE, "waited", "");
+          // Motion 8 part 2: on cap expiry he does NOT lie down on the guest - overlap is
+          // UNREACHABLE, not unlikely. He settles BESIDE her: the settle point is pushed to
+          // just outside her 30px bubble, along the line from her to his mark, clamped to
+          // the screen. Him sitting next to a visitor reads as company; on top of her reads
+          // as a clipping bug wearing a story.
+          catBesideSpot(g_markX, g_markY, &settleX, &settleY);
         }
-        if (blocked) whyNote(WHY_SCHEDULE, "waited", "");   // gave up on her; taking the spot
         waiting = false;
       }
       // arrived at the furniture: settle in
@@ -4845,9 +4937,10 @@ static void think(float dt) {
         // SETTLE ONTO THE AUTHORED SPOT - up on the beanbag, into the tub - exactly as the
         // assembler's sim settles onto (obj + place offset). The walk only ever came to the
         // doorstep; the performance happens where the child put it ("activity based
-        // animations occur in the correct spot").
-        S.x = (int16_t)g_markX; S.y = (int16_t)g_markY;
-        g_fx = (float)g_markX; g_fy = (float)g_markY;
+        // animations occur in the correct spot"). settleX/Y are the mark unless the cat
+        // kept it (Motion 8): then they are the spot BESIDE her.
+        S.x = (int16_t)settleX; S.y = (int16_t)settleY;
+        g_fx = (float)settleX; g_fy = (float)settleY;
         // depth resolves FIRST, whatever else this arrival does: the sleep-errand return
         // below used to skip it, leaving a bath's "behind" armed - and every prop painted
         // over the sleeping pet ("he is sleeping under the rug").
@@ -5222,9 +5315,23 @@ static void simulate(float dt) {
     // W-046: growing up finally makes a sound — Maya was scandalized that
     // "the BIGGEST thing that ever happens to him" was silent.
     if (was == PH_BABY && np == PH_TEEN)      { sfxGrow(); say("bunbun is growing up fast!"); }
-    else if (was == PH_TEEN && np == PH_ADULT) { sfxGrow(); say("bunbun is all grown up!"); }
-    else if (was == PH_BABY && np == PH_ADULT) { sfxGrow(); say("bunbun is all grown up!"); }
+    else if (was == PH_TEEN && np == PH_ADULT) {
+      sfxGrow();
+      fmtPetSay("%s is all grown up!");
+      // the adult chapter re-earns the bank, same as the direct baby->adult path
+      S.loveLevel = 0; S.loveProg = 0;
+      saveState();
+    }
+    else if (was == PH_BABY && np == PH_ADULT) {
+      sfxGrow();
+      fmtPetSay("%s is all grown up!");
+      // The baby SPENDS his five hearts to grow (growth spec default): the adult
+      // chapter re-earns them for the payout ladder, and adult-heart-5 stays reserved.
+      S.loveLevel = 0; S.loveProg = 0;
+      saveState();
+    }
   }
+  sceneApplyPhase();   // covers graduation, the bench levers and any state restore
   float m = dt / 60.0f;
   const PhaseRates &r = rates();
   // Nothing moves during the party — no drain, and no sleep recovery either. Gated on the ball
@@ -5491,11 +5598,10 @@ static void simulate(float dt) {
     // tiny bag, the room goes quiet, and he ALWAYS comes home (4 hours),
     // more in love than he left. Cozy mode never enters this block.
     if (g_modeBrave && !bunAway() && S.sick && S.lights) {
-      static float awayMin = 0;
-      if (S.food < 10 && S.clean < 10) awayMin += m;
-      else awayMin = max(0.0f, awayMin - 2.0f * m);
-      if (awayMin >= 120.0f) {
-        awayMin = 0;
+      if (S.food < 10 && S.clean < 10) g_awayMinAcc += m;
+      else g_awayMinAcc = max(0.0f, g_awayMinAcc - 2.0f * m);
+      if (g_awayMinAcc >= 120.0f) {
+        g_awayMinAcc = 0;
         // 24 h failsafe only — treats (the away-mode MEDS button) are the
         // real way home, pulling the deadline in to 20-40 min.
         g_awayUntil = millis() + 24UL * 3600UL * 1000UL;
@@ -5622,7 +5728,7 @@ static void simulate(float dt) {
       g_homeAt = millis() + 6000;
       // The LOVE animation, not a play bounce (Jon 8/14) — the hearts are the
       // whole point of the reunion, and they are what he has been saving up.
-      setAnim("love");
+      setAnim(pa("love"));   // his OWN age's love - a baby hugs the basket as a baby (8/26)
       sfxHomeAgain();
       fmtPetSay("%s found the treat - he missed you!");
     }
@@ -5654,7 +5760,7 @@ static void simulate(float dt) {
 static const char *MID[N_MENU]  = {"feed","play","bath","sweep","meds","care","light","work"};
 static const char *MLBL[N_MENU] = {"FEED","PLAY","BATH","SWEEP","MEDS","CUDL","ZZZ","WORK"};
 static const char *menuLabel(int i) {
-  if (i == 7 && S.phase == PH_BABY) return "";   // the seat isn't there yet
+  if (i == 7 && S.phase == PH_BABY) return "DAYC";   // babies attend daycare (Jon 8/25)
   if (i == 7 && S.phase == PH_TEEN) return "SCHL";
   if (i == 4 && bunAway()) return "TREAT";   // meds slot doubles as the way home
   return MLBL[i];
@@ -5712,7 +5818,7 @@ static bool itemDim(int i) {
   // Cuddles NEVER dim at any age — affection is not a chore with a "done"
   // state. WORK dims for babies (too little) and when the day's work is
   // already caught up, which is what a dimmed icon usefully says.
-  if (!strcmp(MID[i], "work")) return (S.phase == PH_BABY) || S.disc >= 96;
+  if (!strcmp(MID[i], "work")) return S.disc >= 96;   // daycare took the baby-dim away
   return false;
 }
 
@@ -6199,6 +6305,12 @@ typedef enum { FW_IDLE = 0, FW_CHECKING, FW_DOWNLOADING, FW_UP_TO_DATE,
 esp_err_t fw_update_start(void);
 // W-054: hop to the next remembered wifi network (main/network/wifi.c)
 extern "C" int wifi_switch_next_known(char *out_ssid, size_t out_len);
+// W-054 phase 2: the NETWORKS shelf's backend (main/network/wifi.c; its wifi.h is
+// unincludable here - Arduino's WiFi.h shadows it on a case-insensitive filesystem,
+// the documented PORT-NOTES trap). List is MRU, max 5 (== WIFI_KNOWN_MAX).
+extern "C" int wifi_known_list(char out[][33], int max);
+extern "C" int wifi_switch_to_known(const char *ssid);
+extern "C" int wifi_forget_known(const char *ssid);
 fw_update_state_t fw_update_state(void);
 int fw_update_pct(void);
 const char *fw_update_reason(void);
@@ -8417,6 +8529,39 @@ static bool catYieldSpot(int mx, int my) {
   }
   return true;                                       // he keeps waiting until she is clear
 }
+// Motion 8 (council 8/23): his wait keys on her STATE. Phase 4 is her walk to a spot,
+// phase 6 the wake-stretch-climb-down - both are "actively clearing", and both are what
+// catYieldSpot() itself sets when it asks her to move.
+static bool catMovingOff() { return g_catPhase == 4 || g_catPhase == 6; }
+// Motion 8 part 2: where "beside her" is. Only adjusts the settle point while she is
+// genuinely blocking the mark; pushes it just outside her 30px bubble along the line
+// from her to the mark, clamped inside the room.
+static bool catBesideSpot(int mx, int my, int *outX, int *outY) {
+  if (!catBlockingSpot(mx, my)) return false;
+  float vx = (float)mx - g_catX, vy = (float)my - g_catY;
+  float vd = sqrtf(vx * vx + vy * vy);
+  if (vd < 1.0f) { vx = 1.0f; vy = 0.0f; vd = 1.0f; }
+  int sx = (int)(g_catX + vx / vd * 34.0f);
+  int sy = (int)(g_catY + vy / vd * 34.0f);
+  if (sx < 4) sx = 4;
+  if (sx > UI_W - 4) sx = UI_W - 4;
+  if (sy < 40) sy = 40;
+  if (sy > 236) sy = 236;
+  // Motion 2 rider (a), 8/25: the clamp can push the point back INSIDE her bubble - a cat
+  // napping near the right wall (x~330) has its pushed-out point pulled back under 30px by
+  // the x clamp. If that happened, take the other side of her: a pure horizontal step
+  // toward the room's middle, which no clamp can shrink below 34px.
+  {
+    const float ddx = (float)sx - g_catX, ddy = (float)sy - g_catY;
+    if (ddx * ddx + ddy * ddy < 30.0f * 30.0f) {
+      sx = (int)(g_catX + ((g_catX < UI_W / 2) ? 34.0f : -34.0f));
+      if (sx < 4) sx = 4;
+      if (sx > UI_W - 4) sx = UI_W - 4;
+    }
+  }
+  *outX = sx; *outY = sy;
+  return true;
+}
 
 
 static bool startCat() {
@@ -8581,7 +8726,7 @@ static void updateCat(float dt) {
         float dx = g_tx - g_fx, dy = g_ty - g_fy;
         if (dx * dx + dy * dy < 64.0f) {      // he reached her
           g_catPhase = 3; g_catT = 0;
-          setAnim("love");                    // the fuss
+          setAnim(pa("love"));                    // the fuss
           sfxPurr();
           g_love = min(100.0f, g_love + 6.0f);
           loveSave();
@@ -11049,7 +11194,22 @@ static void exitStandby() {
   // audio_process_i2s is the heaviest work on the board, and rain adds filtered-noise
   // generation for every sample on top. At 160MHz that combination underruns the I2S buffer and
   // is audible as distortion. Costs ~25mA, which is real but worth less than working audio.
-  setCpuFrequencyMhz((g_musicOn || g_danceMode) ? 240 : 160);
+  //
+  // Motion 6 (council 8/23): the AirPlay path sets NEITHER flag — the old two-term condition
+  // was written for a three-term world, and a unit woken BY a stream (the gift-home shape:
+  // idle bunny, someone starts music from a phone, the screen comes up) decoded at 160 with
+  // exactly the underrun this comment warns about. The third term is LATCHED, not a bare
+  // amplitude read (Tempo's condition; W-024's lesson): audio counts as live until a full
+  // AUTONAP_QUIET_MS of silence, so a quiet passage at the moment of waking cannot pick the
+  // slow clock. 160 is only ever chosen HERE, so a false positive costs an up-shift's ~25mA
+  // until the next wake — never distortion. (A fresh boot's zero stamp reads "live" for the
+  // first minute of uptime; same harmless direction.)
+  {
+    const bool nowLive = audioLive();
+    if (nowLive) g_lastAudioLiveMs = millis();
+    const bool airLive = nowLive || (millis() - g_lastAudioLiveMs) < AUTONAP_QUIET_MS;
+    setCpuFrequencyMhz((g_musicOn || g_danceMode || airLive) ? 240 : 160);
+  }
   backlightSet(255);
   g_blNow = 255; g_lastTouchMs = millis();
   ampEnable(true);                    // amp back on
@@ -11116,6 +11276,13 @@ static bool g_setupPanel = false;
 // shelf it came from (§2's nav stack: settings ← set-time). The cold-boot
 // prompt never sets it, so that path still lands in the room as always.
 static bool g_setTimeFromSetup = false;
+// W-054 phase 2: the NETWORKS sub-shelf - the kid-facing door on the serial `h`
+// hop, behind the WIFI row's new right half. Remembered networks only, tap to
+// join, long-press to forget with a confirm (Ivy's constraint, council 8/14:
+// "no scanning UI, no signal bars"). Nav: settings ← networks, §2's stack.
+static bool g_netsPanel = false;
+static int  g_netsForget = -1;        // row armed for a forget confirm; -1 none
+static uint32_t g_netsForgetAt = 0;   // an armed confirm disarms itself after 5s
 
 // The standard title bar (menu redesign P1). Defined down with the games'
 // shared chrome — it draws its rule with tttStroke — and declared here
@@ -11218,6 +11385,63 @@ static void drawUpdateRow() {
   tft.drawCentreString(lbl, UI_W / 2, SU_UPD_Y + 15, 1);
 }
 
+// W-054 phase 2: the network picker. The SETTINGS geometry verbatim - one 216px
+// column of 38px rows under the ink bar - because the single-column single-row-
+// height rule is what retired the drawn-on-top-of-each-other failure class.
+// Remembered networks only, newest first (the store is MRU). The row he is ON
+// is lit orange exactly like the WIFI row; a long-press arms a red confirm on
+// that row and a second tap inside 5s forgets it. No scanning UI, no signal
+// bars (Ivy's constraint): this shelf lists what the family already taught him.
+static const int NP_ROW0_Y = 40, NP_ROW_STEP = 44, NP_MAX = 5;  // NP_MAX == WIFI_KNOWN_MAX
+static void drawNetsPanel() {
+  tft.fillScreen(C_BONE);
+  drawTitleBar("NETWORKS", "\x1B SETTINGS", nullptr, 515, true);
+  char nets[NP_MAX][33];
+  int n = wifi_known_list(nets, NP_MAX);
+  if (!n) {
+    // a fresh unit has nothing on file yet - say so warmly instead of showing
+    // an empty column that reads as broken
+    tft.setTextColor(C_INK_SOFT, C_BONE);
+    tft.drawCentreString("no remembered networks yet", UI_W / 2, 110, 1);
+    tft.drawCentreString("bunbun remembers each wifi he joins", UI_W / 2, 124, 1);
+    return;
+  }
+  String cur = netName();
+  for (int i = 0; i < n; i++) {
+    int y = NP_ROW0_Y + i * NP_ROW_STEP;
+    bool here = (g_netState == NET_ONLINE) && cur.length() && cur.equals(nets[i]);
+    bool armed = (g_netsForget == i);
+    uint16_t bg = armed ? TFT_RED : (here ? C_ORANGE : C_PAPER);
+    uint16_t fg = (armed || here) ? C_PAPER : C_INK;
+    tft.fillRoundRect(SU_X, y, SU_W, SU_ROW_H, 5, bg);
+    tft.drawRoundRect(SU_X, y, SU_W, SU_ROW_H, 5, C_INK);
+    tft.setTextColor(fg, bg);
+    if (armed) {
+      tft.drawCentreString("FORGET? tap again", UI_W / 2, y + 6, 1);
+      char nm[34]; strlcpy(nm, nets[i], sizeof(nm)); nm[24] = 0;
+      tft.drawCentreString(nm, UI_W / 2, y + 20, 1);
+    } else {
+      // an SSID is user data and can be 32 ch = 384px at font 2; fitFont steps
+      // it down instead of running it off the row (the 8/14 status-line lesson)
+      tft.drawCentreString(nets[i], UI_W / 2, y + (here ? 6 : 11),
+                           fitFont(nets[i], SU_W - 16, 2));
+      if (here) tft.drawCentreString("bunbun is here now", UI_W / 2, y + 24, 1);
+    }
+  }
+  tft.setTextColor(C_INK_SOFT, C_BONE);
+  tft.drawCentreString("tap to join - hold to forget", UI_W / 2,
+                       NP_ROW0_Y + n * NP_ROW_STEP + 4, 1);
+}
+// Row index 0..4, or -1. BACK is read straight off titleBarBackHit by the handler.
+static int netsPanelHit(int x, int y) {
+  if (x < SU_X - 4 || x >= SU_X + SU_W + 4) return -1;
+  for (int i = 0; i < NP_MAX; i++) {
+    int ry = NP_ROW0_Y + i * NP_ROW_STEP;
+    if (y >= ry - 3 && y < ry + SU_ROW_H + 3) return i;
+  }
+  return -1;
+}
+
 static void drawSetupPanel() {
   tft.fillScreen(C_BONE);
   // The grown-up shelf, rehoused behind the gear (menu redesign P2). Ink bar
@@ -11255,12 +11479,20 @@ static void drawSetupPanel() {
   }
   // WIFI: lit while the radio is up, with the status lines directly beneath
   // — the "which network is this unit on" question lives and dies here.
+  // A PAIR now (W-054 phase 2, the bottom row's proven split): the wide half
+  // keeps the OFF -> connect -> setup cycle, the narrow half opens the
+  // remembered-network picker — the door the serial `h` hop never gave a
+  // parent stuck on a client-isolated network at 7am in a hotel.
   {
     uint16_t bg = (g_netState != NET_OFF) ? C_ORANGE : C_PAPER;
-    tft.fillRoundRect(SU_X, SU_WIFI_Y, SU_W, SU_ROW_H, 5, bg);
-    tft.drawRoundRect(SU_X, SU_WIFI_Y, SU_W, SU_ROW_H, 5, C_INK);
+    tft.fillRoundRect(SU_SO_X, SU_WIFI_Y, SU_SO_W, SU_ROW_H, 5, bg);
+    tft.drawRoundRect(SU_SO_X, SU_WIFI_Y, SU_SO_W, SU_ROW_H, 5, C_INK);
     tft.setTextColor(bg == C_ORANGE ? C_PAPER : C_INK, bg);
-    tft.drawCentreString("WIFI", UI_W / 2, SU_WIFI_Y + 11, 2);
+    tft.drawCentreString("WIFI", SU_SO_X + SU_SO_W / 2, SU_WIFI_Y + 11, 2);
+    tft.fillRoundRect(SU_RS_X, SU_WIFI_Y, SU_RS_W, SU_ROW_H, 5, C_PAPER);
+    tft.drawRoundRect(SU_RS_X, SU_WIFI_Y, SU_RS_W, SU_ROW_H, 5, C_INK);
+    tft.setTextColor(C_INK, C_PAPER);
+    tft.drawCentreString("NETWORKS", SU_RS_X + SU_RS_W / 2, SU_WIFI_Y + 15, 1);
   }
   // Two status lines (the audit's split — the old combined line ran 46 ch
   // against a 12-ch name). Line 1 is the radio: state, then network and
@@ -11691,7 +11923,7 @@ static const char *careCardLabel(int c) {
   const char *l = menuLabel(m);
   if (!l[0]) return "";                       // the baby's empty chair
   if (m == 5) return "CUDDLE";
-  if (m == 7) return teenSchool() ? "SCHOOL" : "WORK";
+  if (m == 7) return (S.phase == PH_BABY) ? "DAYCARE" : teenSchool() ? "SCHOOL" : "WORK";
   return l;                                   // FEED / BATH / MEDS / TREAT
 }
 
@@ -12848,14 +13080,20 @@ static int setupPanelHit(int x, int y) {
   // declared, W-022), 28/29 BEDTIME, 20 BACK (to the ROOM — the shelf is
   // the gear's child now, not SOUND's). New in P2: 40 start over?, 41
   // RESTART, the RESET pin's two orphans rehomed at the very bottom.
+  // New with W-054 phase 2: 24, the WIFI row's NETWORKS half.
   if (titleBarBackHit(x, y)) return 20;
+  // Tapping HIS NAME in the title reopens the naming screen, which chains into the
+  // COZY/BRAVE chooser exactly like a new game (owner 8/26: "add the ability to change
+  // game mode / name from the device"). The BACK chip owns x4..56, so start past it.
+  if (y < 34 && x > 60) return 42;
   if (y >= SU_BOT_Y - 3 && y < SU_BOT_Y + 33) {               // bottom pair
     if (x >= SU_SO_X && x < SU_SO_X + SU_SO_W) return 40;     // start over?
     if (x >= SU_RS_X && x < SU_RS_X + SU_RS_W) return 41;     // RESTART
     return -1;
   }
   if (x < SU_X - 4 || x >= SU_X + SU_W + 4) return -1;
-  if (y >= SU_WIFI_Y - 3 && y < SU_WIFI_Y + SU_ROW_H + 3) return 23;   // WIFI
+  if (y >= SU_WIFI_Y - 3 && y < SU_WIFI_Y + SU_ROW_H + 3)              // a pair now (W-054):
+    return (x >= SU_RS_X) ? 24 : 23;                  // 24 NETWORKS, 23 the WIFI cycle
   if (y >= SU_CLK_Y - 3  && y < SU_CLK_Y + SU_ROW_H + 3)  return 22;   // CLOCK
   // W-059 BEDTIME: left button = bed hour, right = wake hour.
   if (y >= SU_BED_Y - 3 && y < SU_BED_Y + SU_ROW_H + 3)
@@ -13282,6 +13520,7 @@ void setup() {
   // draws the pet INSIDE it (g_eggShowsPet), so a child hatching a brand-new penguin world met
   // a base-pack bunny. Forcing the scene in here and adopting once costs one file read on a
   // path that is about to read it anyway.
+  sceneApplyPhase();             // the suffix must be right before the first scene read
   sceneActive();
   adoptWorldAnimal();
   improvPump();                  // scene + room are the slowest stretch; stay reachable across it
@@ -13696,7 +13935,7 @@ void loop() {
   // play and any live envelope still finishes. Nothing can stick on it.
   {
     fw_update_state_t fs = fw_update_state();
-    bool offMain = g_soundPanel || g_setupPanel || g_trackPanel ||
+    bool offMain = g_soundPanel || g_setupPanel || g_netsPanel || g_trackPanel ||
                    g_wishScreen ||   // the P3 WISH screen joins the list (spec law 6)
                    // The SLEEP surface LEAVES it: as a P2 screen it was off-main, but a P3
                    // sheet lives on the main-loop path by design, so hapticTick() must keep
@@ -13914,9 +14153,14 @@ void loop() {
   }
   // Repaint the SETUP panel's status line as the connection progresses, so "connecting" turning
   // into an IP address is visible without having to leave and come back (moved with WIFI, IVY-4).
-  if (g_setupPanel) {
+  // The NETWORKS picker rides the same event (W-054 phase 2): after a tap-to-join, the orange
+  // "bunbun is here now" row moves to the joined network the moment the connection lands.
+  if (g_setupPanel || g_netsPanel) {
     static NetState lastNet = NET_OFF;
-    if (g_netState != lastNet) { lastNet = g_netState; drawSetupPanel(); }
+    if (g_netState != lastNet) {
+      lastNet = g_netState;
+      if (g_setupPanel) drawSetupPanel(); else drawNetsPanel();
+    }
   }
   // Same idea for the SLEEP surface: simulate() runs under every panel, so
   // self-bedtime (or the 06:00 wake) can flip the lights while this screen
@@ -14369,7 +14613,8 @@ void loop() {
     return;
   }
 
-  // W-036: the COZY / BRAVE chooser, shown exactly once per new game.
+  // W-036: the COZY / BRAVE chooser - once per new game, and again whenever the
+  // owner taps the name in SETTINGS (8/26: mode and name are changeable on-device).
   if (g_modeAsk) {
     if (!g_modePainted) { drawModeScreen(); g_modePainted = true; }
     if (down && !wasDown) {
@@ -14968,6 +15213,78 @@ void loop() {
     return;
   }
 
+  // W-054 phase 2: the NETWORKS picker. Tap = join, hold (>=900ms) = arm the
+  // forget confirm on that row, second tap = forget. Row actions dispatch on
+  // RELEASE, so a hold is never first serviced as a tap — the same lesson the
+  // CARE sheet's began-on-sheet capture paid for. BACK stays on press, like
+  // every other bar.
+  if (g_netsPanel) {
+    static int      npRow = -1;
+    static uint32_t npAt  = 0;
+    if (down && !wasDown) {
+      if (titleBarBackHit(tx, ty)) {            // BACK — to SETTINGS (§2 nav)
+        uiTick();
+        g_netsPanel = false; g_netsForget = -1; npRow = -1;
+        g_setupPanel = true;
+        drawSetupPanel(); wasDown = down; return;
+      }
+      npRow = netsPanelHit(tx, ty);
+      npAt = millis();
+    }
+    if (down && npRow >= 0 && millis() - npAt >= 900) {
+      // the hold arms the confirm; the eventual release is already consumed
+      if (g_netsForget != npRow) {
+        char nets[NP_MAX][33];
+        if (npRow < wifi_known_list(nets, NP_MAX)) {
+          g_netsForget = npRow; g_netsForgetAt = millis();
+          uiTick(); drawNetsPanel();
+        }
+      }
+      npRow = -1;
+    }
+    if (!down && wasDown && npRow >= 0) {       // a TAP: released before the hold
+      char nets[NP_MAX][33];
+      int n = wifi_known_list(nets, NP_MAX);
+      if (npRow < n) {
+        uiTick();
+        bool onIt = (g_netState == NET_ONLINE) && netName().equals(nets[npRow]);
+        if (g_netsForget == npRow) {            // second tap on the armed row: forget
+          if (onIt) {
+            // never forget the network he is standing on — the portal SSID and the
+            // MRU store would just re-remember it on the next join, which reads as
+            // a button that does nothing. Switch away first, then forget.
+            sfxNo(); say("bunbun is using this wifi right now");
+          } else if (wifi_forget_known(nets[npRow]) == 0) {
+            say("bunbun forgot that wifi");
+          }
+          g_netsForget = -1;
+          drawNetsPanel();
+        } else if (onIt) {
+          say("bunbun is already on this one");
+          g_netsForget = -1; drawNetsPanel();
+        } else if (wifi_switch_to_known(nets[npRow]) == 0) {
+          // same ticker line the serial hop says — one voice for one action
+          say("bunbun is changing wifi...");
+          g_netsForget = -1; drawNetsPanel();
+        } else {
+          // Motion 2 rider (b), 8/25: the failure path SPEAKS. A -1 here means the row's
+          // credentials vanished between draw and tap (a concurrent forget) - rare, but a
+          // dead button teaches a parent the whole shelf is broken. Luna's line, verbatim.
+          sfxNo(); say("couldn't find that wifi - staying right here");
+          g_netsForget = -1; drawNetsPanel();
+        }
+      }
+      npRow = -1;
+    }
+    // an armed confirm quietly disarms after 5s rather than lingering red
+    if (g_netsForget >= 0 && millis() - g_netsForgetAt > 5000) {
+      g_netsForget = -1;
+      drawNetsPanel();
+    }
+    wasDown = down;
+    return;
+  }
+
   // settings panel (IVY-4, the grown-up shelf) — one tap deep, behind the
   // gear on the room screen (menu redesign P2)
   if (g_setupPanel) {
@@ -15005,6 +15322,12 @@ void loop() {
           delay(250);
         }
         drawSetupPanel(); wasDown = down; return;
+      }
+      if (hit == 24) {                          // NETWORKS — the W-054 picker (§2 nav:
+        uiTick();                               // settings ← networks, BACK returns here)
+        g_setupPanel = false; g_netsPanel = true;
+        g_netsForget = -1;
+        drawNetsPanel(); wasDown = down; return;
       }
       if (hit == 22) {                          // CLOCK — hand over to the set-time screen
         uiTick();
@@ -15063,6 +15386,12 @@ void loop() {
         uiTick();
         g_setupPanel = false;
         redrawRoomChrome();
+      }
+      if (hit == 42) {                          // his NAME: rename, then re-choose the mode
+        uiTick();
+        g_setupPanel = false;
+        g_nameAsk = true;
+        g_namePainted = false;
       }
     }
     wasDown = down;
@@ -15499,7 +15828,7 @@ void loop() {
   // SHEETS ARE NOT PANELS and are deliberately absent from this list: the whole point of a
   // sheet is that the room keeps composing above it (see the clipped push below).
   bool panelOwnsScreen = g_gamePanel || g_snakePanel || g_bbPanel || g_ggPanel || g_bkPanel || g_ccPanel || g_gameRoster || g_soundPanel ||
-                         g_setupPanel || g_trackPanel || g_resetPanel || g_wishScreen;
+                         g_setupPanel || g_netsPanel || g_trackPanel || g_resetPanel || g_wishScreen;
   if (!panelOwnsScreen && now - lastDraw >= frameMs) {
     lastDraw = now;
     { uint32_t t0 = micros();

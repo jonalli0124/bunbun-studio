@@ -301,3 +301,28 @@ carry through the animation automatically. The baby set is the croc-proven eight
 (eat, bathe, angry, sick, bored, tired, love, hungry) plus play (each species' own
 object-free play). One server-side loss (spark bored) re-fired byte-identical.
 Reviewed in "The Baby Emotions" artifact; nothing installed to the pak yet.
+
+## Group-id ledger (2026-08-25 audit — every live group on the Baby_Onesie char):
+baby emotes: play 343a39f1 · hungry 2d91a3f3 · love b13e3802 · tired 9e19ee74 · bored 57093124 · sick d3252858 · angry ee53c3b8 · bathe 83378e8c · eat ef4d1116
+baby happy (hop-overhead, canonical, awaiting sign-off): a9d55a66
+baby crawl (SE+NE diagonals; stray east dirs deleted 8/25): de375281
+
+## 2026-08-25 evening: Baby_Happy INSTALLED (owner signed the review page) - the baby set is TEN emotions.
+
+## 2026-08-25 late: THE TEEN (owner-signed lineup). Teen_Idle state f2b55449 (v2, the signed original)
+on the keeper: short-sleeved bright orange t-shirt, fur/feathers slightly disheveled
+with small tufts on the crown, and one ear folded over at the tip. The V2 spiky-tuft look IS the ruling
+(soft/contained variants lost). INSTALLED as Teen_Idle/ (8 rotations, feet y=90);
+ships via the mkspecies teen-idle toehold. Teen size stays render-time SCALE_TEEN.
+
+## 2026-08-25 late: WARDROBE -> LIGHT BLUE (owner order "set all clothes to light
+blue"): the anchored pair is now #82c4ea/#4c7fb5 (was #9151d3/#5d229d). Adults and
+onesies swapped together; teens stay orange; imp exempt. Exact both ways.
+
+## 2026-08-26: THE TEEN SET COMPLETE (owner signed the sheets: "Go for it").
+Idle f2b55449 · Teen_Sit 077b0ba5 · Teen_Sleep 2f91b29d (120x120, closed-eye clause).
+Anims (v3 south fc6 on the idle char; walk 4 dirs E/NE/SE/NW fc6, W+SW mirrored):
+eat feb6cad1 · bathe 0115ce83 · angry aac75361 · sick e170f11d · bored ea227d67 · tired 3bb683fe · love 4953a29e · hungry eae00e91 · play 8ac93b65 · happy 5c33d85c · dance e61ba9de · pickup 1c21970a · walk 643e3273
+Tee anchored to the teen wardrobe pair #fd9a05/#df5b0f; fur twins unified onto the adult
+palette; PROOF: zero pair pixels outside Teen_ clips fleet-wide. Roster: 21 clips, a
+mirror of count and type of the adult set.

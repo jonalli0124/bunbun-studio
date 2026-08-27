@@ -220,3 +220,33 @@ carry through the animation automatically. The baby set is the croc-proven eight
 (eat, bathe, angry, sick, bored, tired, love, hungry) plus play (each species' own
 object-free play). One server-side loss (spark bored) re-fired byte-identical.
 Reviewed in "The Baby Emotions" artifact; nothing installed to the pak yet.
+
+## Group-id ledger (2026-08-25 audit — every live group on the Baby_Onesie char):
+baby emotes: play 18eb329a · hungry 73cb7f50 · love 47899c7e · tired 1de7dca2 · bored fc6da6f4 · sick d9c5e7a1 · angry 7c068175 · bathe 67dce07c · eat ff20c304
+baby happy (hop-overhead, canonical, awaiting sign-off): 5ef8cd41
+baby crawl (SE+NE diagonals; stray east dirs deleted 8/25): bb818e05
+
+## 2026-08-25 evening: Baby_Happy INSTALLED (owner signed the review page) - the baby set is TEN emotions.
+
+## 2026-08-25 late: THE TEEN (owner-signed lineup). Teen_Idle state f77785a8 (v3, upper-torso tee, belly visible)
+on the keeper: short-sleeved bright orange t-shirt, fur/feathers slightly disheveled
+with small tufts on the crown, and (no ears - feather tufts). The V2 spiky-tuft look IS the ruling
+(soft/contained variants lost). INSTALLED as Teen_Idle/ (8 rotations, feet y=90);
+ships via the mkspecies teen-idle toehold. Teen size stays render-time SCALE_TEEN.
+
+## 2026-08-25 late: WARDROBE -> LIGHT BLUE (owner order "set all clothes to light
+blue"): the anchored pair is now #82c4ea/#4c7fb5 (was #9151d3/#5d229d). Adults and
+onesies swapped together; teens stay orange; imp exempt. Exact both ways.
+
+## 2026-08-26 OWNER RULING: the teen's PINK FEET STAY ("Let's leave it"). Measured first:
+no adult clip has ever shown a foot (overalls to the floor in every frame incl. walks and
+dance), so the teen wrote the anatomy record rather than breaking it - penguin feet are
+pink (#f88598 family) from here on. Any future clip showing feet follows the teen.
+
+## 2026-08-26: THE TEEN SET COMPLETE (owner signed the sheets: "Go for it").
+Idle f77785a8 · Teen_Sit 86dc0f57 · Teen_Sleep c5436558 (120x120, closed-eye clause).
+Anims (v3 south fc6 on the idle char; walk 4 dirs E/NE/SE/NW fc6, W+SW mirrored):
+eat 49e87cba · bathe 9769fd73 · angry e7a0cef2 · sick 6ef2a113 · bored 0d72c695 · tired 9a0d1d9e · love bd1e625f · hungry 38367b18 · play 8dd8a864 · happy a5ff2673 · dance 0844462c · pickup 328c34e8 · walk 137d6bfb
+Tee anchored to the teen wardrobe pair #fd9a05/#df5b0f; fur twins unified onto the adult
+palette; PROOF: zero pair pixels outside Teen_ clips fleet-wide. Roster: 21 clips, a
+mirror of count and type of the adult set.

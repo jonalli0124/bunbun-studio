@@ -221,8 +221,26 @@
       <select id="worldAge" title="the same animal at a different age - rooms can be made for each age. The animal never changes between ages.">
         <option value="adult">age: grown up</option>
         <option value="baby">age: baby &mdash; onesie, crawling</option>
-        <option value="teen">age: teen &mdash; PLACEHOLDER (wears adult art for now)</option>
+        <option value="teen">age: teen &mdash; orange tee, one ear flopped</option>
       </select>
+      <details id="wdBox" style="margin-top:8px;border:1px solid var(--line);border-radius:9px;padding:8px">
+        <summary style="cursor:pointer;font-weight:600">wardrobe &mdash; the clothes colour</summary>
+        <p class="hint" style="margin:6px 0">Every outfit lives on one exact colour pair, so one
+        pick recolours the whole cast. Drag on the wheel; everyone in the tool updates when you
+        let go. The choice travels with the exported world. Each age keeps its own colour.</p>
+        <canvas id="wdWheel" width="170" height="170" style="border-radius:50%;cursor:crosshair;touch-action:none;display:block"></canvas>
+        <input type="range" id="wdVal" min="25" max="100" value="86" style="width:170px" title="brightness">
+        <div style="display:flex;gap:8px;align-items:center;margin-top:6px;font-size:12px">
+          <div id="wdChipB" style="width:28px;height:28px;border-radius:7px;border:2px solid var(--line)" title="base"></div>
+          <div id="wdChipS" style="width:28px;height:28px;border-radius:7px;border:2px solid var(--line)" title="shade (auto)"></div>
+          <span id="wdHex" style="font-variant-numeric:tabular-nums"></span>
+        </div>
+        <p class="hint" id="wdWarn" style="margin:6px 0;color:#a8341a"></p>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">
+          <button type="button" id="wdReset">back to current</button>
+          <button type="button" id="wdSave" title="downloads wardrobe.json - hand it to Claude (or run py tools/apply_wardrobe.py) to bake the colour into the packs and devices">save colour for install</button>
+        </div>
+      </details>
       <select id="sceneRole">
         <option value="">the main room</option>
         <option value="kitchen">the kitchen &mdash; EAT comes here</option>
@@ -488,7 +506,7 @@ const SD=window.ATTACH_DATA;
 var gWorldAnimal='';                 // the whole house's animal, across every room
 // THE AGE (Jon 2026-08-25): one animal per world, forever - but rooms can be authored per
 // age. baby wears the onesie set and crawls (diagonals only, per the crawl ruling); teen is
-// a PLACEHOLDER that wears adult art until teen art exists. The scene carries `age`.
+// each with its OWN full art set since 8/26 (teen completed last). The scene carries `age`.
 var gWorldAge='adult';
 function worldAgeId(){ return gWorldAge||'adult' }
 // baby stand-ins for the stock adult verbs - best-first, only names the packs really have
@@ -592,8 +610,238 @@ const nearPt=(x,y,p,r)=>Math.abs(x-p[0])<=r && Math.abs(y-p[1])<=r;
 const sizeOf=o=>{const d=SD.props[o.object];
   return {w:d.w*o.scale*passiveScale, h:d.h*o.scale*passiveScale}};
 const cv=$('view'), ctx=cv.getContext('2d');
-const imgs={}, load=(src,k)=>new Promise(r=>{const i=new Image();
-  i.onload=()=>{imgs[k]=i;r()}; i.onerror=()=>r(); i.src=src});
+const imgs={}, imgsRaw={};
+// THE WARDROBE (owner 8/26: "allow anyone to change the color to match what they want").
+// Every garment is one exact colour pair (tools/wardrobe.json via mkdata), so a recolour
+// is an exact per-pixel swap on the character frames - rooms and props are never touched.
+// Pairs are PER AGE (owner 8/26: "they may want a different color for baby, teen, or
+// adult") - the wheel edits the pair for whichever age the world selector shows.
+const WDPAIRS=(SD.wardrobe&&SD.wardrobe.adult)?SD.wardrobe:
+  {adult:{base:'#82c4ea',shade:'#4c7fb5'},baby:{base:'#82c4ea',shade:'#4c7fb5'},teen:null};
+let gWd={adult:null,baby:null,teen:null};   // null slot = that age wears the pack's own colour
+const wdHex2=h=>{h=h.replace('#','');return [0,1,2].map(i=>parseInt(h.substr(i*2,2),16))};
+const wdStr=c=>'#'+c.map(v=>Math.max(0,Math.min(255,Math.round(v))).toString(16).padStart(2,'0')).join('');
+const wdShadeOf=bh=>{const p=WDPAIRS.adult,b0=wdHex2(p.base),s0=wdHex2(p.shade),b=wdHex2(bh);
+  return wdStr([b[0]*s0[0]/b0[0], b[1]*s0[1]/b0[1], b[2]*s0[2]/b0[2]])};
+const wdAgeOfKey=k=>k.includes('Baby_')?'baby':k.includes('Teen_')?'teen':'adult';
+// Every colour the wardrobe has EVER worn (SD.wardrobeHistory) is a proven garment
+// colour from its own era - an imported package baked in the purple days must recolour
+// just like fresh art (the 8/26 croc-world lesson: the remap knew only the current blue,
+// the import wore the old purple, and "the color didnt update").
+const WDHIST=(SD.wardrobeHistory||[]).map(h=>wdHex2(h));
+// pairs, with their base/shade ROLES intact - a luminance guess flattened the old purple
+// base onto the blue shade (lum(#9151d3)=113, cut 115): the --dist lesson in new clothes
+const WDHISTPAIRS=(SD.wardrobeHistoryPairs||[]).map(p=>({base:wdHex2(p.base),shade:wdHex2(p.shade)}));
+function wdSwapSets(age,pick){
+  const B1=wdHex2(pick.base),S1=wdHex2(pick.shade);
+  const m={};
+  const src=WDPAIRS[age];
+  if(src){ m[wdHex2(src.base).join()]=B1; m[wdHex2(src.shade).join()]=S1; }
+  for(const pr of WDHISTPAIRS){ m[pr.base.join()]=B1; m[pr.shade.join()]=S1; }
+  return m;
+}
+function wdApply(im,age,cb){
+  const src=WDPAIRS[age], pick=gWd[age];
+  if(!src||!pick||pick.base===src.base){cb(im);return}
+  const c=document.createElement('canvas');
+  c.width=im.naturalWidth||im.width; c.height=im.naturalHeight||im.height;
+  const g=c.getContext('2d'); g.drawImage(im,0,0);
+  let id; try{id=g.getImageData(0,0,c.width,c.height)}catch(e){cb(im);return}
+  const d=id.data, m=wdSwapSets(age,pick);
+  let hit=false;
+  for(let i=0;i<d.length;i+=4){
+    const t=m[d[i]+','+d[i+1]+','+d[i+2]];
+    if(t){ d[i]=t[0];d[i+1]=t[1];d[i+2]=t[2]; hit=true; }
+  }
+  if(!hit){cb(im);return}
+  g.putImageData(id,0,0);
+  const m2=new Image(); m2.onload=()=>cb(m2); m2.src=c.toDataURL();
+}
+const wdSwappable=k=>k.startsWith('clip|');    // character frames only - never rooms or props
+// Imported worlds arrive wearing the wardrobe of their bake-day. This walks every clip an
+// import registered (keys with ':') and snaps every HISTORICAL pair onto the current age
+// pair, then evicts the image caches so redraws pick up the normalised frames. Called
+// after both import paths - the exact-restore one returns early and skipped the fragment
+// normaliser entirely (the 8/26 purple-croc lesson).
+async function wdNormalizeClips(){
+  if(!WDHIST.length) return 0;
+  const lum=c=>c[0]*0.3+c[1]*0.6+c[2]*0.1;
+  let changed=0;
+  for(const key of Object.keys(SD.clips)){
+    if(!key.includes(':')) continue;
+    const age=key.includes('Baby_')?'baby':key.includes('Teen_')?'teen':'adult';
+    const cur=WDPAIRS[age]; if(!cur) continue;
+    const B=wdHex2(cur.base), Sh=wdHex2(cur.shade);
+    const mm={};
+    for(const pr of WDHISTPAIRS){
+      if(pr.base.join()!==B.join()) mm[pr.base.join()]=B;
+      if(pr.shade.join()!==Sh.join()) mm[pr.shade.join()]=Sh;
+    }
+    for(const f of SD.clips[key].frames){
+      if(!f||!f.img) continue;
+      const im=new Image();
+      await new Promise(res=>{im.onload=res; im.onerror=res; im.src=f.img;});
+      if(!im.naturalWidth) continue;
+      const c=document.createElement('canvas'); c.width=im.naturalWidth; c.height=im.naturalHeight;
+      const g=c.getContext('2d'); g.drawImage(im,0,0);
+      let id; try{id=g.getImageData(0,0,c.width,c.height)}catch(e){continue}
+      const d=id.data; let dirty=false;
+      for(let i=0;i<d.length;i+=4){
+        const t=mm[d[i]+','+d[i+1]+','+d[i+2]];
+        if(t){ d[i]=t[0];d[i+1]=t[1];d[i+2]=t[2]; dirty=true; }
+      }
+      if(dirty){ g.putImageData(id,0,0); f.img=c.toDataURL(); changed++; }
+    }
+    for(const k2 of Object.keys(imgsRaw)) if(k2.startsWith('clip|'+key+'|')){ delete imgsRaw[k2]; delete imgs[k2]; }
+  }
+  if(changed){ try{ if(typeof loadTravelArt==='function') await loadTravelArt(); }catch(e){}
+    try{draw()}catch(e){} }
+  return changed;
+}
+const load=(src,k)=>new Promise(r=>{const i=new Image();
+  i.onload=()=>{imgsRaw[k]=i;
+    if(wdSwappable(k)) wdApply(i,wdAgeOfKey(k),m=>{imgs[k]=m;r()});
+    else {imgs[k]=i;r()}
+  }; i.onerror=()=>r(); i.src=src});
+let _wdBusy=false;
+function wdRepaintAll(){
+  if(_wdBusy)return; _wdBusy=true;
+  const ks=Object.keys(imgsRaw).filter(wdSwappable);
+  let left=ks.length;
+  if(!left){_wdBusy=false; try{draw()}catch(e){} return}
+  ks.forEach(k=>wdApply(imgsRaw[k],wdAgeOfKey(k),m=>{imgs[k]=m; if(--left===0){_wdBusy=false; try{draw()}catch(e){}}}));
+}
+function wdExport(){
+  const o={};
+  for(const a of ['adult','baby','teen']) if(gWd[a]) o[a]=gWd[a];
+  return Object.keys(o).length?o:null;
+}
+// While the wardrobe fold-out is open, the current animal STANDS IN THE ROOM in the
+// selected age's own pose, drawn from the same remapped image cache as everything else -
+// so a wheel drag recolours him right there in the scene, no side mannequin.
+let _wdModelReq=null;
+function wdModelDraw(){
+  const box=document.getElementById('wdBox');
+  if(!box||!box.open) return;
+  let age; try{ age=worldAgeId(); }catch(e){ return; }
+  const name=age==='baby'?'Baby_Onesie':age==='teen'?'Teen_Idle':'Adult_Idle';
+  const wa=(typeof gWorldAnimal!=='undefined'&&gWorldAnimal&&SD.clips[gWorldAnimal+':'+name])
+           ? gWorldAnimal+':'+name : name;
+  const cd=SD.clips[wa];
+  if(!cd) return;
+  let fidx=cd.frames.findIndex(f=>f.dir==='south'); if(fidx<0) fidx=0;
+  const ik='clip|'+wa+'|'+fidx;
+  if(!imgs[ik]){
+    if(_wdModelReq!==ik){ _wdModelReq=ik; load(cd.frames[fidx].img, ik); }
+    return;
+  }
+  const im=imgs[ik];
+  const sc=SCALE[age]||SCALE.adult;
+  const Zm=GAME.z;
+  const x=(scene.character&&scene.character.x)||160, y=(scene.character&&scene.character.y)||200;
+  ctx.save(); ctx.globalAlpha=1;
+  ctx.drawImage(im,(x-48*sc)*Zm,(y-90*sc)*Zm,96*sc*Zm,96*sc*Zm);
+  ctx.restore();
+}
+// ---- the wardrobe panel ----
+(function(){
+  const W=$('wdWheel'); if(!W) return;
+  const g=W.getContext('2d',{willReadFrequently:true}), R=W.width/2;
+  const hsv=(h,sf,v)=>{const f=n=>{const k=(n+h/60)%6;return Math.round(255*v*(1-sf*Math.max(0,Math.min(k,4-k,1))))};return [f(5),f(3),f(1)]};
+  const rgb2hsv=c=>{const [r,gg,b]=c.map(v=>v/255),M=Math.max(r,gg,b),m=Math.min(r,gg,b),d=M-m;
+    let h=0; if(d){ h=M===r?((gg-b)/d)%6:M===gg?(b-r)/d+2:(r-gg)/d+4; h=(h*60+360)%360; }
+    return {h, s:M?d/M:0, v:M}};
+  // the pick lives as wheel coordinates (hue+sat) + the brightness slider, so the
+  // selector ring knows where to sit and brightness changes re-colour the same spot
+  let hs=null;            // {h,s} of the active pick for the CURRENT age, null = none
+  function wheelPaint(){
+    const im=g.createImageData(W.width,W.height), d=im.data, v=(+$('wdVal').value)/100;
+    for(let y=0;y<W.height;y++)for(let x=0;x<W.width;x++){
+      const dx=x-R, dy=y-R, r=Math.hypot(dx,dy);
+      if(r>R)continue;
+      const c=hsv((Math.atan2(dy,dx)/Math.PI*180+360)%360, r/R, v);
+      const i=(y*W.width+x)*4; d[i]=c[0];d[i+1]=c[1];d[i+2]=c[2];d[i+3]=255;
+    }
+    g.putImageData(im,0,0);
+    if(hs){                      // THE SELECTOR (owner: "the color wheel has no selector")
+      const a=hs.h*Math.PI/180, r=hs.s*R;
+      const x=R+Math.cos(a)*r, y=R+Math.sin(a)*r;
+      g.beginPath(); g.arc(x,y,6,0,7); g.lineWidth=3; g.strokeStyle='#fff'; g.stroke();
+      g.beginPath(); g.arc(x,y,6,0,7); g.lineWidth=1.2; g.strokeStyle='#000'; g.stroke();
+    }
+  }
+  function curColor(){ return wdStr(hsv(hs.h, hs.s, (+$('wdVal').value)/100)); }
+  function guard(baseHex){
+    const b=wdHex2(baseHex), sh=wdHex2(wdShadeOf(baseHex));
+    let worst=null;
+    for(const sp in (SD.bodyColors||{}))
+      for(const h of SD.bodyColors[sp]){
+        const c=wdHex2(h);
+        for(const q of [b,sh]){
+          const dist=Math.max(Math.abs(q[0]-c[0]),Math.abs(q[1]-c[1]),Math.abs(q[2]-c[2]));
+          if(!worst||dist<worst.dist) worst={dist,sp,h};
+        }
+      }
+    return worst;
+  }
+  function show(){
+    const age=worldAgeId(), src=WDPAIRS[age], pick=gWd[age], cur=pick||src;
+    $('wdChipB').style.background=cur?cur.base:'#0000';
+    $('wdChipS').style.background=cur?cur.shade:'#0000';
+    $('wdHex').textContent = src ? (cur.base+' / '+cur.shade+(pick?'':'  (current)'))
+                                 : 'teen tee not anchored yet';
+    W.style.opacity = src?1:.35;
+    hs = pick ? (()=>{const q=rgb2hsv(wdHex2(pick.base)); return {h:q.h,s:q.s}})() : null;
+    if(pick){ const q=rgb2hsv(wdHex2(pick.base)); $('wdVal').value=Math.round(q.v*100); }
+    wheelPaint();
+  }
+  window.wdSyncUI=show;
+  // LIVE while dragging (owner: "while i change it, it would update the animations on the
+  // screen"): every move commits, the repaint runs throttled with a trailing pass so the
+  // last colour always lands even mid-scrub.
+  let _dirty=false;
+  function repaint(){
+    if(_wdBusy){ _dirty=true; return }
+    wdRepaintAll();
+    const iv=setInterval(()=>{ if(!_wdBusy){ clearInterval(iv);
+      if(_dirty){ _dirty=false; repaint(); } } }, 120);
+  }
+  function commit(){
+    const age=worldAgeId();
+    if(!WDPAIRS[age]){ $('wdWarn').textContent='teen colours arrive with the teen build - the tee has no anchored pair yet'; return; }
+    const hex=curColor();
+    const w=guard(hex);
+    if(w&&w.dist===0){ $('wdWarn').textContent="that IS "+w.sp+"'s own colour ("+w.h+") - a later swap would grab their body. pick a neighbour."; return; }
+    $('wdWarn').textContent=(w&&w.dist<28)?("careful: very close to "+w.sp+"'s "+w.h+" - clothes may vanish against them"):'';
+    gWd[age]={base:hex,shade:wdShadeOf(hex)};
+    $('wdChipB').style.background=hex; $('wdChipS').style.background=wdShadeOf(hex);
+    $('wdHex').textContent=hex+' / '+wdShadeOf(hex);
+    repaint();
+  }
+  function pickAt(e){
+    const r=W.getBoundingClientRect();
+    const x=(e.clientX-r.left)*(W.width/r.width), y=(e.clientY-r.top)*(W.height/r.height);
+    const dx=x-R, dy=y-R, d=Math.hypot(dx,dy);
+    hs={h:(Math.atan2(dy,dx)/Math.PI*180+360)%360, s:Math.min(1,d/R)};
+    wheelPaint(); commit();
+  }
+  W.addEventListener('pointerdown',e=>{e.preventDefault(); W.setPointerCapture(e.pointerId); pickAt(e)});
+  W.addEventListener('pointermove',e=>{ if(e.pressure>0||e.buttons) pickAt(e) });
+  $('wdVal').addEventListener('input',()=>{ wheelPaint(); if(hs) commit(); });
+  $('wdReset').onclick=()=>{ gWd[worldAgeId()]=null; hs=null; show(); repaint(); };
+  $('wdSave').onclick=()=>{
+    const o=wdExport();
+    if(!o){ $('wdWarn').textContent='nothing picked - the cast already wears these colours'; return; }
+    const el=document.createElement('a');
+    el.href=URL.createObjectURL(new Blob([JSON.stringify(o,null,1)],{type:'application/json'}));
+    el.download='wardrobe.json'; document.body.appendChild(el); el.click();
+    setTimeout(()=>{URL.revokeObjectURL(el.href); el.remove()},400);
+    $('wdWarn').textContent='saved wardrobe.json - hand it to Claude (or py tools/apply_wardrobe.py) and the packs, tools and devices follow';
+  };
+  const sel=$('worldAge'); if(sel) sel.addEventListener('change',show);
+  const selA=$('worldAnimal'); if(selA) selA.addEventListener('change',()=>setTimeout(show,50));
+  wheelPaint(); show();
+})();
 
 // The scene: a room, things in it (each declaring what it affords), and where he may walk.
 let scene={room:'', objects:[], zones:[], lines:{}, character:{x:160,y:200,scalePercent:145}};
@@ -946,9 +1194,43 @@ function rotFrame(clip, want){
   const j=fr.findIndex(f=>f.dir===faceOnOf(clip));
   return j>=0?j:0;
 }
+// AGE-RESOLVE THE ART (owner 8/26: "for the default animations they didnt update to
+// baby"): in a baby or teen world every placed animation PERFORMS AS THAT AGE - the
+// clip resolves to its age equivalent when the art exists, exactly like the firmware's
+// pa() fallback ladder. No equivalent = the adult art stays (never a blank).
+function ageClip(clip){
+  const age=(typeof worldAgeId==='function')?worldAgeId():'adult';
+  if(age==='adult'||!clip) return clip;
+  const m=clip.match(/^([a-z0-9]+:)?Adult_(.+)$/);
+  if(!m) return clip;
+  const pre=m[1]||'', rest=m[2], cands=[];
+  if(age==='baby'){
+    if(rest==='Idle') cands.push('Baby_Onesie');
+    const w=rest.match(/^Walk_(.+)$/);
+    if(w){ const map={East:'Baby_Crawl_SouthEast',West:'Baby_Crawl_SouthWest',
+                      SouthEast:'Baby_Crawl_SouthEast',SouthWest:'Baby_Crawl_SouthWest',
+                      NorthEast:'Baby_Crawl_NorthEast',NorthWest:'Baby_Crawl_NorthWest'};
+      if(map[w[1]]) cands.push(map[w[1]]); }
+    cands.push('Baby_'+rest);
+  } else {
+    cands.push('Teen_'+rest);
+  }
+  for(const c of cands){
+    if(SD.clips[pre+c]) return pre+c;
+    // a world package registers only the clips it shipped - the animal's FULL set lives
+    // in the character library. Register the age clip on demand, so a baby world can
+    // crawl even when the package only carried adult art.
+    const an=pre.slice(0,-1);
+    if(an&&SD.characters&&SD.characters[an]&&SD.characters[an].clips[c]){
+      SD.clips[pre+c]=SD.characters[an].clips[c];
+      return pre+c;
+    }
+  }
+  return clip;
+}
 function drawChar(a, step, x, y, alpha, mark, clipOver){
   const Z=GAME.z;
-  const clip = clipOver || a.clip;
+  const clip = ageClip(clipOver || a.clip);
   // clipOver is only ever set for a clip the assembler chose itself (walking, idling) - nobody
   // authored those, so they take the travel dial. Everything else takes the size the editor
   // recorded on the animation, which is the only place that number can honestly come from.
@@ -962,7 +1244,8 @@ function drawChar(a, step, x, y, alpha, mark, clipOver){
     ? {i:rotFrame(clip, (a && a.facing) || faceOnOf(clip)), cs:100}
     : (clipOver ? {i:step % (SD.clips[clip]?SD.clips[clip].frames.length:1), cs:100}
                 : seq[((step%seq.length)+seq.length)%seq.length]);
-  const fi=ent.i, f=(SD.clips[clip]&&SD.clips[clip].frames[fi])||{};
+  const nfr=(SD.clips[clip]&&SD.clips[clip].frames.length)||1;
+  const fi=((ent.i%nfr)+nfr)%nfr, f=(SD.clips[clip]&&SD.clips[clip].frames[fi])||{};
   const per=(ent.cs==null?100:ent.cs)/100;
   // clipOver means "draw this other clip" (walking, idling). Breathing belongs to the CHARACTER,
   // not to the clip, so it keeps going - switching it off here is why a held idle sat dead still.
@@ -1033,8 +1316,10 @@ function worldActs(){
     for(const a of list) if(a&&a.on!==false) set.add(actOfAnim(a)); };
   add(roleKey(), anims);
   for(const rk of Object.keys(worldSlots)){
-    if(rk===roleKey()) continue;
-    try{ add(rk, (JSON.parse(worldSlots[rk]).anims)||[]) }catch(e){}
+    const pk=parseSlotKey(rk);
+    if(pk.age!==worldAgeId()) continue;       // acts route within the age, never across
+    if(pk.role===roleKey()) continue;
+    try{ add(pk.role, (JSON.parse(worldSlots[rk]).anims)||[]) }catch(e){}
   }
   return map;
 }
@@ -1090,9 +1375,9 @@ async function crossTo(role, act){
         await new Promise(r=>setTimeout(r,60));
     }
     // through the door: the target room comes up, he enters at the mirror edge
-    worldSlots[from]=slotSnap();
+    worldSlots[slotKeyOf(from, worldAgeId())]=slotSnap();
     const keep={...worldSlots};
-    await restore(keep[role] || JSON.stringify(freshSlot(role)));
+    await restore(forkSlotFor(role, worldAgeId(), keep));
     worldSlots=keep;
     scene.role=role||undefined;
     syncRoleUI(); syncObj(); syncRule(); draw();
@@ -1147,6 +1432,10 @@ function everywhereExtras(){
   // picks between them, which is what a child means by ticking the box.
   const out=[], seen=new Set();
   for(const k of Object.keys(worldSlots||{})){
+    // AGES DO NOT LEAK (owner 8/26: "the anywhere selection should be limited to age.
+    // i just saw adult walk across the baby") - an "every room" move travels every room
+    // OF ITS OWN AGE, exactly as the device's per-age scene files behave.
+    if(parseSlotKey(k).age!==worldAgeId()) continue;
     try{
       const q=JSON.parse(worldSlots[k]);
       for(const a of (q.anims||[])){
@@ -2500,7 +2789,8 @@ function draw(){
     // its OWN order, with its own holds - the animation you exported, not the raw clip
     const seq=[]; for(const o of a.order) for(let h=0;h<a.character.hold;h++) seq.push(o);
     const step=playing ? Math.floor(tick*(a.fps||7))%seq.length : 0;
-    const ent=seq[step], fi=ent.i, f=SD.clips[a.clip].frames[fi];
+    const rc=ageClip(a.clip), rn=(SD.clips[rc]&&SD.clips[rc].frames.length)||1;
+    const ent=seq[step], fi=((ent.i%rn)+rn)%rn, f=SD.clips[rc].frames[fi];
     // and its own breathing, about the same pivot the editor used
     const per=(ent.cs==null?100:ent.cs)/100;
     const pulse=a.character.breathe
@@ -2563,6 +2853,7 @@ function draw(){
   }
   }
   paintChar();          // anything deeper than him has already been drawn; he goes on now
+  try{ wdModelDraw(); }catch(e){}   // the wardrobe's embedded model, only while the panel is open
   { const zs=scene.zones;
     const zHtml = zs.length
       ? zs.map((z,i)=>{ const nm=z.name?z.name+(z.kind==='spot'?' (Z'+z.spotId+')':'')
@@ -2788,7 +3079,7 @@ function drawAnims(){
     // a PLACE, not an errand: nothing is done out there, he simply goes and stays
     if(act[0]==='@'){
       const role=act.slice(1);
-      if(!worldSlots[role] && roleKey()!==role)
+      if(!worldSlots[slotKeyOf(role, worldAgeId())] && roleKey()!==role)
         return say(`there is no ${role} room yet \u2014 make one first`,true);
       if(!simOn) await $('preview').onclick();
       await crossTo(role, '');
@@ -3361,8 +3652,10 @@ function addAnim(name, p){
   return a;
 }
 async function loadArtFor(a){
+  const rc=ageClip(a.clip);
   await Promise.all([
     ...SD.clips[a.clip].frames.map((f,i)=>load(f.img,'clip|'+a.clip+'|'+i)),
+    ...(rc!==a.clip&&SD.clips[rc]?SD.clips[rc].frames.map((f,i)=>load(f.img,'clip|'+rc+'|'+i)):[]),
     ...a.layers.map(l=>SD.props[l.prop]?load(SD.props[l.prop].img,'prop|'+l.prop):null)
   ].filter(Boolean));
 }
@@ -3397,7 +3690,7 @@ $('saveRoom').onclick=()=>{
   setTimeout(()=>URL.revokeObjectURL(el.href),5000);
   say(`saved just the ${which} room — Open scene drops it into whatever world is open`) };
 $('saveScene').onclick=()=>{
-  worldSlots[roleKey()]=slotSnap();   // the room on screen counts too
+  worldSlots[curSlotKey()]=slotSnap();   // the room on screen counts too
   const j=Object.assign({format:'bunbun-scene-project', v:1}, session());
   const d=new Date(), z=n=>String(n).padStart(2,'0');
   const stamp=d.getFullYear()+z(d.getMonth()+1)+z(d.getDate())+'-'+z(d.getHours())+z(d.getMinutes());
@@ -3607,6 +3900,8 @@ async function importBundle(buf){
         booting=false;
         histPush(projText);
         syncRule(); syncObj(); animalOptions(); draw(); autosave();
+        const wn=await wdNormalizeClips();
+        if(wn) console.log('wardrobe: normalised '+wn+' imported frames onto the current pair');
         const pj=JSON.parse(projText);
         return {rooms:1+Object.keys(pj.slots||{}).length,
                 objs:(pj.scene&&pj.scene.objects||[]).length,
@@ -3622,7 +3917,30 @@ async function importBundle(buf){
   if(frLen>0){
     const {entries}=PakLib.parse(buf.slice(16+scLen,16+scLen+frLen));
     for(const en of entries){
-      try{ art[en.name]=PakLib.decodeSprite(en).toDataURL('image/png') }catch(err){}
+      try{
+        const cv0=PakLib.decodeSprite(en);
+        // a package baked in an older wardrobe era arrives wearing that era's pair -
+        // snap every historical pair onto the CURRENT age pair so imports match the packs
+        try{
+          const age=(en.name||'').includes('baby-')?'baby':(en.name||'').includes('teen-')?'teen':'adult';
+          const cur=WDPAIRS[age];
+          if(cur&&WDHIST.length){
+            const g0=cv0.getContext('2d');
+            const id0=g0.getImageData(0,0,cv0.width,cv0.height), d0=id0.data;
+            const lum=c=>c[0]*0.3+c[1]*0.6+c[2]*0.1;
+            const B=wdHex2(cur.base), Sh=wdHex2(cur.shade);
+            const mm={};
+            for(const c of WDHIST){ const k=c.join(); if(k!==B.join()&&k!==Sh.join()) mm[k]=(lum(c)>=115)?B:Sh; }
+            let dirty=false;
+            for(let i=0;i<d0.length;i+=4){
+              const t=mm[d0[i]+','+d0[i+1]+','+d0[i+2]];
+              if(t){ d0[i]=t[0];d0[i+1]=t[1];d0[i+2]=t[2]; dirty=true; }
+            }
+            if(dirty) g0.putImageData(id0,0,0);
+          }
+        }catch(e2){}
+        art[en.name]=cv0.toDataURL('image/png');
+      }catch(err){}
     }
   }
   const ROLE_OF={0:'',1:'kitchen',2:'bathroom',3:'work',4:'outside'};
@@ -3740,12 +4058,13 @@ async function importBundle(buf){
                               role:roleKeyName||undefined, objects, zones,
                               animal:sc.animal||undefined,
                               age:(sc.age||((worldAgeId()!=='adult')?worldAgeId():undefined)),
+                              wardrobe:(wdExport()||undefined),
                               character:{x:160,y:200,scalePercent:145} },
                  sceneName:sc.name||'', anims,
                  weather:{raining:!!(sc.env&&sc.env.rw), clouding:!!(sc.env&&sc.env.cn),
                           cloudN:(sc.env&&sc.env.cn)||3, cloudStyle:'shipped',
                           starsOn:!!(sc.env&&sc.env.st), starN:(sc.env&&sc.env.st)||18} };
-    slots[roleKeyName]=JSON.stringify(slot);
+    slots[roleKeyName+AGEKEY(sc.age)]=JSON.stringify(slot);
     if(firstRole===null) firstRole=roleKeyName;
   }
   // the median of what each clip measured - one world, one size
@@ -3779,6 +4098,12 @@ async function importBundle(buf){
   const wage=(scenes.find(x=>x.age)||{}).age;
   gWorldAge=(wage==='baby'||wage==='teen')?wage:'adult';
   { const sel=document.getElementById('worldAge'); if(sel) sel.value=gWorldAge; }
+  { const wwd=(scenes.find(x=>x.wardrobe)||{}).wardrobe;
+    if(wwd){
+      if(wwd.base) gWd.adult={base:wwd.base,shade:wwd.shade||wdShadeOf(wwd.base)}; // old shape
+      for(const ag of ['adult','baby','teen'])
+        if(wwd[ag]&&wwd[ag].base) gWd[ag]={base:wwd[ag].base,shade:wwd[ag].shade||wdShadeOf(wwd[ag].base)};
+      if(typeof wdSyncUI==='function') wdSyncUI(); wdRepaintAll(); } }
   const wa=(scenes.find(x=>x.animal)||{}).animal;
   if(wa && SD.characters && SD.characters[wa]){
     gWorldAnimal=wa;
@@ -3788,6 +4113,8 @@ async function importBundle(buf){
   }
   histPush(JSON.stringify(session));
   syncRule(); syncObj(); animalOptions(); draw(); autosave();
+  try{ const wn=await wdNormalizeClips();
+       if(wn) console.log('wardrobe: normalised '+wn+' imported frames'); }catch(e){}
   return {rooms, objs, moves, missingArt};
 }
 
@@ -4787,6 +5114,16 @@ async function buildPortPayload(setB, takenSlugs, extras){
 // ---- THE WORLD ---- one scene per room; "this room is" toggles between them.
 var worldSlots={};   // var: loop() can reach this before its line is evaluated
 const roleKey=()=>scene.role||'';
+// PER-AGE ASSEMBLIES (owner 8/26: "when i select an age it is a whole different
+// assembly... if i change the work room for baby it stays and if i scroll to adult, it
+// will be different"). A slot is (room role x age): adult keys stay bare so every old
+// save loads untouched; baby/teen variants live at 'work@baby'-style keys, mirroring
+// the firmware's scene-work-baby.json files exactly.
+const AGEKEY=a=>(a&&a!=='adult')?('@'+a):'';
+const slotKeyOf=(role,age)=>(role||'')+AGEKEY(age);
+const curSlotKey=()=>slotKeyOf(roleKey(), worldAgeId());
+const parseSlotKey=k=>{const i=(k||'').indexOf('@');
+  return i<0?{role:k||'',age:'adult'}:{role:k.slice(0,i),age:k.slice(i+1)}};
 // SWITCH THE WORLD'S ANIMAL (Jon: "a button to keep the objects and scenery and just
 // change the animal when it exports"): every animation's clip re-resolves to the chosen
 // species - rooms, objects, ground, rules, durations and words all stay. SD.characters
@@ -4868,10 +5205,54 @@ async function switchWorldAnimal(id){
       (kept?`, ${kept} kept their old art (reopen those in Animation Creation to re-dress them)`:'')+
       `. \u{1F4E6} ships it.`);
 }
-$('worldAge').onchange=e=>{
-  gWorldAge=e.target.value||'adult';
-  if(scene) scene.age=(gWorldAge!=='adult')?gWorldAge:undefined;
-  draw(); if(typeof autosave==='function') autosave();
+$('worldAge').onchange=async e=>{
+  // AN AGE IS A WHOLE ASSEMBLY (owner 8/26): switching age is walking into that age's
+  // copy of this room. First visit forks the room you were looking at as the starting
+  // point; after that each age keeps its own furniture, zones and animations.
+  const toAge=e.target.value||'adult', fromAge=gWorldAge||'adult';
+  if(toAge===fromAge) return;
+  const role=roleKey();
+  const fromKey=slotKeyOf(role, fromAge);
+  worldSlots[fromKey]=slotSnap();
+  const keep={...worldSlots};
+  const toKey=slotKeyOf(role, toAge);
+  const keepName=($('sceneName')&&$('sceneName').value)||'';
+  const keepLight={todMin, todOn, lampMode, lightScale};
+  const keepWx={raining, clouding, cloudN, cloudStyle, starsOn, starN};
+  gWorldAge=toAge;
+  if(keep[toKey]){
+    await restore(keep[toKey]);
+  } else if(toAge!=='adult'){
+    await restore(forkSlotFor(role, toAge, keep));   // forks from the adult's same room
+  } else {
+    const fork=JSON.parse(keep[fromKey]);
+    if(fork.scene) fork.scene.age=undefined;
+    await restore(JSON.stringify(fork));
+  }
+  worldSlots=keep;
+  gWorldAge=toAge;                       // restore() may replay another age; the selector rules
+  { const sel=$('worldAge'); if(sel) sel.value=toAge; }
+  if(scene) scene.age=(toAge!=='adult')?toAge:undefined;
+  if($('sceneName')) $('sceneName').value=keepName;
+  ({todMin, todOn, lampMode, lightScale}=keepLight);
+  $('tod').value=todMin; $('todl').textContent=hhmm(todMin);
+  $('lightOff').textContent='lighting: '+(todOn?'on':'off');
+  $('lightOff').classList.toggle('pri',!todOn);
+  $('lampM').textContent='lamps: '+lampMode;
+  $('lsz').value=Math.round(lightScale*100); $('lszl').textContent=Math.round(lightScale*100)+'%';
+  ({raining, clouding, cloudN, cloudStyle, starsOn, starN}=keepWx);
+  $('rn').classList.toggle('pri',raining); $('cl').classList.toggle('pri',clouding);
+  $('cn').value=cloudN; $('cnl').textContent=cloudN; $('cst').value=cloudStyle;
+  $('st').classList.toggle('pri',starsOn); $('stn').value=starN; $('stnl').textContent=starN;
+  rebuildClouds(); weatherInit(scene.room);
+  if(simOn) sim=null;                     // he decides afresh in this age's room
+  try{ for(const a of anims) if(a.on) await loadArtFor(a);
+       if(typeof loadTravelArt==='function') await loadTravelArt(); }catch(err){}
+  if(typeof wdSyncUI==='function') wdSyncUI();
+  syncRoleUI(); syncObj(); syncRule(); draw();
+  if(typeof autosave==='function') autosave();
+  say(toAge==='adult' ? 'the grown-up rooms' :
+      'the '+toAge+' rooms \u2014 changes here stay with this age; \u{1F4E6} ships every age');
 };
 $('worldAnimal').onchange=e=>{ const v=e.target.value; e.target.value='';
   if(v) switchWorldAnimal(v); };
@@ -4887,7 +5268,9 @@ function slotSnap(){
 function freshSlot(role){
   const room = role==='kitchen'  ? (SD.rooms['kitchen-bare']?'kitchen-bare':'kitchen')
              : role==='bathroom' ? (SD.rooms['washroom']?'washroom':Object.keys(SD.rooms)[0])
-             : role==='work'     ? (SD.rooms['construction']?'construction':Object.keys(SD.rooms)[0])
+             : role==='work'     ? (worldAgeId()==='baby'  && SD.rooms['daycare'] ? 'daycare'
+                                   : worldAgeId()==='teen'  && SD.rooms['school']  ? 'school'
+                                   : SD.rooms['construction']?'construction':Object.keys(SD.rooms)[0])
              : role==='outside'  ? (SD.rooms['meadow']?'meadow'
                                    :SD.rooms['garden']?'garden':Object.keys(SD.rooms)[0])
              : (SD.rooms['farmhouse']?'farmhouse':Object.keys(SD.rooms)[0]);
@@ -4900,10 +5283,28 @@ function freshSlot(role){
           weather:{raining:false, clouding:false, cloudN:3, cloudStyle:'shipped',
                    starsOn:false, starN:18}};
 }
+// A ROOM YOU ENTER IN A NEW AGE FORKS FROM THE ADULT'S (owner 8/26: "the only room
+// that transfered animations over was work which was the room i was in" - the other
+// rooms came up blank). The adult assembly is the base; an age's missing room starts
+// as a copy of the adult's same room, retagged, and only becomes its own the moment
+// it is edited. No adult version either = a genuinely fresh room.
+function forkSlotFor(role, age, slots){
+  const own=slots[slotKeyOf(role, age)];
+  if(own) return own;
+  const base=slots[slotKeyOf(role, 'adult')];
+  if(base && age!=='adult'){
+    try{
+      const f=JSON.parse(base);
+      if(f.scene) f.scene.age=age;
+      return JSON.stringify(f);
+    }catch(e){}
+  }
+  return JSON.stringify(freshSlot(role));
+}
 $('sceneRole').onchange=async e=>{
   const to=e.target.value||'', from=roleKey();
   if(to===from){ $('workLenRow').style.display=to==='work'?'':'none'; return; }
-  worldSlots[from]=slotSnap();          // the room we are leaving keeps itself
+  worldSlots[slotKeyOf(from, worldAgeId())]=slotSnap();   // the room we are leaving keeps itself
   const keep={...worldSlots};
   // THE WORLD IS ONE PLACE (Jon: "the name should persist from room to room",
   // "environmental stuff should persist from room to room"): the scene's name, clock,
@@ -4912,7 +5313,7 @@ $('sceneRole').onchange=async e=>{
   const keepName=($('sceneName')&&$('sceneName').value)||'';
   const keepLight={todMin, todOn, lampMode, lightScale};
   const keepWx={raining, clouding, cloudN, cloudStyle, starsOn, starN};
-  await restore(keep[to] || JSON.stringify(freshSlot(to)));
+  await restore(forkSlotFor(to, worldAgeId(), keep));
   worldSlots=keep;    // restore() replays the snapshot's OLD slots map; the live one wins
   if($('sceneName')) $('sceneName').value=keepName;
   ({todMin, todOn, lampMode, lightScale}=keepLight);
@@ -4964,9 +5365,9 @@ async function exportDevicePackage(){
   try{
     // ONE EXPORT, THE WHOLE WORLD (Jon: "toggle through each of them and do 1 export"):
     // every room the kid built ships together; a single-room world is the old package.
-    worldSlots[roleKey()]=slotSnap();
+    worldSlots[curSlotKey()]=slotSnap();
     const keepW={...worldSlots};
-    const cameFrom=roleKey();
+    const cameFrom=curSlotKey();
     const roles=Object.keys(keepW).filter(k=>{
       try{ const q=JSON.parse(keepW[k]);
         return q&&q.scene&&((q.scene.objects||[]).length||(q.anims||[]).length||(q.scene.zones||[]).length||k===cameFrom); }
@@ -6178,14 +6579,16 @@ async function restore(raw){
   const cellY=r=>OY+r*(H+NAME+GAP)+NAME;      // the name sits in the space above
   const KEY='bunbun-homemap'+((SKEY.match(/--(.+)$/)||[])[0]||'');
   let on=false; try{ on=STORE.getItem(KEY)==='1' }catch(e){}
-  function roomOf(role){                       // which picture that room wears
+  function roomOf(role){                       // which picture that room wears - THIS AGE's
     try{
       if(role===roleKey()) return scene.room;
-      const q=JSON.parse(worldSlots[role]||'null');
+      // the map shows the age you are building (owner 8/26: "make sure the minimap
+      // updates for age as well") - baby's rooms in a baby world, never the adult's
+      const q=JSON.parse(worldSlots[slotKeyOf(role, worldAgeId())]||'null');
       return q&&q.scene?q.scene.room:null;
     }catch(e){ return null }
   }
-  function exists(role){ return role===roleKey() || worldSlots[role]!=null }
+  function exists(role){ return role===roleKey() || worldSlots[slotKeyOf(role, worldAgeId())]!=null }
   // TAP A ROOM TO WORK ON IT. The map was a picture; a child pointing at the kitchen
   // expects to get the kitchen.
   cv.style.cursor='pointer';

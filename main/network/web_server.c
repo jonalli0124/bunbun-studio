@@ -1205,7 +1205,11 @@ static esp_err_t system_info_handler(httpd_req_t *req) {
     extern const char *bunbun_pet_id(void);
     extern const char *bunbun_pet_born(void);
     extern uint32_t    bunbun_pet_lost(void);
+    extern const char *bunbun_pet_name(void);
     cJSON_AddStringToObject(info, "pet_id", bunbun_pet_id());
+    // the NAME too (8/25): a rename lever without a wire readback made "did it take?"
+    // a question only the physical screen could answer
+    cJSON_AddStringToObject(info, "pet_name", bunbun_pet_name());
     cJSON_AddStringToObject(info, "pet_born", bunbun_pet_born());
     cJSON_AddNumberToObject(info, "pet_lost", bunbun_pet_lost());
     // (species idx already exposed below by the Stage-1 field; the ID string lives at

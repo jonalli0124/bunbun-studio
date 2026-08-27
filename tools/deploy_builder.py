@@ -25,7 +25,8 @@ PATH = "/spiffs/www/builder.html"
 # Every unit we know about. A host that is simply switched off reports "unreachable" and
 # does not fail the run; a host MISSING from this list is never checked at all, which is
 # how D468 sat on a 486-byte builder stub without anyone noticing.
-DEFAULT_HOSTS = ["bunbun-6D1C.local", "bunbun-D468.local", "192.168.1.52"]
+DEFAULT_HOSTS = ["192.168.1.148", "192.168.1.233", "bunbun-6D1C.local",
+                 "bunbun-D468.local"]
 
 
 def fetch(url, timeout=25, data=None):

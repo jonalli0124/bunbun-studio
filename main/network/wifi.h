@@ -77,6 +77,14 @@ void wifi_set_hostname(const char *device_name);
  * with client isolation). Returns 0 and copies the new SSID out. */
 int wifi_switch_next_known(char *out_ssid, size_t out_len);
 
+/* W-054 phase 2: the SETTINGS shelf's network picker. The serial `h` hop
+ * above is the door handle; these three are the door a parent can use.
+ * Remembered networks only - listing never scans. MRU order, newest first. */
+#define WIFI_KNOWN_MAX 5
+int wifi_known_list(char out[][33], int max);
+int wifi_switch_to_known(const char *ssid);
+int wifi_forget_known(const char *ssid);
+
 /* Apply credentials and join NOW, without a restart.
  *
  * /api/wifi/config saves and then reboots, which is fine over HTTP because the

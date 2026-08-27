@@ -53,7 +53,7 @@ static volatile bool s_force_portal;
  * need the setup portal just because it was on a phone hotspot yesterday.
  * Slots hold ssid ("n<i>s") and password ("n<i>p"); index 0 is newest.
  * ---------------------------------------------------------------------- */
-#define KNOWN_NET_MAX 5
+#define KNOWN_NET_MAX WIFI_KNOWN_MAX   /* the shelf's picker sizes its rows off wifi.h */
 #define KNOWN_NVS_NS "wifinets"
 
 static volatile bool s_rescue_running = false;
@@ -159,6 +159,93 @@ int wifi_switch_next_known(char *out_ssid, size_t out_len) {
   esp_wifi_set_config(WIFI_IF_STA, &wc);
   esp_wifi_connect();
   return 0;
+}
+
+static int known_lookup(const char *ssid, char *pass, size_t pc);
+
+/* W-054 phase 2 (approved 8/10, spec ratified by council 8/14): the picker's
+ * backend. The shelf lists what is remembered, joins a named one, forgets a
+ * named one. No scan anywhere in this path - the list is only ever what the
+ * family already taught the unit. */
+int wifi_known_list(char out[][33], int max) {
+  nvs_handle_t h;
+  if (nvs_open(KNOWN_NVS_NS, NVS_READONLY, &h) != ESP_OK) {
+    return 0;
+  }
+  int n = 0;
+  for (int i = 0; i < KNOWN_NET_MAX && n < max; i++) {
+    char p[65];
+    if (known_get(h, i, out[n], 33, p, sizeof(p)) == 0) {
+      n++;
+    }
+  }
+  nvs_close(h);
+  return n;
+}
+
+int wifi_switch_to_known(const char *ssid) {
+  char pass[65] = {0};
+  if (!ssid || !ssid[0] || known_lookup(ssid, pass, sizeof(pass)) != 0) {
+    return -1;
+  }
+  /* Same three calls the hop has always used - promote to the active
+   * credentials, then reconnect at the named network. */
+  settings_set_wifi_credentials(ssid, pass);
+  ESP_LOGI(TAG, "Known networks: joining '%s' by name", ssid);
+  wifi_config_t wc = {0};
+  strlcpy((char *)wc.sta.ssid, ssid, sizeof(wc.sta.ssid));
+  strlcpy((char *)wc.sta.password, pass, sizeof(wc.sta.password));
+  esp_wifi_disconnect();
+  esp_wifi_set_config(WIFI_IF_STA, &wc);
+  esp_wifi_connect();
+  return 0;
+}
+
+int wifi_forget_known(const char *ssid) {
+  if (!ssid || !ssid[0]) {
+    return -1;
+  }
+  nvs_handle_t h;
+  if (nvs_open(KNOWN_NVS_NS, NVS_READWRITE, &h) != ESP_OK) {
+    return -1;
+  }
+  char ss[KNOWN_NET_MAX][33] = {0};
+  char pp[KNOWN_NET_MAX][65] = {0};
+  int n = 0, had = 0;
+  for (int i = 0; i < KNOWN_NET_MAX; i++) {
+    char s[33], p[65];
+    if (known_get(h, i, s, sizeof(s), p, sizeof(p)) != 0) {
+      continue;
+    }
+    if (strcmp(s, ssid) == 0) {
+      had = 1;
+      continue;
+    }
+    strlcpy(ss[n], s, sizeof(ss[n]));
+    strlcpy(pp[n], p, sizeof(pp[n]));
+    n++;
+  }
+  if (had) {
+    /* clear every slot, then rewrite compacted - a forget in the middle must
+     * not leave a hole that known_get() reads as end-of-list */
+    char key[12];   /* 8 fits, but -Wformat-truncation can't see the loop bound */
+    for (int i = 0; i < KNOWN_NET_MAX; i++) {
+      snprintf(key, sizeof(key), "n%ds", i);
+      nvs_erase_key(h, key);
+      snprintf(key, sizeof(key), "n%dp", i);
+      nvs_erase_key(h, key);
+    }
+    for (int i = 0; i < n; i++) {
+      snprintf(key, sizeof(key), "n%ds", i);
+      nvs_set_str(h, key, ss[i]);
+      snprintf(key, sizeof(key), "n%dp", i);
+      nvs_set_str(h, key, pp[i]);
+    }
+    nvs_commit(h);
+    ESP_LOGI(TAG, "Known networks: '%s' forgotten (%d on file)", ssid, n);
+  }
+  nvs_close(h);
+  return had ? 0 : -1;
 }
 
 esp_err_t wifi_apply_credentials_now(const char *ssid, const char *password) {

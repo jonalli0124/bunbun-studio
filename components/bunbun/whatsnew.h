@@ -6,8 +6,7 @@
 // The nightly autoship pipeline overwrites this line when it ships wishes, so
 // the morning after a wish comes true, bunbun says so itself. Keep it short —
 // it is a ticker, not a changelog. Empty string = say nothing.
-// Menu redesign P3: the buttons at the bottom became four big doors, and the
-// arrow keys went away entirely — the largest single change to how the device
-// is held. The kids get told, in bunbun's own voice; say() swaps the sign-off
-// for the pet's name.
-#define BUNBUN_WHATSNEW "four big buttons at the bottom now - tap CARE for me, love bunbun"
+// W-054 phase 2 shipped: the NETWORKS picker on the gear shelf (plus the cat
+// keeps her nap spot now, and music sounds right the moment he wakes). The
+// picker is the family-visible half, so the ticker tells that one.
+#define BUNBUN_WHATSNEW "bunbun can switch wifi from his gear shelf now - no more being stuck"

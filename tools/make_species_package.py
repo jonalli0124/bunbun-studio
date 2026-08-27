@@ -20,7 +20,8 @@ FULL_PAK = pathlib.Path("C:/Users/Jon/Documents/PlatformIO/Projects/bunbun_s3/as
 if not FULL_PAK.exists():                       # the public repo builds it in-tree
     FULL_PAK = REPO / "pak-factory" / "bunbun.pak"
 OUT = REPO / "tools" / "build" / "species"
-SPECIES = ["capybara", "bunny", "cat", "dog", "frog", "penguin"]
+SPECIES = ["capybara", "bunny", "cat", "dog", "frog", "penguin",
+           "croc", "frill", "spark", "imp"]
 
 
 def parse(b):

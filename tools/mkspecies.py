@@ -85,17 +85,21 @@ SPEC_BABY = {
     "baby-sit":         (5, ("rot",  "Baby_Sit", "south")),
     "baby-sit-n":       (1, ("rot",  "Baby_Sit", "north")),
     "baby-sleep":       (5, ("rot",  "Baby_Sleep", "south")),
-    "baby-jump":        (5, ("rot",  "Baby_Sit", "south")),
+    # OWNER RULING 2026-08-25: a jumping baby is the Baby_Happy hop, not a seated pose
+    # arcing through the air. Every pack has Baby_Happy since the happy fill-in.
+    "baby-jump":        (5, ("anim", "Baby_Happy")),
     "baby-crawl-south": (5, ("rot",  "Baby_Crawl", "south")),
     "baby-crawl-north": (5, ("rot",  "Baby_Crawl", "north")),
-    "baby-crawl-west":  (5, ("anim", "Baby_Crawl_West")),
-    "baby-crawl-east":  (5, ("anim", "Baby_Crawl_East")),
+    # THE DIAGONAL RULING (2026-08-25): baby crawls ship as diagonals only; E/W wear
+    # the SE/SW art. The old _East/_West names stay as fallbacks for the pilot packs.
+    "baby-crawl-west":  (5, ("anim", ("Baby_Crawl_SouthWest", "Baby_Crawl_West"))),
+    "baby-crawl-east":  (5, ("anim", ("Baby_Crawl_SouthEast", "Baby_Crawl_East"))),
     # a capybara baby moves by crawling; the walk keys reuse the crawl art so a mid-phase
     # walker never flashes back into a bunny
     "baby-walk-south":  (5, ("rot",  "Baby_Crawl", "south")),
     "baby-walk-north":  (5, ("rot",  "Baby_Crawl", "north")),
-    "baby-walk-west":   (5, ("anim", "Baby_Crawl_West")),
-    "baby-walk-east":   (5, ("anim", "Baby_Crawl_East")),
+    "baby-walk-west":   (5, ("anim", ("Baby_Crawl_SouthWest", "Baby_Crawl_West"))),
+    "baby-walk-east":   (5, ("anim", ("Baby_Crawl_SouthEast", "Baby_Crawl_East"))),
     "baby-eat":         (5, ("anim", "Baby_Eat")),
     "baby-bath":        (5, ("anim", "Baby_Bathe")),
     "baby-tired":       (5, ("anim", "Baby_Tired")),
@@ -105,12 +109,37 @@ SPEC_BABY = {
     "baby-angry":       (5, ("anim", "Baby_Angry")),
     "baby-sick":        (4, ("anim", "Baby_Sick")),
     "baby-cuddle":      (5, ("anim", "Baby_Love")),
-    "baby-play":        (5, ("anim", "Baby_Love")),
+    "baby-play":        (5, ("anim", ("Baby_Play", "Baby_Love"))),
+}
+# THE TEEN SET (owner 8/26: "finish the teen phases and get it incorporated"). Mirror of
+# count and type of the adult roster - walks not crawls, his own art. teen-text keeps the
+# base-bunny fallback deliberately: the roster has no phone clip and the owner's mirror
+# rule doesn't include one. Fallback tuples land on the adult clip until the teen art is
+# signed and installed, so a half-installed pack never goes blank.
+SPEC_TEEN = {
+    "teen-idle":        (5, ("rot",  "Teen_Idle", "south")),
+    "teen-sleep":       (5, ("rot",  ("Teen_Sleep", "Adult_Sleep"), "south")),
+    "teen-eat":         (5, ("anim", ("Teen_Eat", "Adult_Eat"))),
+    "teen-bath":        (5, ("anim", ("Teen_Bathe", "Adult_Bathe"))),
+    "teen-angry":       (5, ("anim", ("Teen_Angry", "Adult_Angry"))),
+    "teen-sick":        (5, ("anim", ("Teen_Sick", "Adult_Sick"))),
+    "teen-bored":       (5, ("anim", ("Teen_Bored", "Adult_Bored"))),
+    "teen-tired":       (5, ("anim", ("Teen_Tired", "Adult_Tired"))),
+    "teen-love":        (5, ("anim", ("Teen_Love", "Adult_Love"))),
+    "teen-hungry":      (5, ("anim", ("Teen_Hungry", "Adult_Hungry"))),
+    "teen-play":        (5, ("anim", ("Teen_Play", "Adult_Play", "Adult_Happy", "Adult_Love"))),
+    "teen-dance":       (9, ("anim", ("Teen_Dance", "Adult_Dance", "Adult_Happy", "Adult_Love"))),
+    "teen-cuddle":      (9, ("anim", ("Teen_Love", "Adult_Love"))),
+    "teen-walk-east":   (5, ("anim", ("Teen_Walk_East", "Adult_Walk_East"))),
+    "teen-walk-west":   (5, ("anim", ("Teen_Walk_West", "Adult_Walk_West"))),
+    "teen-walk-south":  (5, ("anim", ("Teen_Walk_SouthEast", "Adult_Walk_SouthEast"))),
+    "teen-walk-north":  (5, ("anim", ("Teen_Walk_NorthEast", "Adult_Walk_NorthEast"))),
 }
 # keys the base pack has that no recipe covers - printed so the fallback is a decision,
 # never a surprise
-KNOWN_FALLBACKS = ["baby-* (retired, not generated)", "work-basket", "work-drive", "work-dig", "work-carrot", "teen-* (all)",
-                   "school-*", "teen-dance", "baby-fall-west/east", "egg (shared, correct)"]
+KNOWN_FALLBACKS = ["work-basket", "work-drive", "work-dig", "work-carrot",
+                   "teen-* (all but teen-idle)", "school-*", "teen-dance",
+                   "baby-fall-west/east", "egg (shared, correct)"]
 
 PAK_NAME_MAX = 31
 
@@ -131,10 +160,9 @@ def main():
     if out.exists():
         shutil.rmtree(out)          # a rebuild replaces, never accumulates
     written, missing = 0, []
-    # ADULT ONLY (Jon 8/19: "strip all baby we only have adults"). SPEC_BABY is kept
-    # below as the record of how the baby set was built, but nothing generates it any
-    # more - regenerating a pack used to quietly put all 25 baby clips back.
-    for folder, (count, recipe) in SPEC_ADULT.items():
+    # BABIES ARE BACK (Jon 2026-08-25: the growth spec - a baby becomes an adult at
+    # five hearts; supersedes the 8/19 adult-only strip). Both phase sets generate.
+    for folder, (count, recipe) in {**SPEC_ADULT, **SPEC_BABY, **SPEC_TEEN}.items():
         # best-first: the first alternative this pack actually carries
         names = recipe[1] if isinstance(recipe[1], tuple) else (recipe[1],)
         clip, chosen = None, None

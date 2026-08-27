@@ -3,7 +3,23 @@ from io import BytesIO
 from PIL import Image
 from repo_paths import species_dir, OBJECTS, ROOMS as ROOMDIR, TOOLS
 C=species_dir()
-FUR={(0xbe,0x73,0x30),(0x80,0x4d,0x36)}; TUN={(0x91,0x51,0xd3),(0x5d,0x22,0x9d)}
+FUR={(0xbe,0x73,0x30),(0x80,0x4d,0x36)}
+# The garment anchor pair(s) come from tools/wardrobe.json - every pair the wardrobe has
+# ever worn, unioned, so hand detection survives every swap and every revert. The
+# hardcoded fallback keeps an old checkout working if the json is missing.
+def _hx(h):
+    h=h.lstrip('#'); return tuple(int(h[i:i+2],16) for i in (0,2,4))
+TUN={(0x91,0x51,0xd3),(0x5d,0x22,0x9d),(0x82,0xc4,0xea),(0x4c,0x7f,0xb5)}
+WARDROBE={"adult":{"base":"#82c4ea","shade":"#4c7fb5"},
+          "baby":{"base":"#82c4ea","shade":"#4c7fb5"},"teen":None}
+try:
+    _w=json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)),'wardrobe.json')))
+    WARDROBE=_w.get('pairs',WARDROBE)
+    for pair in list(WARDROBE.values())+_w.get('history',[]):
+        if pair and pair.get('base'):
+            TUN.add(_hx(pair['base'])); TUN.add(_hx(pair['shade']))
+except Exception:
+    pass
 def anchors(im, generic=False):
     # generic=True is for OTHER ANIMALS (Jon 8/18: "same animations but different
     # animals"): the tunic purples are the style-lock and shared across every pack, but
@@ -176,8 +192,32 @@ if os.path.isdir(ROOMS):
         uri,_=b64(os.path.join(ROOMS,f))
         rooms[os.path.splitext(f)[0]]=uri
 
+# THE WARDROBE GUARD (owner 8/26: "the reason we did purple because it was distinct from
+# the skin color of the animals"): the picker must know every species' own colours, so a
+# pick that collides with fur can be warned about (legibility) or refused (a later swap
+# away from a fur-identical pair would grab the fur too). Top body colours per species,
+# sampled from the idle south view, garment pair and outline excluded.
+bodyColors={}
+for spname in (d for d in sorted(os.listdir(C)) if os.path.isdir(os.path.join(C,d))):
+    counts={}
+    for probe in ('Adult_Idle','Baby_Onesie'):
+        pth=os.path.join(C,spname,probe,'south.png')
+        if not os.path.exists(pth): continue
+        im=Image.open(pth).convert('RGBA')
+        for pxl in im.getdata():
+            r,g,b,al=pxl
+            if al>200 and (r,g,b) not in TUN and r+g+b>60:
+                counts[(r,g,b)]=counts.get((r,g,b),0)+1
+    bodyColors[spname]=[('#%02x%02x%02x'%c) for c,_ in
+                        sorted(counts.items(),key=lambda kv:-kv[1])[:6]]
+
 out=os.path.join(TOOLS,'build','attach_data.json')
 json.dump({"clips":clips,"characters":characters,"props":props,"rooms":rooms,
+           "wardrobe":WARDROBE,"bodyColors":bodyColors,
+           "wardrobeHistory":sorted(set('#%02x%02x%02x'%c for c in TUN)),
+           "wardrobeHistoryPairs":(lambda w: [pr for pr in
+               (list((w or {}).get('pairs',{}).values())+ (w or {}).get('history',[]))
+               if pr and pr.get('base')])(_w if '_w' in dir() else None),
            "scr":{"w":320,"h":240,"floor":200}},open(out,'w'))
 print(f"{len(clips)} clips, {len(characters)} extra animals, {len(props)} props, {len(rooms)} rooms -> {round(os.path.getsize(out)/1024)} KB")
 print("clips: " + ", ".join(clips))

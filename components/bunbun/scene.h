@@ -52,6 +52,28 @@ static inline bool sceneRoomHolds(uint8_t r) {
 static const char *SCENE_ROLE_PATHS[SCENE_ROLE_N] = {
   SCENE_PATH, "/spiffs/scene-kitchen.json", "/spiffs/scene-bathroom.json",
   "/spiffs/scene-work.json", "/spiffs/scene-outside.json"};
+// PER-AGE ROOMS (owner 8/25: "select animal and age so we can do different rooms based on
+// their age"). A world may ship a phase variant of any role file - scene-baby.json,
+// scene-kitchen-baby.json - and the pet's phase picks it, falling back to the plain file,
+// so a world with no baby rooms behaves exactly as before. main.cpp owns the suffix (set
+// at boot and on every phase change) because scene.h cannot see S.phase from here.
+static char g_scPhaseSuffix[8] = "";
+// the file that WOULD load for a role right now: the phase variant when it exists,
+// else the plain one. Returns false when neither is on the filesystem.
+static bool sceneRoleFile(uint8_t r, char *out, size_t cap) {
+  const char *base = SCENE_ROLE_PATHS[r];
+  if (g_scPhaseSuffix[0]) {
+    size_t n = strlen(base);                       // every path ends ".json"
+    snprintf(out, cap, "%.*s%s.json", (int)(n - 5), base, g_scPhaseSuffix);
+    FILE *p = fopen(out, "rb");
+    if (p) { fclose(p); return true; }
+  }
+  snprintf(out, cap, "%s", base);
+  FILE *f = fopen(out, "rb");
+  if (!f) return false;
+  fclose(f);
+  return true;
+}
 static uint8_t g_scCurRole  = SCENE_ROLE_MAIN;   // which room he is IN
 static uint8_t g_scLoadRole = SCENE_ROLE_MAIN;   // which file sceneLoad() reads
 static bool    g_scRoleAvail[SCENE_ROLE_N] = {false, false, false, false, false};
@@ -85,7 +107,8 @@ static const char SCENE_DEFAULT_OUTSIDE[] =
 static void sceneRolesScan() {
   for (int r = 0; r < SCENE_ROLE_N; r++) {
     g_scRoleActs[r] = 0;
-    FILE *f = fopen(SCENE_ROLE_PATHS[r], "rb");
+    char rp[48];
+    FILE *f = sceneRoleFile(r, rp, sizeof(rp)) ? fopen(rp, "rb") : nullptr;
     g_scRoleAvail[r] = (f != nullptr) || (r == SCENE_ROLE_OUTSIDE && g_scMeadow);
     if (!f) continue;      // the default outside declares no acts, so nothing to scan
     fseek(f, 0, SEEK_END);
@@ -385,6 +408,18 @@ static uint32_t g_scNextTry = 0;
 // spiffs_storage component and bunbun's task can start before that mount lands, so on a real
 // device all three tries fell before the mount and the scene stayed invisible until the next
 // reboot - which is exactly what happened on 6D1C. A failed fopen costs nothing; keep looking.
+// Phase change = a different set of room files. Clearing g_scOK sends sceneEnsure back to
+// the filesystem on the next tick, so the room swaps live at graduation (and at the bench
+// levers) instead of waiting for a reboot. Returns true when the suffix actually changed.
+static bool sceneSetPhaseSuffix(const char *s) {
+  if (!strcmp(g_scPhaseSuffix, s)) return false;
+  strncpy(g_scPhaseSuffix, s, sizeof(g_scPhaseSuffix) - 1);
+  g_scPhaseSuffix[sizeof(g_scPhaseSuffix) - 1] = 0;
+  g_scOK = false;
+  g_scTries = 0;
+  g_scNextTry = 0;
+  return true;
+}
 static void sceneEnsure() {
   if (g_scOK) return;
   uint32_t now = millis();
@@ -428,7 +463,8 @@ static bool sceneLoad() {
   g_scLineN = 0;
   g_scTravel = 0;
 
-  FILE *f = fopen(SCENE_ROLE_PATHS[g_scLoadRole], "rb");
+  char lp[48];
+  FILE *f = sceneRoleFile(g_scLoadRole, lp, sizeof(lp)) ? fopen(lp, "rb") : nullptr;
   if (!f) {
     if (g_scLoadRole == SCENE_ROLE_OUTSIDE && g_scMeadow) {
       return sceneParseJson(SCENE_DEFAULT_OUTSIDE);
@@ -443,7 +479,7 @@ static bool sceneLoad() {
   if (len > SCENE_MAX_BYTES) {
     fclose(f);
     Serial.printf("scene: %s is %ld bytes - the limit is %d. NOT loading it.\n",
-                  SCENE_ROLE_PATHS[g_scLoadRole], (long)len, SCENE_MAX_BYTES);
+                  lp, (long)len, SCENE_MAX_BYTES);
     g_scTooBig = true;
     return false;
   }
