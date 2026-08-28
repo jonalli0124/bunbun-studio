@@ -1,0 +1,380 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Set Up Your Bunbun</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Public+Sans:wght@400;500;700&family=JetBrains+Mono:wght@400;700&display=swap">
+<script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+<style>
+:root{
+  --paper:#F1F3F6; --surface:#FFF; --surface-2:#E7EBF1;
+  --ink:#151B23; --ink-2:#4A5563; --ink-3:#77828F; --rule:#D3DAE3;
+  --accent:#3A6EA5; --accent-soft:#E3ECF6;
+  --warn:#B25309; --warn-soft:#FBEBDD;
+  --safe:#2C6A4A;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --paper:#111620; --surface:#19202B; --surface-2:#212A38;
+  --ink:#E2E7EE; --ink-2:#A7B2C0; --ink-3:#7C8797; --rule:#2C3644;
+  --accent:#79A8DC; --accent-soft:#1B2735;
+  --warn:#E0904B; --warn-soft:#2E2113;
+  --safe:#68C08F;
+}}
+:root[data-theme="dark"]{
+  --paper:#111620; --surface:#19202B; --surface-2:#212A38;
+  --ink:#E2E7EE; --ink-2:#A7B2C0; --ink-3:#7C8797; --rule:#2C3644;
+  --accent:#79A8DC; --accent-soft:#1B2735;
+  --warn:#E0904B; --warn-soft:#2E2113;
+  --safe:#68C08F;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);
+  font-family:"Public Sans",system-ui,sans-serif;font-size:17px;line-height:1.6}
+.wrap{max-width:40rem;margin:0 auto;padding:48px 22px 80px}
+h1{font-family:"Bricolage Grotesque","Public Sans",sans-serif;font-weight:800;
+  font-size:clamp(2rem,6vw,2.8rem);line-height:1.05;letter-spacing:-.02em;margin:0;text-wrap:balance}
+h2{font-family:"Bricolage Grotesque","Public Sans",sans-serif;font-weight:700;
+  font-size:1.15rem;margin:0}
+p{margin:0}
+.eyebrow{font-family:"JetBrains Mono",monospace;font-size:.7rem;font-weight:700;
+  letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3);margin-bottom:14px}
+.lede{color:var(--ink-2);margin-top:16px;font-size:1.05rem}
+code{font-family:"JetBrains Mono",monospace;font-size:.87em;background:var(--surface-2);
+  padding:.12em .38em;border-radius:3px}
+
+.cta{margin:34px 0;padding:26px;border:1px solid var(--rule);border-radius:10px;
+  background:var(--surface);text-align:center;
+  box-shadow:0 1px 2px rgba(21,27,35,.06),0 10px 28px -14px rgba(21,27,35,.22)}
+esp-web-install-button{--esp-tools-button-color:#fff;--esp-tools-button-text-color:#fff}
+.unsupported{color:var(--warn);font-size:.95rem}
+.hint{margin-top:14px;color:var(--ink-3);font-size:.86rem}
+
+ol{margin:0;padding-left:0;list-style:none;display:flex;flex-direction:column;gap:18px;counter-reset:s}
+ol li{counter-increment:s;display:grid;grid-template-columns:30px 1fr;gap:0 16px;align-items:start}
+ol li::before{content:counter(s);font-family:"JetBrains Mono",monospace;font-weight:700;
+  font-size:.8rem;width:30px;height:30px;border-radius:5px;background:var(--ink);color:var(--paper);
+  display:flex;align-items:center;justify-content:center}
+ol li div{display:flex;flex-direction:column;gap:5px}
+ol li small{color:var(--ink-2);font-size:.92rem;line-height:1.5}
+
+.pw{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;align-items:baseline;
+  margin-top:10px;padding:12px 14px;background:var(--accent-soft);border:1px solid var(--rule);
+  border-radius:7px;width:fit-content}
+.pw span{font-family:"JetBrains Mono",monospace;font-size:.63rem;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--ink-3)}
+.pw b{font-family:"JetBrains Mono",monospace;font-size:1rem;color:var(--ink);letter-spacing:.01em}
+.pick{border:1px solid var(--rule);background:var(--accent-soft);border-radius:10px;
+  padding:20px 22px;display:flex;flex-direction:column;gap:11px;margin:0 0 34px}
+.pick .lbl{font-family:"JetBrains Mono",monospace;font-size:.68rem;font-weight:700;
+  letter-spacing:.13em;text-transform:uppercase;color:var(--accent)}
+.pick p{font-size:.95rem;color:var(--ink-2)}
+.pick strong{color:var(--ink)}
+.devname{font-family:"JetBrains Mono",monospace;font-size:1rem;font-weight:700;
+  color:var(--ink)!important;background:var(--surface);border:1px solid var(--rule);
+  border-radius:6px;padding:12px 14px;text-align:center;overflow-x:auto;white-space:nowrap}
+.reassure{font-size:.88rem;color:var(--ink-3)!important;border-top:1px solid var(--rule);
+  padding-top:11px;margin-top:2px}
+.note{border-left:4px solid var(--warn);background:var(--warn-soft);padding:15px 18px;
+  border-radius:0 7px 7px 0;display:flex;flex-direction:column;gap:8px;margin:30px 0}
+.note .lbl{font-family:"JetBrains Mono",monospace;font-size:.68rem;font-weight:700;
+  letter-spacing:.13em;text-transform:uppercase;color:var(--warn)}
+section{margin-top:44px;display:flex;flex-direction:column;gap:16px}
+.foot{margin-top:56px;padding-top:20px;border-top:2px solid var(--ink);
+  color:var(--ink-3);font-size:.85rem}
+a{color:var(--accent)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="eyebrow">bunbun · first-time setup</div>
+  <h1>Set up your bunbun</h1>
+  <p class="lede">This wipes the toy completely and puts a fresh one on it — the firmware, a
+  ready-made world to live in, and a brand-new egg. Nothing to download and nothing to install.
+  It takes about two minutes.</p>
+
+  <div class="cta">
+    <esp-web-install-button manifest="manifest.json">
+      <button slot="activate" style="font:600 17px 'Public Sans',sans-serif;background:#3A6EA5;
+        color:#fff;border:0;border-radius:8px;padding:15px 34px;cursor:pointer">
+        Plug in the cable, then click here
+      </button>
+      <span slot="unsupported" class="unsupported">
+        This browser can't talk to the toy. Open this page in <strong>Chrome</strong> or
+        <strong>Edge</strong> on a computer — phones and tablets can't do it.
+      </span>
+      <span slot="not-allowed" class="unsupported">
+        This page has to be opened over https to reach the cable.
+      </span>
+    </esp-web-install-button>
+    <p class="hint">A small window will ask which device to use — see below for which one.</p>
+  </div>
+
+  <div class="cta" id="wifi-card">
+    <h2 style="margin:0 0 6px">Rather use the cable?</h2>
+    <p style="font-size:.95rem;color:var(--ink-2);margin-bottom:14px">Optional. If the cable is
+    still plugged in and you are on Chrome or Edge, you can hand over the wifi from here instead
+    of using your phone. Same result either way.</p>
+    <div id="wifi-form" style="display:flex;flex-direction:column;gap:10px;max-width:22rem;margin:0 auto">
+      <input id="wifi-ssid" placeholder="Network name" autocomplete="off"
+             style="font:15px 'Public Sans',sans-serif;padding:11px 13px;border:1px solid var(--rule);
+                    border-radius:7px;background:var(--surface);color:var(--ink)">
+      <input id="wifi-pass" placeholder="Password" type="password" autocomplete="off"
+             style="font:15px 'Public Sans',sans-serif;padding:11px 13px;border:1px solid var(--rule);
+                    border-radius:7px;background:var(--surface);color:var(--ink)">
+      <button id="wifi-go" style="font:600 16px 'Public Sans',sans-serif;background:var(--accent);
+              color:#fff;border:0;border-radius:8px;padding:13px 20px;cursor:pointer">
+        Send it to the toy</button>
+    </div>
+    <p id="wifi-msg" class="hint" style="margin-top:12px"></p>
+  </div>
+
+  <div class="pick">
+    <span class="lbl">Which one do I pick?</span>
+    <p>The window that opens lists everything plugged into your computer. The toy is the one
+    called:</p>
+    <p class="devname">USB JTAG/serial debug unit</p>
+    <p>On a Mac it may be <strong>USB JTAG/serial debug unit</strong> or
+    <strong>usbmodem</strong> followed by some numbers. On Windows it will have a
+    <strong>COM</strong> number after it, like <code>(COM26)</code> — the number is different on
+    every computer and doesn't matter.</p>
+    <p><strong>Still not sure?</strong> Close the window, unplug the toy, and open it again.
+    Whichever entry vanished is the toy. Plug it back in and pick that one.</p>
+    <p class="reassure">Picking the wrong one is harmless — it simply fails to connect and
+    nothing is written. Close it and try the other.</p>
+  </div>
+
+  <section>
+    <h2>What happens</h2>
+    <ol>
+      <li><div><strong>Plug the toy into your computer</strong>
+        <small>Use a USB cable that carries data — a charge-only cable will not show up.
+        Plug it into the toy's own socket, not a separate power brick.</small></div></li>
+      <li><div><strong>Click the button and choose the device</strong>
+        <small>Look for <strong>USB JTAG/serial debug unit</strong>. Getting it wrong is
+        harmless — it just fails to connect, and you try the other one.</small></div></li>
+      <li><div><strong>Say yes to erasing</strong>
+        <small>It offers to wipe the device first. Say yes — that is the whole point, and it is
+        what makes this a clean start.</small></div></li>
+      <li><div><strong>Wait about a minute and a half</strong>
+        <small>A progress bar runs while six pieces are written. Do not unplug it.</small></div></li>
+      <li><div><strong>Connect it to your wifi</strong>
+        <small>When it restarts it makes its own little network called <code>bunbun-XXXX</code>
+        (the letters change from toy to toy). Join it from your phone or laptop — the password
+        is below — and a page opens asking for your home wifi. That is the last step; after
+        this the toy runs on its own and the cable can go away.</small>
+        <div class="pw"><span>network</span><b>bunbun-XXXX</b><span>password</span><b>bunbunbun</b></div>
+        </div></li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>One last thing — tell it the time, once</h2>
+    <p>Right after it joins your wifi, tap the <strong>clock</strong> on the toy and set the
+    current time. You only ever do this once.</p>
+    <p>It knows how to get the time from the internet, but it will not use it until somebody has
+    shown it what the time is where you live — otherwise a toy in Texas would confidently display
+    London time. That one setting teaches it your timezone, and every restart from then on syncs
+    itself without asking.</p>
+    <p class="hint" style="margin-top:4px">Symptom if you skip it: the toy is on wifi, and the
+    clock is still wrong.</p>
+  </section>
+
+  <div class="note">
+    <span class="lbl">This erases everything on the toy</span>
+    <p>Any pet living on it now is gone for good, along with its age, its name and any wishes
+    still waiting on it. There is no undo. If this toy already has a pet somebody cares about,
+    stop here and ask Jon first.</p>
+  </div>
+
+  <section>
+    <h2>When it is finished</h2>
+    <p>You get a penguin in a five-room world — a farmhouse, a kitchen, a washroom, a building
+    site and a beach — with a cat that comes to visit and a clock on the wall. The egg hatches
+    when someone taps it.</p>
+    <p>That world is a starting point, not a limit. Once the toy is on your wifi you can build
+    your own rooms in the browser and send them over, and the pet keeps its age and name when
+    you do.</p>
+  </section>
+
+  <section>
+    <h2>Just want the world files?</h2>
+    <p>If your bunbun is already set up and you only want the starter world on it, you don't
+    need the cable at all. Download these and drop them onto <code>http://bunbun-XXXX.local/build</code>
+    — <strong>world first, then the cat</strong>, because installing a world replaces all the
+    art and no world carries her.</p>
+    <ul style="padding-left:20px;margin:0;display:flex;flex-direction:column;gap:8px">
+      <li><a href="packages/penguin-life.bunbun" download>penguin-life.bunbun</a> — the
+      five-room starter world with the penguin</li>
+      <li><a href="packages/visiting-cat.bunbun" download>visiting-cat.bunbun</a> — the cat's
+      art; install second</li>
+    </ul>
+    <p class="hint" style="margin-top:6px">Your pet keeps its age and name — worlds change
+    around him, he stays himself.</p>
+  </section>
+
+  <div class="foot">
+    <p>Works in Chrome and Edge on Windows, macOS and Linux. If the button says your browser
+    is unsupported, that is the reason. Firmware 0.1.291.</p>
+  </div>
+
+</div>
+
+<script>
+// Improv Wi-Fi Serial, written out here rather than leaning on the installer's own attempt.
+//
+// ESP Web Tools probes for Improv by REUSING the port handle it flashed through. On an
+// ESP32-S3 the USB is on the chip itself, so the reset at the end of flashing re-enumerates the
+// device and that handle dies — the COM name comes back, the stream does not. Its probe then
+// times out, `_client` stays null, and the wifi step is skipped without saying why. That is the
+// "Next → Complete, no wifi" you get on this board.
+//
+// Picking the port again gives a brand-new handle, which works. So this is the same protocol,
+// driven from a fresh connection, after the install is over.
+const HDR = [73,77,80,82,79,86];               // "IMPROV"
+const T_STATE=1, T_ERROR=2, T_RPC=3, T_RESULT=4;
+const C_WIFI=1, C_STATE=3;
+
+function frame(type, data){
+  const b=[...HDR,1,type,data.length,...data];
+  return new Uint8Array([...b, b.reduce((a,c)=>(a+c)&255,0)]);
+}
+function parse(buf){
+  const out=[]; let i=0;
+  while(i<buf.length){
+    let j=-1;
+    for(let k=i;k<=buf.length-10;k++){ if(HDR.every((h,n)=>buf[k+n]===h)){ j=k; break; } }
+    if(j<0) break;
+    const len=buf[j+8], end=j+9+len+1;
+    if(end>buf.length) break;
+    const p=buf.slice(j,end);
+    let sum=0; for(let k=0;k<p.length-1;k++) sum=(sum+p[k])&255;
+    if(sum===p[p.length-1]) out.push({type:p[7], data:p.slice(9,9+len)});
+    i=end;
+  }
+  return out;
+}
+function strs(d){                               // RPC result payload -> array of strings
+  const out=[]; let p=2;
+  // d comes out of parse(), which slices the accumulator — and that is a plain Array of
+  // numbers, not a typed array, so .slice() gives an Array back. TextDecoder only accepts an
+  // ArrayBuffer or a TypedArray and throws on a plain Array, which is where
+  // "parameter 1 is not of type 'ArrayBuffer'" came from. Wrap it.
+  while(p<d.length){ const n=d[p++]; if(p+n>d.length) break;
+    out.push(new TextDecoder().decode(new Uint8Array(d.slice(p,p+n)))); p+=n; }
+  return out;
+}
+
+const msg=(t,c)=>{ const e=document.getElementById('wifi-msg'); e.textContent=t;
+                   e.style.color = c==='err' ? 'var(--warn)' : c==='ok' ? 'var(--safe)' : 'var(--ink-3)'; };
+
+// Open the port with the reset lines left alone, and hand back a reader/writer pair.
+async function openToy(){
+  const port = await navigator.serial.requestPort();
+  await port.open({baudRate:115200});
+  try{ await port.setSignals({dataTerminalReady:false, requestToSend:false}); }catch(e){}
+  await new Promise(r=>setTimeout(r,200));
+  return port;
+}
+// NEVER CANCEL THE READER TO IMPLEMENT A TIMEOUT.
+//
+// The first version raced each read against a setTimeout that called r.cancel(). That does not
+// "time out a read" — it closes the reader for good. Opening the port RESETS this board (its
+// DTR/RTS lines are wired to reset and boot-select, and Chrome asserts them on open), so the
+// device needs about two seconds to come back. The first 1.5s probe therefore always expired,
+// killed the reader, and every retry after it read from a corpse. That was the silent nothing.
+//
+// So: one reader that runs for the whole session, appending into a buffer, and timeouts are
+// just clock checks against what has arrived.
+function pump(port){
+  const w=port.writable.getWriter(), r=port.readable.getReader();
+  let acc=[], dead=false;
+  (async()=>{
+    try{
+      for(;;){ const {value,done}=await r.read(); if(done) break;
+               if(value) for(const b of value) acc.push(b); }
+    }catch(e){}
+    dead=true;
+  })();
+  const readFor=async(ms)=>{
+    const stop=Date.now()+ms;
+    while(Date.now()<stop && !dead){
+      const got=parse(acc);
+      if(got.length) return got;
+      await new Promise(r2=>setTimeout(r2,80));
+    }
+    return parse(acc);
+  };
+  return {w,r,readFor,clear:()=>{acc=[];},raw:()=>acc};
+}
+
+document.getElementById('wifi-go').addEventListener('click', async ()=>{
+  const ssid=document.getElementById('wifi-ssid').value.trim();
+  const pass=document.getElementById('wifi-pass').value;
+  if(!ssid){ msg('Type the network name first, or press Find networks.','err'); return; }
+  if(!('serial' in navigator)){ msg('This needs Chrome or Edge on a computer.','err'); return; }
+  let port;
+  try{ port = await openToy(); }catch(e){ msg('No device chosen.','err'); return; }
+  const io2 = pump(port);
+  try{
+    // Opening the port resets this board, so it is booting right now. Say so, rather than
+    // looking frozen for two seconds.
+    msg('The toy restarts when we plug in — waiting for it…');
+    let got=[];
+    for(let attempt=0; attempt<8 && !got.length; attempt++){
+      await io2.w.write(frame(T_RPC,[C_STATE,0]));
+      got=await io2.readFor(1200);
+    }
+    if(!got.length){ msg('The toy never answered. Unplug it, plug it back in, and try again.','err'); return; }
+    io2.clear();
+    // TELL IT THE TIME FIRST, before it has any way to get online.
+    //
+    // The toy fetches correct UTC the moment it joins and then throws it away, because an
+    // offset nobody taught it is the difference between the right time and London time in a
+    // Texas kitchen. It works the offset out itself the first time a real sync lands — but only
+    // if a human-set local time is already sitting there to subtract from. SNTP answers within
+    // about seven seconds of joining, so this goes first and there is no race.
+    //
+    // It has to travel on the cable: this page is https and the toy is plain http on the LAN,
+    // so the browser blocks the equivalent HTTP call as mixed content.
+    try{
+      const now=new Date();
+      await io2.w.write(new TextEncoder().encode('T'+(now.getHours()*60+now.getMinutes())+'\n'));
+      await new Promise(r=>setTimeout(r,300));
+    }catch(e){}
+    msg('Sending your wifi…');
+    const enc=new TextEncoder(), sB=enc.encode(ssid), pB=enc.encode(pass);
+    await io2.w.write(frame(T_RPC,[C_WIFI, sB.length+pB.length+2, sB.length,...sB, pB.length,...pB]));
+    const res=await (async()=>{
+      const stop=Date.now()+30000;
+      while(Date.now()<stop){
+        const g=parse(io2.raw());
+        const ok=g.find(x=>x.type===T_RESULT && x.data[0]===C_WIFI);
+        const bad=g.find(x=>x.type===T_ERROR);
+        if(ok) return {ok};
+        if(bad) return {bad};
+        await new Promise(r=>setTimeout(r,150));
+      }
+      return {};
+    })();
+    if(res.ok){
+      const u=strs(res.ok.data)[0]||'';
+      const e=document.getElementById('wifi-msg');
+      e.innerHTML='Connected. Your bunbun is at <a href="'+u+'">'+u+'</a>';
+      e.style.color='var(--safe)';
+    } else if(res.bad){
+      msg('It could not join. Check the password, and that it is a 2.4GHz network.','err');
+    } else {
+      msg('No answer while joining. Give it a moment and try once more.','err');
+    }
+  }catch(e){ msg('Something went wrong: '+e.message,'err'); }
+  finally{ try{ io2.r.releaseLock(); io2.w.releaseLock(); await port.close(); }catch(e){} }
+});
+</script>
+</body>
+</html>
