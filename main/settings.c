@@ -21,6 +21,7 @@ static const char *TAG = "settings";
 #define NVS_KEY_DEVICE_NAME    "device_name"
 #define NVS_KEY_EQ_GAINS       "eq_gains"
 #define NVS_KEY_LED_BRIGHTNESS "led_bright"
+#define NVS_KEY_OTA_KEY        "ota_key"
 
 #define MAX_WIFI_SSID_LEN     32
 #define MAX_WIFI_PASSWORD_LEN 64
@@ -521,4 +522,88 @@ esp_err_t settings_clear_eq(void) {
 
 bool settings_has_eq(void) {
   return g_eq_loaded;
+}
+
+/* ================================================================== */
+/*  Firmware OTA key                                                   */
+/* ================================================================== */
+
+// Read the stored key. Static on purpose — see the note in settings.h about
+// there being no public getter. Returns false when nothing is provisioned.
+static bool ota_key_load(char *out, size_t len) {
+  nvs_handle_t nvs;
+  if (nvs_open(NVS_NAMESPACE, NVS_READONLY, &nvs) != ESP_OK) {
+    return false;
+  }
+  size_t required = len;
+  esp_err_t err = nvs_get_str(nvs, NVS_KEY_OTA_KEY, out, &required);
+  nvs_close(nvs);
+  return err == ESP_OK && out[0] != '\0';
+}
+
+bool settings_has_ota_key(void) {
+  char key[SETTINGS_OTA_KEY_MAX + 1] = {0};
+  bool have = ota_key_load(key, sizeof(key));
+  memset(key, 0, sizeof(key));
+  return have;
+}
+
+esp_err_t settings_set_ota_key(const char *key) {
+  if (!key) {
+    return ESP_ERR_INVALID_ARG;
+  }
+  size_t n = strlen(key);
+  if (n < SETTINGS_OTA_KEY_MIN || n > SETTINGS_OTA_KEY_MAX) {
+    return ESP_ERR_INVALID_ARG;
+  }
+
+  nvs_handle_t nvs;
+  esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs);
+  if (err != ESP_OK) {
+    ESP_LOGE(TAG, "Failed to open NVS: %s", esp_err_to_name(err));
+    return err;
+  }
+
+  err = nvs_set_str(nvs, NVS_KEY_OTA_KEY, key);
+  if (err == ESP_OK) {
+    err = nvs_commit(nvs);
+  }
+  nvs_close(nvs);
+
+  // Never log the key itself, only that one now exists.
+  ESP_LOGI(TAG, "OTA key %s", err == ESP_OK ? "stored" : "NOT stored");
+  return err;
+}
+
+bool settings_check_ota_key(const char *candidate) {
+  if (!candidate) {
+    return false;
+  }
+  // Length is not the secret, so rejecting on it early is safe — and it stops a
+  // candidate longer than the buffer being truncated down onto a shorter stored
+  // key and matching a prefix of itself.
+  size_t n = strlen(candidate);
+  if (n < SETTINGS_OTA_KEY_MIN || n > SETTINGS_OTA_KEY_MAX) {
+    return false;
+  }
+
+  char stored[SETTINGS_OTA_KEY_MAX + 1] = {0};
+  char given[SETTINGS_OTA_KEY_MAX + 1] = {0};
+  if (!ota_key_load(stored, sizeof(stored))) {
+    return false;    // never provisioned: refuse everything. FAIL CLOSED.
+  }
+  strlcpy(given, candidate, sizeof(given));
+
+  // Compare the whole padded buffer, not up to the first difference: memcmp
+  // returns early, which leaks the length of the matching prefix to anyone
+  // timing the 401s and turns a 64-character secret into 64 short guesses.
+  // Both buffers are zero-filled, so this covers the length difference too.
+  volatile uint8_t diff = 0;
+  for (size_t i = 0; i < sizeof(stored); i++) {
+    diff |= (uint8_t)(stored[i] ^ given[i]);
+  }
+
+  memset(stored, 0, sizeof(stored));
+  memset(given, 0, sizeof(given));
+  return diff == 0;
 }

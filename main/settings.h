@@ -138,3 +138,38 @@ esp_err_t settings_clear_eq(void);
  * Check if EQ gains are saved.
  */
 bool settings_has_eq(void);
+
+// ---- Firmware OTA key ----
+//
+// The secret that authorises POST /api/ota/update on a fleet unit. Until this
+// exists the fleet was integrity-checked but never authenticated: ota.c hashes
+// the image against a SHA-256 the uploader appended itself, which proves the
+// bytes arrived intact and nothing whatever about who sent them. Anyone on the
+// wifi could flash a bunbun.
+//
+// There is deliberately no getter. Nothing needs to read the key back — only to
+// ask whether one is set and whether a caller's matches — so no code path can
+// print it into a log, a JSON reply or a crash dump.
+
+/** Longest accepted key, in characters. */
+#define SETTINGS_OTA_KEY_MAX 64
+/** Shortest accepted key. Long enough that guessing is not a strategy. */
+#define SETTINGS_OTA_KEY_MIN 16
+
+/** True if this unit has been provisioned with an OTA key. */
+bool settings_has_ota_key(void);
+
+/**
+ * Store the OTA key. Rejects anything shorter than SETTINGS_OTA_KEY_MIN or
+ * longer than SETTINGS_OTA_KEY_MAX. Does NOT enforce who may call it — that is
+ * the endpoint's job (set-once, then rotation only by presenting the current
+ * key).
+ */
+esp_err_t settings_set_ota_key(const char *key);
+
+/**
+ * Constant-time check of a caller-supplied key.
+ * Returns false when no key is provisioned: an unprovisioned unit refuses every
+ * OTA rather than accepting every OTA. Fail closed.
+ */
+bool settings_check_ota_key(const char *candidate);

@@ -256,11 +256,21 @@ place. **Do not diagnose this from the source — read the device.**
 - `/api/ota/assets` erases the whole art partition in one blocking multi-MB call, with the
   renderer stand-down (`fw_assets_writing()`) compiled out of the public build. Every
   `/build` install is that race, unguarded. It has survived every time; that is dice.
-- `/api/ota/update` accepts any image with no authentication (CI-2608). The decision is to
-  kill firmware OTA in the public build rather than sign it; the flag exists but does not
-  cover this endpoint yet.
+- ~~`/api/ota/update` accepts any image with no authentication (CI-2608).~~ **Closed
+  2026-08-27**, both halves. The public image has no firmware endpoint at all — the
+  handler, its registration and `ota.c` itself are absent, and public units are flashed
+  over USB. A fleet image (`FLEET=1`) keeps the endpoint behind that unit's own key in an
+  `X-Bunbun-Key` header, checked in constant time before anything is touched, and refuses
+  everything until one is provisioned. Keys are per unit, so one read out of a device's
+  flash cannot flash any other. Verified on the wire: the same anonymous POST that was
+  accepted and buffered before the change answers 401 on all three live units. Whether to
+  *sign* images — which is the other half, the gifted-unit road — is still open (W-070).
 - Nothing records a pak's **bake scale** and nothing checks it at install. See
   `tools/GENERATION.md` — this is the cheapest remaining shippability win.
+- `/api/ota/assets` and `/api/fs/upload` are still open to anyone on the LAN, deliberately:
+  they are the kid loop, and Jon's ruling is that local-network authoring stays. They can
+  wipe the art and replace the `/build` page, but not the firmware. Worth naming so nobody
+  reads "the flash endpoint is authenticated" as "the device is".
 
 **The assembler is no longer in parity with the device.** Everything in section 4's
 rewritten doctrine — stay-until-full, the rota, mood suppression, the room owning him —

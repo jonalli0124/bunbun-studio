@@ -36,7 +36,6 @@ set( SRC_FILES
     "network/socket_utils.c"
     "network/wall_clock.c"
     "network/web_server.c"
-    "network/ota.c"
     "network/dns_server.c"
     "network/log_stream.c"
     "led.c"
@@ -45,6 +44,32 @@ set( SRC_FILES
     "playback_control.c"
     "dacp_client.c"
 )
+
+# ---- BUNBUN_FIRMWARE_OTA: who may write the app partition ----------------
+#
+# Firmware OTA is the fleet's alone. A public image has NO network path to the
+# firmware: the handler, its URI registration and ota.c itself are all absent,
+# not merely refused. Absent beats disabled - there is nothing to reach and
+# nothing to get wrong - and it is what makes the "no /api/ota/update string in
+# the .bin" release check a real check. Public units are updated over USB.
+#
+# On a fleet unit the endpoint requires that unit's own key (X-Bunbun-Key, set
+# via POST /api/ota/key) and refuses everything until one is provisioned. This
+# is the CI-2608 blocker: ota.c verifies a SHA-256 the uploader appended itself,
+# which proves the bytes arrived intact and NOTHING about who sent them, so
+# without the key any device on the wifi could flash any bunbun.
+#
+# DELIBERATELY NOT A KCONFIG OPTION. Kconfig would route this through
+# sdkconfig, and sdkconfig overrides the defaults files for every symbol it
+# already contains - so the first fleet build would write CONFIG_..._OTA=y into
+# the tracked sdkconfig and EVERY LATER PUBLIC BUILD WOULD SILENTLY KEEP THE
+# ENDPOINT. That is precisely how BUNBUN_PUBLIC_BUILD came to mean its own
+# opposite for weeks. A CMake cache variable has no merge semantics, is passed
+# explicitly on every build (0 or 1, never omitted), and forces a reconfigure
+# when it changes, so the image cannot disagree with the command that made it.
+if(BUNBUN_FLEET)
+    list(APPEND SRC_FILES "network/ota.c")
+endif()
 
 # Select audio output implementation at compile time
 if(CONFIG_AUDIO_OUTPUT_SPDIF)
@@ -121,6 +146,17 @@ idf_component_register(
     INCLUDE_DIRS ${INC_DIRS}
     PRIV_REQUIRES ${DEPS} bunbun dac_es8311 usb_msc_bunbun
 )
+
+# The C side of BUNBUN_FLEET (see the note above the ota.c source list). Sources
+# guarded by #if BUNBUN_FIRMWARE_OTA see 0 when this is not defined, which is the
+# behaviour we want for every build that did not explicitly ask to be a fleet
+# image.
+if(BUNBUN_FLEET)
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE BUNBUN_FIRMWARE_OTA=1)
+    message(STATUS "bunbun: FLEET image - /api/ota/update present, key required")
+else()
+    message(STATUS "bunbun: PUBLIC image - no firmware OTA endpoint")
+endif()
 
 # Enable function wrapping for abort() to intercept panics and mute GPIO
 if(CONFIG_BOARD_SQUEEZEAMP_COMMON)

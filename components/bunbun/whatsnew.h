@@ -6,7 +6,9 @@
 // The nightly autoship pipeline overwrites this line when it ships wishes, so
 // the morning after a wish comes true, bunbun says so itself. Keep it short —
 // it is a ticker, not a changelog. Empty string = say nothing.
-// W-054 phase 2 shipped: the NETWORKS picker on the gear shelf (plus the cat
-// keeps her nap spot now, and music sounds right the moment he wakes). The
-// picker is the family-visible half, so the ticker tells that one.
-#define BUNBUN_WHATSNEW "bunbun can switch wifi from his gear shelf now - no more being stuck"
+// Council 2026-08-26, Motion 3(c): the device may not ship silent about its
+// own growing up. Luna's three lines, verbatim, joined into the one ticker
+// pass (longest whatsnew ever, on purpose - it is the biggest thing that has
+// ever happened to this creature). The wifi picker line it replaces rides in
+// the same build and the HOW-TO carries it.
+#define BUNBUN_WHATSNEW "bunbun grows up now - babies, big kids, and all grown up ... tap bunbun's name to pick a new one, and choose cozy or brave ... treats from far away really count now"

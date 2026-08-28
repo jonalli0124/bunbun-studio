@@ -454,6 +454,25 @@ static bool pakBegin() {
   char m[4]; pakRead(0, m, 4);
   if (memcmp(m, "BUNP", 4)) return false;
   pakRead(6, &g_count, 2);
+  // HOW MANY ENTRIES THE PAK CLAIMS IS UNTRUSTED TOO. Two bytes out of the uploaded header
+  // sized a malloc with nothing between them and it: at 65535 entries that is a 3.5 MB request
+  // at boot, out of a heap the render path is already documented as starving in (see the
+  // internal-RAM famine notes). Granted or refused, the device comes up wrong - granted, it has
+  // burned most of its PSRAM on a garbage index before a frame is drawn; refused, pakBegin
+  // returns false and there is no art at all. Every other field of this header got a ceiling
+  // months ago (w, h, the palette count, the offset) and this one was simply missed.
+  //
+  // The bound is not a guess: the index lives at offset 8 of the partition, so a pak whose
+  // index does not FIT in the partition cannot be a real pak. That is exact, derived from the
+  // medium rather than from a number someone picked, and it moves on its own if the partition
+  // table ever changes. A zero-entry pak is degenerate in the same way - malloc(0) and a find
+  // that can never match - so it is refused here rather than limping on.
+  if (g_count == 0) { Serial.println("pak: header claims 0 entries"); return false; }
+  const uint32_t idxBytes = (uint32_t)g_count * (uint32_t)sizeof(PakEntry);
+  if (8u + idxBytes > (uint32_t)g_assets->size) {
+    Serial.printf("pak: index of %u entries does not fit the partition\n", g_count);
+    return false;
+  }
   g_index = (PakEntry *)malloc((size_t)g_count * sizeof(PakEntry));
   if (!g_index) return false;
   pakRead(8, g_index, (size_t)g_count * sizeof(PakEntry));

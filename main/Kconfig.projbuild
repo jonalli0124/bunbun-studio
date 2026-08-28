@@ -552,6 +552,13 @@ menu "Airplay ESP Configuration"
             check that cannot be fooled by config drift is to scan the built
             .bin for "approved.json" and assert it is absent.
 
+    # Firmware OTA (POST /api/ota/update) is deliberately NOT a Kconfig option.
+    # It is the CMake cache variable BUNBUN_FLEET, set by building with FLEET=1,
+    # because a Kconfig symbol routes through sdkconfig - and sdkconfig
+    # overrides the defaults files for anything it already contains, so the
+    # first fleet build would have written the endpoint permanently into every
+    # later public image. See the long note in main/CMakeLists.txt.
+
     config BUNBUN_WISH_UPLOADER
         bool "Wish uploader, even in a public build"
         default n

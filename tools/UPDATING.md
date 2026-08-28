@@ -88,12 +88,39 @@ device changes behaviour overnight while a child is asleep in the room with it.
 
 ## 2. Firmware
 
-    POST build-freenove/airplay2-receiver.bin -> http://<ip>/api/ota/update
+Build the fleet image, gate it, push it:
 
-It reboots itself and answers `"Firmware update complete, rebooting now!"` before it
-goes. Re-read the pet. **Check the silicon first if you have any doubt**: `free_heap`
-above ~6 MB means PSRAM, i.e. an S3 board. A plain ESP32 CYD has no PSRAM and this image
-would brick it.
+    set FLEET=1 && build-freenove.bat
+    py tools/check_release.py --fleet
+    py tools/push_firmware.py <ip>
+
+**A bare `curl` to `/api/ota/update` no longer works, and should not.** Since 2026-08-27 a
+fleet unit requires its own key in an `X-Bunbun-Key` header and answers 401 without it.
+The reason is that `ota.c` never authenticated anything: it verifies a SHA-256 the
+*uploader* appended, which proves the bytes arrived intact and nothing at all about who
+sent them, so any device on the wifi could flash any bunbun (CI-2608). Keys are per unit
+— one read out of a device's flash cannot flash any other — and live in
+`C:/Users/Jon/bunbun-nightly/.otakeys`, outside the repo, next to `.ghtoken`. **Never
+commit that file.**
+
+`push_firmware.py` does the whole job and refuses to lie about it: it declines to push a
+public image (that would cut the unit off from wifi updates for good) or one missing the
+key guard, reports only a real 200 as success, insists the uptime actually reset, checks
+`pet_id`/`born`/`stage`/`phase`/`species` are identical and the age did not go backwards,
+provisions the key, and finally proves an anonymous push now gets a 401.
+
+**Two things about keys.** Provisioning is trust-on-first-use: a freshly flashed unit is
+unclaimed, and for those few seconds anyone on the wifi could claim it — so provision
+immediately, which the script does. Once a key exists, changing it requires the old one,
+and there is no clear operation; a unit whose key is genuinely lost is recovered over USB.
+
+**The public image has no OTA endpoint at all** — not registered-and-refusing, absent,
+along with `ota.c` itself. Public units are flashed with a USB cable. Build it by simply
+*not* setting `FLEET`, and gate it with a bare `py tools/check_release.py`, which fails if
+the string `/api/ota/update` appears in the binary at all.
+
+**Check the silicon first if you have any doubt**: `free_heap` above ~6 MB means PSRAM,
+i.e. an S3 board. A plain ESP32 CYD has no PSRAM and this image would brick it.
 
 ## 3. The build page
 

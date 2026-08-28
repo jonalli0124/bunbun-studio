@@ -18,7 +18,9 @@
 #include "led.h"
 #include "wifi.h"
 #include "ethernet.h"
+#if BUNBUN_FIRMWARE_OTA
 #include "ota.h"
+#endif
 #include "fw_update.h"
 #include "log_stream.h"
 #include "rtsp_server.h"
@@ -1088,8 +1090,48 @@ static esp_err_t pet_species_handler(httpd_req_t *req) {
   return ESP_OK;
 }
 
+#if BUNBUN_FIRMWARE_OTA
+// THE KEY IS WHAT MAKES A FLASH AUTHENTIC. ota.c checks the image's magic, its
+// segment count and a SHA-256 that the uploader appended itself — every one of
+// which an attacker's own image satisfies, because he authored all of them.
+// That is integrity; it says the bytes arrived unmangled and nothing about who
+// sent them. This header is the only thing on the device that answers "who".
+#define OTA_KEY_HEADER "X-Bunbun-Key"
+
+// Read and check the key. Deliberately returns nothing but yes/no — no "wrong
+// key" versus "no key set" distinction to the caller, since which one it is
+// tells a stranger whether the unit is worth coming back to.
+static bool ota_key_ok(httpd_req_t *req) {
+  char key[SETTINGS_OTA_KEY_MAX + 2] = {0};
+  // Buffer is one longer than the longest legal key so an over-length header
+  // reads back whole and fails the length check, rather than being truncated
+  // to something that could match.
+  esp_err_t err =
+      httpd_req_get_hdr_value_str(req, OTA_KEY_HEADER, key, sizeof(key));
+  if (err != ESP_OK) return false;    // missing, truncated or malformed: refuse
+  bool ok = settings_check_ota_key(key);
+  memset(key, 0, sizeof(key));
+  return ok;
+}
+
+static esp_err_t deny_unauthorised(httpd_req_t *req) {
+  httpd_resp_set_status(req, "401 Unauthorized");
+  httpd_resp_set_type(req, "application/json");
+  httpd_resp_sendstr(
+      req, "{\"ok\":false,\"note\":\"firmware needs this unit's OTA key\"}");
+  return ESP_OK;
+}
+
 static esp_err_t ota_update_handler(httpd_req_t *req) {
   if (!origin_ok(req)) return deny_foreign(req);
+  // BEFORE rtsp_server_stop(), not after. The old order let anybody on the wifi
+  // silence the speaker for free: POST a byte of garbage, AirPlay is torn down,
+  // the image fails to validate, and nothing ever started it again. An
+  // unauthenticated request must not be able to change anything at all.
+  if (!ota_key_ok(req)) {
+    ESP_LOGW(TAG, "OTA refused: bad or missing key");
+    return deny_unauthorised(req);
+  }
   if (req->content_len == 0) {
     httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "No firmware uploaded");
     return ESP_FAIL;
@@ -1102,6 +1144,10 @@ static esp_err_t ota_update_handler(httpd_req_t *req) {
   esp_err_t err = ota_start_from_http(req);
 
   if (err != ESP_OK) {
+    // Give the speaker back. A failed flash used to leave AirPlay stopped until
+    // somebody power-cycled the unit — the same omission assets_abandon() was
+    // written to fix on the art path.
+    rtsp_server_start();
     httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
                         esp_err_to_name(err));
     return ESP_FAIL;
@@ -1114,6 +1160,77 @@ static esp_err_t ota_update_handler(httpd_req_t *req) {
 
   return ESP_OK;
 }
+
+// Provision or rotate this unit's OTA key.
+//
+//   GET  -> {"configured":bool}          and never the key itself
+//   POST {"key":"..."}                   sets it, if none is set yet
+//   POST {"key":"...","current":"..."}   rotates it, if "current" is right
+//
+// SET-ONCE, THEN ROTATION-ONLY. The first write is trust-on-first-use and its
+// window is real: between a unit booting this firmware unprovisioned and the
+// operator claiming it, anyone on the wifi could claim it instead. That window
+// is seconds on a network you control, and it is the honest price of being able
+// to provision over the LAN at all — the alternative is a serial cable per unit.
+// What must never happen is the window reopening: once a key exists, changing it
+// requires the old one, so a stranger cannot take a provisioned unit away from
+// its owner. There is no clear operation for the same reason. A unit whose key
+// is genuinely lost is recovered over USB, which is the correct amount of
+// difficulty.
+static esp_err_t ota_key_handler(httpd_req_t *req) {
+  if (req->method == HTTP_GET) {
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, settings_has_ota_key()
+                                ? "{\"configured\":true}"
+                                : "{\"configured\":false}");
+    return ESP_OK;
+  }
+
+  if (!origin_ok(req)) return deny_foreign(req);
+
+  char body[256] = {0};
+  int n = httpd_req_recv(req, body, sizeof(body) - 1);
+  if (n <= 0) {
+    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "No body");
+    return ESP_FAIL;
+  }
+  body[n] = '\0';
+
+  cJSON *json = cJSON_Parse(body);
+  const cJSON *key = json ? cJSON_GetObjectItem(json, "key") : NULL;
+  const cJSON *cur = json ? cJSON_GetObjectItem(json, "current") : NULL;
+  if (!key || !cJSON_IsString(key)) {
+    cJSON_Delete(json);
+    memset(body, 0, sizeof(body));
+    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing key");
+    return ESP_FAIL;
+  }
+
+  if (settings_has_ota_key() &&
+      !(cur && cJSON_IsString(cur) && settings_check_ota_key(cur->valuestring))) {
+    cJSON_Delete(json);
+    memset(body, 0, sizeof(body));
+    ESP_LOGW(TAG, "OTA key rotation refused: current key wrong or absent");
+    return deny_unauthorised(req);
+  }
+
+  esp_err_t err = settings_set_ota_key(key->valuestring);
+  cJSON_Delete(json);
+  memset(body, 0, sizeof(body));    // the key was in here
+
+  httpd_resp_set_type(req, "application/json");
+  if (err != ESP_OK) {
+    // The only way to fail validation is a key outside the length bounds, so
+    // say which — this one is the operator's own mistake, not a probe.
+    httpd_resp_set_status(req, "400 Bad Request");
+    httpd_resp_sendstr(
+        req, "{\"ok\":false,\"note\":\"key must be 16-64 characters\"}");
+    return ESP_OK;
+  }
+  httpd_resp_sendstr(req, "{\"ok\":true,\"configured\":true}");
+  return ESP_OK;
+}
+#endif /* BUNBUN_FIRMWARE_OTA */
 
 static esp_err_t system_info_handler(httpd_req_t *req) {
   cJSON *json = cJSON_CreateObject();
@@ -2260,10 +2377,23 @@ esp_err_t web_server_start(uint16_t port) {
                                              led_brightness_post_handler};
   httpd_register_uri_handler(s_server, &led_brightness_post_uri);
 
+#if BUNBUN_FIRMWARE_OTA
+  // Not registered at all in a public build — not registered and refusing, but
+  // absent. There is no handler to reach and no 401 to probe.
+  httpd_uri_t ota_key_get = {.uri = "/api/ota/key",
+                             .method = HTTP_GET,
+                             .handler = ota_key_handler};
+  httpd_register_uri_handler(s_server, &ota_key_get);
+  httpd_uri_t ota_key_post = {.uri = "/api/ota/key",
+                              .method = HTTP_POST,
+                              .handler = ota_key_handler};
+  httpd_register_uri_handler(s_server, &ota_key_post);
+
   httpd_uri_t ota_uri = {.uri = "/api/ota/update",
                          .method = HTTP_POST,
                          .handler = ota_update_handler};
   httpd_register_uri_handler(s_server, &ota_uri);
+#endif /* BUNBUN_FIRMWARE_OTA */
 
   httpd_uri_t ota_assets_uri = {.uri = "/api/ota/assets",
                                 .method = HTTP_POST,
